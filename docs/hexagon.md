@@ -118,25 +118,21 @@ resource/isolation qualification. Drivers/services are not implicitly Job-contai
 
 ## Qualification evidence
 
-Correctness precedes timing. Follow [profile qualification](hardware-capabilities.md#qualification-scope)
-and [measurement rules](performance-expectations.md#2026-literature-measurement-and-comparison),
-fixing artifacts, adapter, sampler, context/precision, tolerances, failures and useful-benefit gates.
-Charge load/repack/compile, migrations/cache misses, peak storage, shared bandwidth/power and
-complete task; separately attribute RPC/submission/synchronization, mappings and supported counters.
+Correctness precedes timing. Shared [profile qualification](hardware-capabilities.md#qualification-scope)
+and [measurement rules](performance-expectations.md#2026-literature-measurement-and-comparison) own
+receipt identities, workload/state/power cases, cost accounting, acceptance and upgrade gates.
+NPU attribution additionally separates RPC/submission/synchronization, mappings and supported counters.
 Validate effective power modes: the [upstream guide][hexagon-guide] describes burst aliasing and
 warning fallback for unknown modes. Utilization/overlap alone proves no benefit.
 
-Admitted 8K trials include 512/2K/near-limit prompts with full output reservation, fixed 128/512-token
-and natural creative outputs, cold/warm/reused/edited/occupied state, cancellation and failed recovery.
-Larger contexts need separate memory/state acceptance. Repeated/interleaved same-contract CPU,
-qualified-Vulkan and NPU runs retain median/p95/variance, prefill/first-token/decode, time/tokens/
-retries to acceptable output, memory and sustained thermals/responsiveness. AC/battery and
-15–30-minute runs have distinct scope; missing power telemetry means no energy verdict.
+Within the shared workload cases, admitted 8K trials use 512/2K/near-limit prompts with full output
+reservation, fixed 128/512-token and natural creative outputs; add occupied state, cancellation and
+failed recovery. Larger contexts need separate memory/state acceptance. Compare same-contract CPU,
+qualified-Vulkan and NPU runs, retaining median/p95/variance and separate 15–30-minute sustained runs.
 
-The shared [receipt/promotion contract](hardware-capabilities.md#qualification-scope) owns identity,
-per-metric verdicts, CI, fallback and upgrade invalidation. Missing evidence or critical failures keep
-profiles experimental; absence supplies no verdict. Native diagnostics use absolute system-temp
-lanes with inherited Windows system/profile variables. Moving links below are research leads, not pins.
+Missing evidence or critical failures keep profiles experimental; absence supplies no verdict.
+Native diagnostics use absolute system-temp lanes with inherited Windows system/profile variables.
+Moving links below are research leads, not pins.
 
 ## 2026 research evidence
 

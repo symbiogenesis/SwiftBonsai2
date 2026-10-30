@@ -81,16 +81,14 @@ owns storage accounting, asynchronous lifetimes, cache keys/invalidation and fai
 Apply it to pipelines, descriptors and reused allocations as well as compiled kernels.
 Persistent expansion pays cold-load/residency cost; precision/decoding changes need separate qualification.
 
-[Profile receipts](hardware-capabilities.md#qualification-scope) bind identities, settings/workloads,
-main/CI/raw captures and resource/comfort verdicts. Distinguish peak/resident/commit/headroom,
-faults/evictions and sustained failures. GPU attribution separates pipeline first use, queue/kernel
-timestamps, submission/waits and critical-path traces. Overlapping durations cannot be added, and
-utilization is not energy. [GPUView][gpuview] needs
-compatible native ARM64 tooling.
+[Profile qualification](hardware-capabilities.md#qualification-scope) owns receipt identities,
+workloads, acceptance and upgrade gates. GPU attribution additionally separates pipeline first use,
+queue/kernel timestamps, submission/waits and critical-path traces, recording faults/evictions and
+sustained failures. Overlapping durations cannot be added; utilization is not energy.
+[GPUView][gpuview] needs compatible native ARM64 tooling.
 
-The shared qualification contract includes independent [LoRA TPS/quality](swift-lora.md#standard-profile-qualification)
-and matching-device CI. Native diagnostics use absolute system-temp lanes and inherited Windows
-system/profile variables. Moving source links below are leads, not build pins.
+Native diagnostics use absolute system-temp lanes and inherited Windows system/profile variables.
+Moving source links below are leads, not build pins.
 
 ## 2026 research evidence
 
