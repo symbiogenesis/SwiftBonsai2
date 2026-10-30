@@ -362,12 +362,16 @@ bandwidth, packing and dispatch evidence.
 - Optimize measured transforms, elementwise work, quantizers, reductions and prefill
   through safe APIs or audited isolated unsafe code. Cover edges, malformed input,
   rollback, non-ARM and absent ISA; recheck dependencies, licenses and codegen.
-- Revisit [signed constant floor division](docs/cpu-kernels.md#signed-constant-floor-division)
-  only if profiling identifies an eligible signed fixed-divisor caller. The current
-  audit found none in Runner; preserve unsigned, truncating, floating-point and
-  runtime-stride semantics. Implement a justified consumer in Prism, with full-range
-  integer parity, pinned-Rust ARM64 codegen and paired complete-request CI evidence
-  before repinning. An unused utility or the article's C++ timings cannot close this gate.
+- During planned tiled prefill, attention and chunkwise GDN work, check whether
+  signed padded/relative index mapping introduces repeated floor division by a fixed
+  non-power-of-two constant. Consider [Joffe's algorithm](docs/cpu-kernels.md#signed-constant-floor-division)
+  within that measured parent hotspot; existing 8/16/32 tiles already permit shifts.
+  Choose tile sizes for parent-kernel benefit; preserve unsigned PTQ1 decoding,
+  floating quantizer rounding and runtime-stride semantics. The current audit found
+  no eligible Runner caller;
+  implement a justified consumer in Prism with full-range integer parity, pinned-Rust
+  ARM64 codegen and paired complete-request CI evidence before repinning. Keep this
+  conditional on useful parent work, without a standalone utility or benchmark project.
 - If integer-dot dependencies are material, screen [two
   accumulators](docs/oxibonsai-reuse.md#neon-retain-concepts-preserve-swift-arithmetic)
   in Prism's `i32x4` loop on three shapes. Preserve widening, exact dots, Q8 groups and

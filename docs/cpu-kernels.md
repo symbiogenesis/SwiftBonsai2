@@ -97,9 +97,10 @@ it can select the multiplier using the dividend's sign. Some divisors require
 a bounded input adjustment instead; the sign-selected formula is not universal.
 For a valid sign-selected pair `(M, S)`, the quotient is
 `(i128(x) * (M + (x >> 63))) >> S`, with an arithmetic right shift.
-Positive powers of two already reduce to an arithmetic shift. A Rust port must
-use compile-time parameters and widened integer products, preserve full-range
-behavior and explicitly reject zero and the unrepresentable `i64::MIN / -1`.
+Positive powers of two already reduce to an arithmetic shift. Resolve parameters
+at compile time for fixed constants; a runtime-invariant variant must prepare them
+outside the hot loop. A Rust port must use widened integer products, preserve
+full-range behavior and explicitly reject zero and the unrepresentable `i64::MIN / -1`.
 Negative-divisor floor division differs from `div_euclid`; do not use the latter
 as its general reference. The reference's `main` link is a discovery pointer;
 pin a reviewed revision and retain its license notices before copying source.
@@ -122,6 +123,20 @@ use runtime strides after exact-divisibility guards. Neither is a fixed-`i64`
 replacement site. Runtime-invariant specialization would require its own setup
 and reuse-cost evidence. No runtime code or dependency pin changes follow from
 this audit, and no throughput, latency or complete-request gain has been measured.
+
+The following are conditional opportunities in existing planned work, inferred
+from the algorithm's input requirements; neither is an identified current hotspot:
+
+| Planned work | Where to check |
+| --- | --- |
+| [Tiled projection-prefill](../PLAN.md#cpu-kernels), attention tiles and [chunkwise GDN](inference-algorithms.md#chunkwise-gated-deltanet-prefill) | Signed padded or relative coordinates mapped to tile/chunk indices before conversion to `usize`, if floor rounding and a fixed non-power-of-two divisor are required. Initial 8/16/32 tiles already permit shifts; retain those choices. |
+| [Deferred Prism numerical kernels](../PLAN.md#deferred-prism-migration), when reopened for a Swift dependency | Specialized convolution/pooling coordinate mapping with an invariant stride reused across many elements. Require an admitted `i64` numerator range and unchanged rounding/rejection behavior; charge parameter setup and dispatch as well as division. |
+
+Keep this check within the chosen kernel's design and measured cost. Unsigned
+PTQ1 base-three decoding, nonnegative cache/page indices and floating quantizers
+do not become signed floor-division candidates. Any future integer requantizer
+would first need its own rounding contract; this algorithm does not preserve
+ties-to-even or ties-away rounding by itself.
 
 For a future eligible caller, compare exact results with an independent widened
 quotient/remainder reference: both signs, zero dividend, signed extrema, exact
