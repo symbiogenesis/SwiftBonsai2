@@ -159,13 +159,7 @@ impl LaunchConfig {
                     native_engine = true;
                 }
                 Some("--native-row-workers") if native_row_workers.is_none() => {
-                    native_row_workers = Some(
-                        match args.next().as_deref().and_then(std::ffi::OsStr::to_str) {
-                            Some("1") => 1,
-                            Some("4") => 4,
-                            _ => return Err(LaunchError::Arguments),
-                        },
-                    );
+                    native_row_workers = Some(row_workers(args.next())?);
                 }
                 Some("--use-abliterate-lora") if !use_abliterate_lora => {
                     use_abliterate_lora = true;
@@ -701,6 +695,14 @@ impl LaunchedService {
             return Err(LaunchError::Cancelled);
         }
         Ok(report)
+    }
+}
+
+fn row_workers(value: Option<OsString>) -> Result<u8, LaunchError> {
+    match value.as_deref().and_then(std::ffi::OsStr::to_str) {
+        Some("1") => Ok(1),
+        Some("4") => Ok(4),
+        _ => Err(LaunchError::Arguments),
     }
 }
 
