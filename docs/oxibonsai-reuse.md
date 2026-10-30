@@ -108,3 +108,54 @@ the presence of a prefetch API alone does not establish executed hints.
 No Oxi kernel, parser dependency, runtime selection or performance claim is
 introduced by this review. Outstanding implementation work stays in
 [PLAN.md](../PLAN.md#cpu-kernels).
+
+## Additional optimization and data-structure review
+
+The upstream head was rechecked on 2026-10-29 and remains `1d10c48`.
+These are source comparisons, without local benchmark execution or measured
+Snapdragon gains.
+
+| Candidate | Source evidence and decision |
+| --- | --- |
+| Parallel projection rows over shared slices | Oxi's live [linear layers](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-model/src/layers/linear.rs#L110) call Rayon row-parallel kernels. Pinned Prism's actual [prepared projection loop](https://github.com/symbiogenesis/prism-inference/blob/02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0/src/kernels.rs#L1659) is serial. This is the strongest additional pilot: partition output rows, share packed weights and already prepared activations, preserve each row's arithmetic and use explicit worker budgets. |
+| Immutable owner plus byte-range tensor views | Oxi's [parallel kernels](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-kernels/src/parallel.rs#L97) borrow weight slices. Prism already owns shared `Arc<[u8]>` tensors, but its separate [generic threadpool](https://github.com/symbiogenesis/prism-inference/blob/02c8a24b31ac1c35f2ffd3530f6a753ce440bdc0/src/backend/threadpool.rs#L188) creates copied per-worker matrix slices and is not the Swift projection path. Extend existing shared ownership when implementing row tasks; do not copy matrix payloads into tasks. |
+| Work-sized contiguous row tasks | Oxi's live [Q1 tiled path](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-kernels/src/parallel_tiled.rs#L123) amortizes scheduling. Its selector ignores reduction width and guesses AArch64 cache sizes. Choose candidate task sizes from rows, row bytes, available workers and measured work. Its ternary dispatch routes both parallel strategies to flat row parallelism. |
+| Borrowed file-backed weight storage | Oxi's [weight loaders](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-model/src/model/weight_loaders.rs#L132) borrow checked tensor blocks. This may reduce cold-load copying and private allocations through file-backed storage, but its [engine ownership](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-runtime/src/engine.rs#L1455) deliberately leaks containers with `Box::leak`. Any Prism pilot must instead own the mapping and retained verified file normally, account for residency and release storage on failure/shutdown. |
+| Small n-gram draft table | Oxi's [bigram/trigram table](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-runtime/src/ngram_cache.rs) is used by opt-in Metal/macOS greedy speculation. Useful for the existing model-free drafter plan only after Swift's complete-state verifier. Adapt with a total key/byte cap and only the last two context tokens; Oxi caps successors per key but not total keys, and clones the full context during drafting. |
+| Small released-page recycler | Oxi's [standalone page pool](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-model/src/paged_kv_cache.rs#L99) illustrates constant-time free-list allocation. Only investigate a small, charged cap on uniquely owned released FP16 pages if Prism reset/replay allocation churn is material. Its full preallocated FP32 pool is a poor fit for one memory-bounded conversation. |
+
+No broadly superior cache structure was found. Prism already shares sealed
+64-token FP16 `Arc` pages and keeps private mutable tails. Oxi's
+[prefix cache](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-model/src/prefix_cache.rs)
+is a block-hash trie; its wrapper clones FP32 KV before copying into dense live
+storage, has no CLI/server construction call site, and does not include Swift's
+recurrent/convolution state. Pinned entries can prevent eviction while insertion
+continues; trie nodes are not pruned and reported payload bytes omit trie storage.
+Importing it would weaken the existing cache accounting/ownership fit.
+
+The advertised interleaved packing and aligned-buffer helpers have only their
+own test callers, not production model callers. Oxi's paged/FP16/quantized KV
+helpers are also distinct from its shipping dense CPU cache. Its reusable
+sampler buffers and partial top-k selection are worthwhile techniques already
+present in pinned Prism; they do not establish another missing optimization.
+
+## Security features and transfer boundaries
+
+The review checked actual serving code as well as helper modules. Runner's
+[broker policy](broker-policy.md), [artifact verification](../src/artifacts/README.md)
+and [worker containment](sandboxing.md) remain authoritative; source inspection
+does not close outstanding actual-model or broker-only isolation qualification.
+
+| Oxi feature | Transfer decision |
+| --- | --- |
+| [ChatML marker neutralization](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-runtime/src/server.rs#L1217) in user-supplied message content, including nested reveal-by-removal tests | Useful regression scenarios for forged turn/role delimiters. Swift renders the verified template then parses special tokens, so qualify content-versus-control handling at that exact boundary. Oxi removes marker text repeatedly; copying it would alter legitimate literal content and counting/template parity. Declare a reject/escape/literal policy before changing behavior. This is not a general prompt-injection defense or an OS security boundary. |
+| [Optional per-client/global token buckets](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-runtime/src/rate_limiter.rs), trusted-proxy identity and `Retry-After` | Potential additional availability control for rapid request churn, separate from concurrency and queue limits. Disabled in default middleware. For Runner's one local service, prefer fixed-size state and measured need; forwarding headers remain rejected. Oxi's `max_clients` only triggers stale-entry removal, then inserts even if all entries are fresh: it is not a hard cardinality cap. Do not copy that allocation policy. |
+| [Process-wide admission and timeout layers](https://github.com/cool-japan/oxibonsai/blob/1d10c48e14754ff6999158f8fa13c7c92b40b0dc/crates/oxibonsai-serve/src/main.rs#L238) | Useful integration-test principle: routes share one budget. Runner already bounds pending accepts, active requests, queue time, I/O and generation lifetime. Preserve cancellation and streaming-lifetime accounting rather than adopting response-header-only middleware as equivalent. |
+| Bearer checks, request/output bounds and malformed-model rejection | Already implemented in Runner. Oxi's hand-written XOR-fold comparison is not an improvement over Runner's `subtle` comparison and fixed-format keys. The adopted hostile-GGUF tests cover useful additional release-regression scenarios. |
+
+Oxi's standalone server defaults to `0.0.0.0`, optional bearer authentication,
+default wildcard CORS, and unauthenticated health/metrics. Its exported circuit
+breaker has no serving-path caller. These settings/helpers do not add Windows
+worker isolation, exact artifact identity or stronger default access control to
+Runner. Retain the current numeric-loopback, mandatory credentials, exact
+Host/Origin/routes, value-free diagnostics and fail-closed worker launch.

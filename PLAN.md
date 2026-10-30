@@ -96,6 +96,16 @@ no-go decision, including losing cases.
   JSON reads into bounded final storage, exact-cap overflow probing and truncated
   framing; their ownership and read-buffer regressions remain model-free. Capture
   complete-task latency and peak memory in target-device CI before claiming gains.
+- Qualify literal chat-control spellings and attempted forged role/turn delimiters
+  in user/system content, supplied assistant history and reasoning at the exact
+  Swift template/tokenizer boundary. Declare reject/escape/literal behavior and
+  preserve identical count/generation policy before changing accepted content;
+  include nested delimiter cases from the
+  [OxiBonsai security review](docs/oxibonsai-reuse.md#security-features-and-transfer-boundaries).
+- If rapid request churn is material despite current admission bounds, screen a
+  fixed-size global burst-rate budget separately from active/queued capacity.
+  Retain trusted local identity, bounded state, monotonic refill and explicit
+  retry behavior; do not import Oxi's soft client-map cap or forwarding headers.
 - Qualify recovery under load, allocation failure and backend loss without restart
   loops, silent profile changes, state corruption or automatic cloud fallback.
   Extend the bounded restore-count and unchanged-workspace regressions to these
@@ -366,6 +376,12 @@ References: [selection contract](docs/hardware-profiles.md),
 
 - Freeze artifact/runtime/compiler/format/shape/ISA and numerical contracts, then
   use CI hotspot, bandwidth, packing and dispatch evidence to select optimizations.
+- Screen [shared-slice row parallelism](docs/oxibonsai-reuse.md#additional-optimization-and-data-structure-review)
+  in Prism's actual Swift prepared-projection path: serial control versus two
+  small worker budgets on three real shapes, sharing immutable packed weights
+  and prepared Q8 activations. Keep each row's arithmetic and transactional
+  failures exact, bound task sizes/scratch and include cancellation, threadpool
+  overhead and whole-request CI cost. Avoid copied per-task weight matrices.
 - Complete full-model and memory qualification of baseline NEON PQ2, odd-group
   PQ2 and PTQ1. Retain scalar forcing, bounded loads/quantization, ordered scales,
   malformed-input rejection and actual-backend diagnostics; qualify the single
