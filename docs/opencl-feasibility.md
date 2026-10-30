@@ -45,7 +45,7 @@ contracts.
 
 ## Retained X2 information-query evidence
 
-The [2026-10-29 access receipt](opencl-x2-access-evidence.json) binds the tested maintenance
+The [2026-10-29 access receipt](evidence/opencl-x2-access-evidence.json) binds the tested maintenance
 executable hash and separates two model-free observations on this native Snapdragon X2 Elite Extreme
 X2E94100:
 
@@ -71,7 +71,7 @@ device execution.
 ## Immutable public source audit
 
 The audit uses Runner's existing C++ runtime revision `73bfe6cc485554822f80c473a3c0c4f25e80f41b` in
-`PrismML-Eng/llama.cpp`. The retained [source identities](opencl-source-identities.json) bind all
+`PrismML-Eng/llama.cpp`. The retained [source identities](evidence/opencl-source-identities.json) bind all
 three reviewed files to their byte counts and SHA-256. No source is executed or copied into the
 application.
 
@@ -84,7 +84,7 @@ application.
 The [exact published
 release](https://github.com/PrismML-Eng/llama.cpp/releases/tag/prism-b10787-73bfe6c) asset metadata
 checked on 2026-10-29 contains no Windows ARM64 OpenCL bundle; its Windows ARM64 bundles are CPU and
-CUDA. The retained [asset snapshot](opencl-release-assets.json) records their public names, sizes
+CUDA. The retained [asset snapshot](evidence/opencl-release-assets.json) records their public names, sizes
 and reported digests without downloading them. Release metadata is an observation, not an immutable
 execution or publisher-trust receipt. The shipped runtime remains the CPU archive in
 `config/swift-assessment.lock.json`. The [next Prism pilot](../PLAN.md#adreno-vulkan) is one real

@@ -64,7 +64,9 @@ does not establish actual-model quality, speed, isolation or sustained comfort.
 
 ## Evidence files
 
-JSON receipts, patches and SVGs beside these pages are retained source/evidence
-artifacts. Their owning pages explain scope and reproduction; file presence is
-not a qualification verdict. New prose belongs in the topic that owns its contract;
-link to shared requirements rather than copying them, and put new work in PLAN.
+Retained JSON receipts live in [evidence/](evidence/), runtime candidate manifests
+and patches in [runtime-candidates/](runtime-candidates/README.md), and SVGs in
+[assets/](assets/). Their owning pages explain scope and reproduction; file
+presence is not a qualification verdict. New prose belongs in the topic that owns
+its contract; link to shared requirements rather than copying them, and put new
+work in PLAN.

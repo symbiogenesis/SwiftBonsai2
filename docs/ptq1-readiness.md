@@ -32,7 +32,7 @@ token IDs cannot override a logits/state failure.
 
 | Retained evidence | Result and limit |
 | --- | --- |
-| Rust **0.1.6**, no adapter, automatic ARM64, supplied `[248045, 872, 198]` | All **483 files / 118,611,456 logits/live-state values** match native bytes; max absolute error zero. Greedy IDs `[198, 198, 220]` match. [Repair receipt](ptq1-arithmetic-evidence.json) binds source/checker/reference/comparison/supervision hashes and earlier failures, including 430,526 out-of-tolerance one-token values. |
+| Rust **0.1.6**, no adapter, automatic ARM64, supplied `[248045, 872, 198]` | All **483 files / 118,611,456 logits/live-state values** match native bytes; max absolute error zero. Greedy IDs `[198, 198, 220]` match. [Repair receipt](evidence/ptq1-arithmetic-evidence.json) binds source/checker/reference/comparison/supervision hashes and earlier failures, including 430,526 out-of-tolerance one-token values. |
 | Q8_0 repair | Matches pinned DLL scale `maximum * rounded-binary32(1/127)` and inverse `127/maximum`; resolves halfway-code divergence first localized to block 13 FFN down. Generic/PQ2 preparation is unchanged. |
 | Offline comparator | Reconstructs every KV/convolution/recurrent value from original hash-bound serialized native state; exact inventory and finite values required. Both historical failure controls were reproduced exactly first. |
 | Diagnostic resource envelope | **12 GiB admission / 8 GiB Job / 4 GiB reserve**; peak commit 6,275,977,216 bytes (5.845 GiB), minimum available physical 8,027,590,656 (7.476 GiB). Direct Rust supervision retains caller lifetime, artifact verification, output cap and deadline. Three tokens do not qualify service admission; Job commit excludes mapped weights/total RAM. |
