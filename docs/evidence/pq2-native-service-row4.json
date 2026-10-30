@@ -1,0 +1,254 @@
+{
+  "schemaVersion": 1,
+  "kind": "published-native-pq2-approved-adapter-configured-four-row-service-smoke",
+  "status": "bounded-service-case-passed-ci-conclusion-unconfirmed",
+  "recordedAtUtc": "2026-10-30T17:57:58.082783+00:00",
+  "scope": "One scale-1.3 stream through the required-sandbox broker/service case with four row workers configured. No independent worker-dispatch measurement, GUI execution, application TPS, quality, full context/output, daily-service or default qualification.",
+  "execution": {
+    "runId": "41100373698",
+    "runAttempt": 1,
+    "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41100373698",
+    "runnerRevision": "4baf6c2736823d3cc78b13b3ddb65471b6102949",
+    "workflow": ".github/workflows/native-runtime-acceptance.yml",
+    "profile": "pq2-adapter-row4",
+    "case": "pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget",
+    "runApiStatusObserved": "queued",
+    "runApiConclusionObserved": null,
+    "jobApiSnapshots": [
+      {
+        "id": 124217879858,
+        "name": "prepare",
+        "status": "completed",
+        "conclusion": "success",
+        "runnerName": "GitHub Actions 1000015616"
+      },
+      {
+        "id": 124219203273,
+        "name": "acceptance",
+        "status": "queued",
+        "conclusion": null,
+        "runnerName": null
+      }
+    ],
+    "overallCiGreenClaimed": false,
+    "timing": {
+      "correctOriginalStartedAtUtc": "2026-10-30T17:51:11.8117805Z",
+      "finishedAtUtc": "2026-10-30T17:54:52.3910273Z",
+      "totalOwnerSecondsQpc": 220.58,
+      "originalQpcStartTickUsedByBothPhases": 686122674265,
+      "workDeadlineSeconds": 270,
+      "cleanupReserveSeconds": 30,
+      "wholeOwnerMaximumSeconds": 300,
+      "originalStartThroughFinishWallSeconds": 220.5792468,
+      "rootCleanupConfirmedAtUtc": "2026-10-30T17:55:40.5586404Z",
+      "originalStartThroughRootCleanupConfirmationWallSeconds": 268.7468599,
+      "rawContinuationStartedAtUtcIncorrect": "2026-10-30T22:51:11.0000000Z",
+      "timestampCorrection": "Continuation raw StartedAtUtc parsed a culture-formatted timestamp as local time. The original raw receipt UTC is authoritative. Both phases used original QPC tick 686122674265; no deadline reset occurred.",
+      "rawReceiptsPreservedUnmodified": true,
+      "deadlineReset": false,
+      "initialSetupFailure": "Hidden .runner Get-Item without -Force failed during registration before model execution; root removed that registration and continued after the focused helper correction using the original QPC origin.",
+      "continuationHelperSha256": "93430c32500dac4df51401ba8c7751e3fc7cdb6f943a14a3db8219fbce69c6ea",
+      "wrapperAcceptancePassed": false,
+      "wrapperResultExplanation": "Model receipt passed and listener exited 0. Wrapper AcceptancePassed remained false because required GitHub job conclusion and runner identity were unavailable from inconsistent API metadata."
+    },
+    "host": {
+      "cpu": "Snapdragon(R) X2 Elite Extreme - X2E94100 - Qualcomm Oryon(TM) CPU",
+      "os": "Microsoft Windows NT 10.0.26300.0",
+      "architecture": "Arm64"
+    }
+  },
+  "runtime": {
+    "release": "v0.1.9",
+    "sourceRevision": "7aca2251f09acb345d4afb53d5ce411f81017745",
+    "archive": {
+      "bytes": 3190688,
+      "filename": "prism-inference-0.1.9-aarch64-pc-windows-msvc.zip",
+      "sha256": "a776891d7a07ffa76bf6a733e57dd8c659249572026c7429ff1980af8cc2d56f",
+      "url": "https://github.com/symbiogenesis/prism-inference/releases/download/v0.1.9/prism-inference-0.1.9-aarch64-pc-windows-msvc.zip"
+    },
+    "server": {
+      "bytes": 2052608,
+      "name": "prism-inference-server.exe",
+      "sha256": "b9f5e83b1ef3b57adc259b7d248cabc24c588d394190ced6261c8b34a8d35e97"
+    }
+  },
+  "profile": {
+    "weightRepresentation": "PQ2_0",
+    "modelBytes": 7206168928,
+    "modelSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+    "adapterBytes": 9682464,
+    "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42",
+    "adapterScale": 1.3,
+    "configuredNativeRowWorkers": 4,
+    "rowWorkerCountIndependentlyObserved": false
+  },
+  "result": {
+    "phase": "completed",
+    "passed": true,
+    "verifiedReadinessObserved": true,
+    "requestedCompletionCap": 4,
+    "requiredStreams": 1,
+    "streams": [
+      {
+        "finishReason": "stop",
+        "phase": "required-scale-1.3-stream",
+        "reportedCompletionTokens": 1,
+        "requestedCompletionCap": 4,
+        "requestedScale": 1.3,
+        "requestedScaleF64Bits": "3ff4cccccccccccd",
+        "visibleContentBytes": 3
+      }
+    ],
+    "initialCleanup": {
+      "completedOperations": 1,
+      "exit": "shutdown",
+      "failedOperations": 0,
+      "listenerReleased": true,
+      "ownedJobEmpty": true
+    },
+    "acceptanceProcessExitCode": 0,
+    "aggregateModelCaseBudgetExpired": false,
+    "optionalZeroInvalidAndReuseControlsRun": false
+  },
+  "containment": {
+    "requiredNativeSandbox": true,
+    "weakenedForAttempt": false,
+    "limitsChangedByThisReceipt": false,
+    "defaultsChangedByThisReceipt": false,
+    "registeredRunnerCountAfterCleanup": 0,
+    "allThreeRunnerCredentialFilesAbsent": true,
+    "remainingOwnedProcessIds": [],
+    "listenerExitCode": 0,
+    "cleanupComplete": true,
+    "cleanupProvenance": "Retained fixed owner cleanup receipts and later root confirmation; no new process/model execution by this evidence collector."
+  },
+  "hostedPreparation": {
+    "SchemaVersion": 1,
+    "Revision": "4baf6c2736823d3cc78b13b3ddb65471b6102949",
+    "RunId": "41100373698",
+    "RunAttempt": "1",
+    "Toolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+    "CompilerIdentity": "rustc 1.101.0-nightly (1a2c4797e 2026-10-21)\nbinary: rustc\ncommit-hash: 1a2c4797ef2570bd76ca5dee34449169bc7dc457\ncommit-date: 2026-10-21\nhost: aarch64-pc-windows-msvc\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4",
+    "ToolsSourceId": "16cf0da5bed1bb74c5e0ddfe3ff89d249c313153fde824e4d23aa82b810839e5",
+    "Files": [
+      {
+        "Name": "native-model-acceptance.exe",
+        "Bytes": 2611200,
+        "Sha256": "8ca90b18e32113d45fb8ed3d6e15d79fefeaa31406cc79a34ce87c55fde617af"
+      },
+      {
+        "Name": "bonsai-tools.exe",
+        "Bytes": 3174400,
+        "Sha256": "948ee7c42e354f2d02ab6567f7097c2c22229db6ead4ae1129375e4901fe6414"
+      }
+    ],
+    "ModelExecuted": false
+  },
+  "sourceBindings": [
+    {
+      "path": "config/prism-inference.lock.json",
+      "gitBlobSha1": "a3481ca1f294f47b9ad33de444f11fb66db1c9ce",
+      "bytes": 2359,
+      "sha256": "a68e5b19c2b848f95c6ccfdcb253578e1398643ef5a33da3f774336f1cf81918"
+    },
+    {
+      "path": "config/runtime.lock.json",
+      "gitBlobSha1": "d54d7704b31d56b350fbc97ff9b87c99726c3fe4",
+      "bytes": 2098,
+      "sha256": "f78e2125bdacfb2d1fa4a10e90624ec569241e7f1d7ac9a48d76e5080a8a12ac"
+    },
+    {
+      "path": "config/swift-lora.lock.json",
+      "gitBlobSha1": "a3485ee2111c6c8b4ee3732dbba22af2f3739890",
+      "bytes": 2768,
+      "sha256": "bb1d8bfb113475397e5f20defb2a945baf83296658e9021415a90f5deef5253c"
+    },
+    {
+      "path": "config/swift.metadata.json",
+      "gitBlobSha1": "f2c0a4bd9c48bcf489799f5fef1fa665932b4f2a",
+      "bytes": 4325,
+      "sha256": "a578215e6217c685d8cdff3d4c0025bafe0172152ce7ff205c212599545445d7"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 12998149215,
+      "name": "native-runtime-acceptance-41100373698-1",
+      "bytes": 4375,
+      "sha256": "887785e6eb3cb2f2eccb6026baf900ab632caf239b1659a088974273c0c5987b",
+      "apiDigestIndependentlyVerified": true
+    },
+    {
+      "id": 12999037473,
+      "name": "native-runtime-startup-diagnostics-41100373698-1",
+      "bytes": 872,
+      "sha256": "0601ad03be7c25dde9880f57bd8aa205e78b2e4af11777c92ee83464463ed822",
+      "apiDigestIndependentlyVerified": true
+    },
+    {
+      "id": 12997957491,
+      "name": "native-acceptance-bin-41100373698-1",
+      "bytes": 2559685,
+      "sha256": "ffa00f34068fe16f6f2fc446a12bb2810dda59a048b361b381a36470014d2442",
+      "apiDigestIndependentlyVerified": true
+    }
+  ],
+  "diagnostics": {
+    "classification": "bounded-sanitized-logs-retained",
+    "publishedFiles": [
+      {
+        "Name": "startup-backend.stdout.txt",
+        "Bytes": 26,
+        "Sha256": "3fd3f5e62afac60156fe648a5cac1b58c8be90f7fd7fb828dc2f3096b891e883"
+      },
+      {
+        "Name": "startup-backend.stderr.txt",
+        "Bytes": 26,
+        "Sha256": "3fd3f5e62afac60156fe648a5cac1b58c8be90f7fd7fb828dc2f3096b891e883"
+      }
+    ],
+    "actualBackendPayloadBytesInSanitizedLogs": 0,
+    "privateCredentialDirectoryOrListenerLogsIncluded": false
+  },
+  "qualification": {
+    "boundedServiceCasePassed": true,
+    "fullPtq1ReleaseQualityApproved": false,
+    "fullPq2DailyProfileQualified": false,
+    "applicationFourWorkerSpeedQualified": false,
+    "authoringBasisQualified": false,
+    "qualityQualified": false,
+    "performanceQualified": false,
+    "fullContextQualified": false,
+    "fullOutputQualified": false,
+    "dailyServiceIsolationQualified": false,
+    "defaultRuntimeQualified": false,
+    "defaultMayChange": false,
+    "defaultRowWorkers": 1,
+    "independentGatesNotRun": [
+      "multi-scale-and-signed-zero",
+      "invalid-scale-and-reuse",
+      "context-rejection-and-reuse",
+      "fresh-owner-restart",
+      "supplied-history",
+      "extended-history",
+      "stalled-consumer",
+      "full-context-and-output",
+      "performance-and-TPS",
+      "creative-quality",
+      "daily-service-isolation"
+    ],
+    "historicalEvidenceModified": false,
+    "earlierServiceHistory": "docs/evidence/ptq1-native-service.json",
+    "sourceCheckerTimingOnly": "docs/evidence/row-parallel-smoke.json"
+  },
+  "durableArchive": {
+    "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\native-pq2-row4-service-20261030\\attempt-41100373698",
+    "manifest": "manifest.json",
+    "manifestBytes": 7534,
+    "manifestSha256": "7231559e5bba962c959f1eaf20296ef88e55edd555f7071a9056c69a2b00ff15",
+    "fileCountExcludingManifest": 45,
+    "retainedBytesExcludingManifest": 8481109,
+    "allCopyAndManifestDigestsVerified": true,
+    "credentialsModelWeightsPrivateListenerLogsIncluded": false
+  }
+}
