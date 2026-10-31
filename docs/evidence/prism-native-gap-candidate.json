@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "kind": "unreleased-prism-native-parity-source-candidates",
+  "recordedDate": "2026-10-31",
+  "status": "source-implemented-hosted-and-model-qualification-pending",
+  "scope": "Source implementation and focused model-free controls only; no released-byte integration, model parity, performance or default-runtime qualification.",
+  "prism": {
+    "repository": "symbiogenesis/prism-inference",
+    "baseRevision": "527d1432170ee78b258d489805b11f798121267f",
+    "candidateBranch": "codex/prism-runtime-integrate-1031",
+    "candidateRevision": "7dfcf2de132a1ab0243f6f719c7186bbc2c6f291",
+    "changes": [
+      {
+        "commit": "159952b994661b9faa3185b64c23a8ddcf1895ac",
+        "behavior": "Complete GGUF range verification through safe bounded SHA-256 streams, audited Windows CNG ownership and portable Rust fallback. Existing file handle, cursor restoration and byte identity remain required.",
+        "focusedPassed": [
+          "Native empty, abc, multiblock and million-a SHA-256 vectors",
+          "Read failure and checkpoint cancellation never return partial hashes",
+          "No-report GGUF complete-file final-byte corruption rejection",
+          "Strict Release native-hash all-targets Clippy"
+        ],
+        "pending": [
+          "Default-report GGUF consumer execution",
+          "Complete stream regression execution on Windows ARM64/x64 and portable Linux",
+          "New hash crate registry delivery before future GGUF publication",
+          "Reviewed release bytes and actual-model startup measurement"
+        ]
+      },
+      {
+        "commit": "c00136c4625017858424e52cf2b7544de9bb27e0",
+        "reviewFollowupCommit": "adfeb035c285b7533cda4df93d8ffa406e244f2d",
+        "behavior": "Explicit latest-live-prefix private-service reuse at bit-identical adapter scale. Scale changes reset provenance; mismatched histories recompute; default remains reset-every-request without extra prefix snapshots.",
+        "pending": [
+          "Hosted graph tests comparing complete sampled logits, complete state and fresh recomputation",
+          "Hosted cancellation/failure replay, signed-zero and change-back, parser/readiness controls",
+          "Actual SwiftSession and private-service model lifecycle parity",
+          "Released worker/service and Runner integration before application selection",
+          "Paired target-device latency, memory and quality qualification"
+        ]
+      }
+    ],
+    "hostedWorkflow": ".github/workflows/swift-parity-candidate.yml",
+    "hostedResults": "pending"
+  },
+  "runner": {
+    "candidateBranch": "codex/prism-default-integrate-1031",
+    "promotionPolicyCommit": "d41db8b5c44c7a439b559ab4dc17f2b87ac85b70",
+    "adapterLifecycleCommit": "49e56036a8f1ac591f9a1d633184eb69d8e84df0",
+    "hostedWorkflow": ".github/workflows/runtime-parity-candidate.yml",
+    "profile": "pq2-adapter-lifecycle-row4",
+    "requiredSequence": ["scale-1.3", "scale-zero", "invalid-scale-http-400", "scale-1.3-supplied-history", "owned-cleanup"],
+    "missingRequiredSteps": "pending-and-case-fails-after-cleanup",
+    "promotionIdentities": ["nativeRowWorkers", "servingStatePolicy"],
+    "focusedPassed": ["Rust formatting", "Whitespace validation", "Acceptance workflow PowerShell syntax"],
+    "pending": ["Hosted owning Rust tests and analyzers", "PowerShell-to-Rust promotion handoff", "Actual-model adapter lifecycle execution"]
+  },
+  "localDiagnosticAccounting": {
+    "ownerLimitSeconds": 300,
+    "runnerFocusedBuildSeconds": 40.251646,
+    "acceptanceConservativeSecondsIncludingCleanup": 60,
+    "hashConservativeSecondsIncludingCleanup": 30,
+    "reuseCompileAttemptSeconds": 47.64,
+    "note": "Separate compile/test allowances include owned cleanup; bounded owning builds stopped during dependency work. No retry matrix, complete local suite, model run or benchmark was executed. Formatting and source review do not substitute for pending owning tests."
+  },
+  "defaultRuntimeChanged": false,
+  "runtimeLockChanged": false,
+  "promotionReady": false
+}

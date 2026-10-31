@@ -283,6 +283,27 @@ Swift PQ2 standard profile with Rust Prism while retaining its pinned LoRA at sc
 It reads the compiled release/model/adapter/template locks and requires an explicit full
 Runner revision. PTQ1 is evaluated separately.
 
+### Unreleased parity candidates
+
+The [source candidate record](evidence/prism-native-gap-candidate.json) binds two
+upstream changes awaiting hosted consumer checks and released-byte integration:
+Windows CNG GGUF verification and explicit private-service `--prompt-reuse latest`.
+The hash path still verifies every selected byte through the existing handle.
+The reuse candidate retains only latest committed live state at identical adapter
+scale bits, recomputes mismatched histories and preserves transactional rollback.
+It adds no saved-prefix cache. Omitted reuse selection retains per-request reset;
+opt-in service readiness advertises `prompt_reuse: "latest"` separately.
+
+Focused native hash vectors, cancellation/read failures and final-byte corruption
+controls pass locally. Owning runtime/session/server and default-report GGUF
+execution remain pending after bounded local compilation. Hosted candidate jobs
+exercise the graph, full sampled logits, state, worker protocol and platform hash
+paths without weights. These are source checks; Runner still pins 0.1.9 and does
+not expose the unreleased reuse option. No load-time or generation-speed gain is
+established. The explicit adapter lifecycle workload in
+[validation](validation.md#actual-model-application-acceptance) also remains pending
+actual-device evidence. None of these candidates satisfies default promotion.
+
 ### Inspect the policy
 
 ```powershell

@@ -48,6 +48,10 @@ Rust runtime still performs a separate software SHA-256 pass over model weights;
 optimize that upstream and review a verified release before claiming its delay is
 removed. End-to-end startup gains remain pending within the owner-device budget;
 performance comparisons and complete checks remain in owning CI.
+Review and run hosted consumer checks for the native CNG hashing source candidate
+recorded in [candidate evidence](docs/evidence/prism-native-gap-candidate.json),
+then qualify exact released bytes before updating Runner's runtime pin. The new
+publishable hash dependency also needs registry delivery before GGUF publication.
 Run the owning Windows ARM64 startup-cache and artifact hash-stream regressions
 and Release analyzers in hosted CI. Native CNG known vectors pass locally and the
 updated maintenance bootstrap is published; the bounded local checks stopped
@@ -178,6 +182,14 @@ promotion](docs/native-rust-engine.md#default-runtime-promotion) retains the sta
 adapter at scale 1.3, binds independent gates to exact source, release and app
 identities and leaves missing evidence pending.
 
+Review the [source candidates](docs/evidence/prism-native-gap-candidate.json) with
+hosted native Windows ARM64/x64 and portable checks before release integration.
+Qualify the explicit original-PQ2 `pq2-adapter-lifecycle-row4` workload under the
+single aggregate owner allowance: scale 1.3, scale zero, invalid-scale rejection,
+then scale 1.3 with supplied history and owned cleanup. Partial or skipped required
+steps remain pending. Keep promotion evidence separate for one versus four workers
+and retain the reset-every-request serving policy until reuse is qualified.
+
 - Release the reviewed Windows read-consumer helper API through the registry,
   replace Prism server's exact Git dependency with that reviewed registry release,
   and validate packaging before re-enabling server crate publication. Preserve
@@ -229,7 +241,10 @@ identities and leaves missing evidence pending.
   audit](docs/native-rust-engine.md#bounded-parallel-row-qualification). Require
   fresh-recompute parity, switched/edited histories, cancellation/rollback,
   scale-change/change-back and fault/explicit-reset recovery before changing that
-  serving contract. Start with immutable KV pages, exact suffix replay
+  serving contract. The explicit `--prompt-reuse latest` source candidate needs
+  hosted complete-logits/state replay and actual-model private-service checks;
+  no extra retained prefix snapshots or application selection are qualified.
+  Start with immutable KV pages, exact suffix replay
   and simple lookup and eviction before radix trees or sparse placement. Resolve total
   versus incremental accounting: two 149.625 MiB recurrent/convolution snapshots already
   cost **299.25 MiB before KV/metadata**, exceeding a 256 MiB total cache. Keep that
