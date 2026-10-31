@@ -5,6 +5,9 @@ on:
     paths:
       - .github/workflows/hexagon-public-qaic.yml
       - tools/hexagon/public_qaic_oracle.py
+      - tools/hexagon/public_qaic_wire.py
+      - tools/hexagon/public_qaic_wire.c
+      - tools/hexagon/public-qaic-wire.expected.json
       - tools/hexagon/public-qaic.lock.json
   workflow_dispatch:
 permissions:

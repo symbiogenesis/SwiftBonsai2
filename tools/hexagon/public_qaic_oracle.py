@@ -18,6 +18,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from public_qaic_wire import capture_wire, record_ghc_runtime
+
 
 def digest(path):
     with path.open("rb") as source:
@@ -87,7 +89,7 @@ def ordinary_tree(root):
 def receive(entry, directory):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", entry["name"]):
         raise ValueError("invalid public source filename")
-    if not entry["url"].startswith("https://raw.githubusercontent.com/") or not 0 < entry["bytes"] <= 65536:
+    if not entry["url"].startswith("https://raw.githubusercontent.com/") or not 0 < entry["bytes"] <= 65625:
         raise ValueError("invalid bounded public source download")
     with urllib.request.urlopen(entry["url"], timeout=30) as response:
         if not response.geturl().startswith("https://raw.githubusercontent.com/"):
@@ -145,6 +147,9 @@ def run(args):
                     "ACTIONS_ID_TOKEN_REQUEST_URL", "GHC_PACKAGE_PATH", "GHC_ENVIRONMENT", "GHC_OPTIONS",
                     "CABAL_CONFIG", "CABAL_DIR", "CABAL_BUILDDIR"}:
             env.pop(name, None)
+        if name in {"LD_PRELOAD", "LD_LIBRARY_PATH", "GCC_EXEC_PREFIX", "COMPILER_PATH", "LIBRARY_PATH",
+                    "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "CFLAGS", "CPPFLAGS", "LDFLAGS"}:
+            env.pop(name, None)
     cabal_dir = args.output / "cabal"
     cabal_dir.mkdir()
     config = cabal_dir / "config"
@@ -163,6 +168,7 @@ def run(args):
         "idlGenerationAttempted": False, "idlGenerationCompleted": False,
         "hackageIndexState": pin["hackageIndexState"], "sourceFiles": [], "publicInputs": [],
         "toolchain": {}, "dependencyResolution": [], "generatedFiles": [], "commands": control.commands,
+        "wireCapture": None,
         "sdkExecutableUsed": False, "sdkImportsUsed": False,
         "sdkQaicEquivalenceQualified": False, "sdkImportEquivalenceQualified": False,
         "deviceCodeLoaded": False, "deviceInvocationAuthorized": False, "profileEligible": False,
@@ -193,7 +199,7 @@ def run(args):
             full_source.append(item)
         write_json(review / "qaic-source-files.json", full_source)
         shutil.copyfile(args.source / "LICENSE.txt", inputs / "LICENSE-QAIC.txt")
-        for name in ("CStub.c", "Stub.c"):
+        for name in ("CStub.c", "Stub.c", "Env.c", "Allocator.c", "Slim.c"):
             shutil.copyfile(args.source / "src/Language/SO" / name, inputs / ("QAIC-template-" + name))
         for entry in pin["publicInputs"]:
             report["publicInputs"].append(receive(entry, inputs))
@@ -209,6 +215,7 @@ def run(args):
                                "setupAction": pin["setupAction"]}
         control.run("ghc-info", [str(ghc), "--info"], args.output)
         control.run("ghc-package-db", ["ghc-pkg", "dump"], args.output)
+        report["toolchain"]["selectedGhcRuntime"] = record_ghc_runtime(ghc, control, args.output, identity)
         source = args.source / "src"
         helper = source / "file2hs"
         project = f"packages: .\nindex-state: {pin['hackageIndexState']}\nactive-repositories: hackage.haskell.org\n"
@@ -223,10 +230,18 @@ def run(args):
             freeze = directory / "cabal.project.freeze"
             if not freeze.is_file() or freeze.stat().st_size > 65536:
                 raise ValueError("Cabal omitted its bounded exact dependency freeze")
+            selected = pin["dependencyFreezePins"][name]
+            if freeze.stat().st_size != selected["bytes"] or digest(freeze) != selected["sha256"]:
+                raise ValueError("resolved dependency freeze differs from the reviewed first source control")
             shutil.copyfile(freeze, review / (name + "-before-build.freeze"))
         report["stage"] = "source-generator-build"
         control.run("upstream-make", pin["buildArguments"], args.source, seconds=420)
         report["dependencyResolution"] = retain_project(helper, "file2hs", review) + retain_project(source, "qaic", review)
+        plan = json.loads((source / "dist-newstyle/cache/plan.json").read_bytes())
+        external = [item for item in plan["install-plan"] if item.get("pkg-src", {}).get("type") == "repo-tar"]
+        if len(external) != 1 or any(external[0].get(name) != value for name, value in pin["externalPackagePin"].items()):
+            raise ValueError("external source dependency differs from the reviewed public source control")
+        report["externalPackage"] = pin["externalPackagePin"]
         for name, directory in (("file2hs", helper), ("qaic", source)):
             if digest(directory / "cabal.project.freeze") != digest(review / (name + "-before-build.freeze")):
                 raise ValueError("upstream build changed its preselected dependency freeze")
@@ -262,13 +277,15 @@ def run(args):
             shutil.copyfile(path, retained / path.name)
         notices = ("Independent public-source QAIC output only.\n"
                    "QAIC compiler/templates: BSD-3-Clause-Clear; preserve LICENSE-QAIC.txt and template notices.\n"
-                   "Public FastRPC IDL imports: BSD-3-Clause; preserve LICENSE-FastRPC.txt and original IDL notices.\n"
+                   "Public FastRPC IDL imports/runtime headers: BSD-3-Clause; preserve LICENSE-FastRPC.txt and original notices.\n"
                    "Target htp_iface.idl: llama.cpp MIT; preserve LICENSE-llama.cpp.txt and original input.\n"
                    "SDK6.7 generator/import equivalence and device invocation remain unqualified.\n")
         (review / "NOTICES.txt").write_text(notices, encoding="utf-8")
         report["stage"] = "independent-public-generation-complete"
         report["outcome"] = "generated-independent-oracle-only"
+        capture_wire(pin, report, control, args.output, generated, review, receive, identity)
     except Exception as error:
+        report["outcome"] = "failed"
         report["failureClass"] = type(error).__name__
         report["failure"] = str(error)[:512]
         raise

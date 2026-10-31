@@ -19,3 +19,7 @@ docs/evidence/hexagon-sdk-inventory-41168872514/host.json whitespace=cr-at-eol
 
 # Preserve captured source/log bytes, including original observation whitespace.
 docs/evidence/hexagon-public-qaic-41169481882/** -text -whitespace
+
+# Keep public mock source/expectation pins stable across Windows and hosted Linux.
+tools/hexagon/public_qaic_wire.c text eol=lf
+tools/hexagon/public-qaic-wire.expected.json text eol=lf
