@@ -50,6 +50,7 @@ implemented behavior from actual-model, device, quality and isolation acceptance
 | [CPU kernels and X2 screen](cpu-kernels.md) | Packed arithmetic, ISA dispatch, thread-screen controls and device evidence |
 | [Adreno and OpenCL](adreno.md) | Vulkan/compute access, placement, native OpenCL query, X2 observations and source audit |
 | [Hexagon](hexagon.md) | Signed deployment, packed execution/state, memory and failure contracts |
+| [Hexagon sources and evidence](hexagon-source-audit.md) | Pinned packages, prototype placement, X2 access, signed Q2 arithmetic and SDK/public wire provenance |
 | [Inference algorithms](inference-algorithms.md) | LUT/prefill/GDN, attention, hybrid cache and speculation constraints |
 | [Inference defaults](inference-defaults.md) | Sampler/thinking/output settings, prompt harness and quality limits |
 | [Performance and speech](performance-expectations.md) | Publisher benchmark context, paired speech results and latency/memory/energy measurement |

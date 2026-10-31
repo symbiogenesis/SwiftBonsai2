@@ -3,7 +3,7 @@
 //! The source prediction uses QAIC a66a0019fb488abae955bbc9b3a9de3dc15962d0,
 //! public FastRPC imports a56e9d4de3614a8d8f4b0e15ff561350c4b686e3 and HTP IDL
 //! 19cce6919992fdffd92e0ac152caaf1e2b8f254e. See `public-qaic.lock.json` and
-//! `docs/hexagon-signed-q2-candidate.md` for their distinct provenance boundaries.
+//! `docs/hexagon-source-audit.md` for their distinct provenance boundaries.
 //!
 //! This only encodes public-control bytes. It has no FFI, driver, SDK, queue,
 //! process-init or runtime integration and proves no signed-module compatibility.

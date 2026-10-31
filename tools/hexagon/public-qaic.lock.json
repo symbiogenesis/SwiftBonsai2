@@ -137,8 +137,8 @@
     "target": "x86_64-unknown-linux-gnu",
     "source": {
       "name": "public_idl_control.rs",
-      "bytes": 6049,
-      "sha256": "49cf427afc5e145c0f32aeb79a8bd2636fca8f5665c0f089a26b021ed7d119a4"
+      "bytes": 6042,
+      "sha256": "f4fe57638001868ebb9fe62b09dd08af1e23695ec469c5546205a4a6a75eeaa1"
     },
     "deviceInvocationAuthorized": false
   },

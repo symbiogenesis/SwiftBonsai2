@@ -5,7 +5,7 @@
   "admission": "disabled",
   "automaticSelection": false,
   "profileEligible": false,
-  "audit": "docs/hexagon-signed-q2-candidate.md",
+  "audit": "docs/hexagon-source-audit.md",
   "releaseAssetDownloaded": true,
   "releaseAssetExecuted": false,
   "candidate": {

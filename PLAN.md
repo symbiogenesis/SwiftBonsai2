@@ -555,7 +555,7 @@ Follow [Hexagon contracts](docs/hexagon.md).
   observed selected DSP bytes, mapping modes and teardown; neither identifies the
   complete device tuple. Verify DMA64 and effective VTCM against matching signed
   binaries. Trust/Secure Boot changes need a separate owner decision.
-- Qualify the separate [newer signed Q2 candidate](docs/hexagon-signed-q2-candidate.md)
+- Qualify the separate [newer signed Q2 candidate](docs/hexagon-source-audit.md#newer-signed-q2-candidate)
   before choosing a packed route. Its v0.10.0 archive, seventeen runtime files and
   five catalog members are [verified as data](docs/evidence/hexagon-signed-q2-package.json);
   its changed seven-argument start ABI, queue ownership, actual operation support
@@ -572,7 +572,7 @@ Follow [Hexagon contracts](docs/hexagon.md).
   process class or authorize OS trust changes. Preserve the independent STATIC512,
   default-open14 and old mutable-input guard observations without assigning causes.
   Bind generated QAIC host marshalling/wire controls to exact SDK/tool and imported
-  IDL identities under the [queue provenance gate](docs/hexagon-signed-q2-candidate.md#native-rust-computation-requires-another-reviewed-boundary).
+  IDL identities under the [queue provenance gate](docs/hexagon-source-audit.md#native-rust-computation-requires-another-reviewed-boundary).
   The [hosted SDK recipe review](docs/evidence/hexagon-sdk-inventory-41168872514/provenance.json)
   retains the host command template. The [third data review](docs/evidence/hexagon-sdk-functional-41171339745/provenance.json)
   observes matching normalized remote/AEEStdDef IDL tokens and selected queue
