@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::os::windows::process::CommandExt;
 use std::{
     fs::{File, OpenOptions},
-    io::{self, BufReader, Read, Write},
+    io::{self, BufRead, BufReader, Read, Write},
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command as ProcessCommand, Stdio},
@@ -876,9 +876,8 @@ fn exchange(
     drop(request);
     let mut body = HttpBody::new(connection)?;
     let mut sse = Sse::default();
-    let mut bytes = [0; READ_SIZE];
-    while let Some(count) = body.next(&mut bytes)? {
-        sse.push(&bytes[..count], &mut |text, reasoning| {
+    while let Some(bytes) = body.next_payload()? {
+        sse.push(bytes, &mut |text, reasoning| {
             if !text.is_empty() {
                 events.stream_until(Event::Text(text), commands, until)?;
             }
@@ -933,11 +932,12 @@ struct HttpBody<R> {
     total: usize,
     done: bool,
     chunk_ending: bool,
+    borrowed: usize,
 }
 
 impl<R: Read> HttpBody<R> {
     fn new(reader: R) -> Result<Self> {
-        let mut reader = BufReader::new(reader);
+        let mut reader = BufReader::with_capacity(READ_SIZE, reader);
         let mut head = Vec::new();
         while !head.ends_with(b"\r\n\r\n") {
             if head.len() == MAX_HEAD {
@@ -955,6 +955,7 @@ impl<R: Read> HttpBody<R> {
             total: 0,
             done: false,
             chunk_ending: false,
+            borrowed: 0,
         };
         if let Some((code, message)) = kind.rejection() {
             return Err(body.rejection(code, message)?);
@@ -975,12 +976,11 @@ impl<R: Read> HttpBody<R> {
         }
         let invalid = Failure::Message("The local model returned an unrecognized error reply.");
         let mut error = Vec::new();
-        let mut bytes = [0; READ_SIZE];
-        while let Some(count) = self.next(&mut bytes)? {
-            if count > MAX_ERROR_BODY - error.len() {
+        while let Some(bytes) = self.next_payload()? {
+            if bytes.len() > MAX_ERROR_BODY - error.len() {
                 return Err(invalid);
             }
-            error.extend_from_slice(&bytes[..count]);
+            error.extend_from_slice(bytes);
         }
         let envelope: Envelope = serde_json::from_slice(&error).map_err(|_| invalid)?;
         if envelope.error.code != code {
@@ -989,26 +989,45 @@ impl<R: Read> HttpBody<R> {
         Ok(Failure::Rejected(message))
     }
 
-    fn next(&mut self, bytes: &mut [u8; READ_SIZE]) -> Result<Option<usize>> {
+    // A payload borrows the reader's one buffer. Consume it on the next call,
+    // after every parser/sink borrow has ended, before touching HTTP metadata.
+    fn next_payload(&mut self) -> Result<Option<&[u8]>> {
+        self.reader.consume(self.borrowed);
+        self.borrowed = 0;
         if self.done {
             return Ok(None);
         }
-        match self.framing {
-            Framing::Length(length) => {
-                let count = READ_SIZE.min(length - self.total);
-                if count == 0 {
-                    self.done = true;
-                    return Ok(None);
-                }
-                let count = read_payload(&mut self.reader, &mut bytes[..count])?;
-                self.total += count;
-                Ok(Some(count))
+        let remaining = match self.framing {
+            Framing::Length(length) => length - self.total,
+            Framing::Chunked => {
+                self.prepare_chunk()?;
+                self.remaining
             }
-            Framing::Chunked => self.chunk(bytes),
+        };
+        if remaining == 0 {
+            self.done = true;
+            return Ok(None);
         }
+        // One successful fill releases its ready prefix immediately. Never wait
+        // for a full buffer, the declared payload, or trailing chunk framing.
+        // fill_buf leaves Interrupted visible to the cancellation boundary.
+        let available = self.reader.fill_buf().map_err(|_| {
+            Failure::Message("The connection to the model on this computer was interrupted before a complete reply was received.")
+        })?;
+        if available.is_empty() {
+            return Err(Failure::Message(LOCAL_CONNECTION_CLOSED));
+        }
+        let count = available.len().min(remaining);
+        self.total += count;
+        if matches!(self.framing, Framing::Chunked) {
+            self.remaining -= count;
+            self.chunk_ending = self.remaining == 0;
+        }
+        self.borrowed = count;
+        Ok(Some(&available[..count]))
     }
 
-    fn chunk(&mut self, bytes: &mut [u8; READ_SIZE]) -> Result<Option<usize>> {
+    fn prepare_chunk(&mut self) -> Result<()> {
         if self.remaining == 0 {
             if self.chunk_ending {
                 let mut ending = [0; 2];
@@ -1041,31 +1060,10 @@ impl<R: Read> HttpBody<R> {
                     return Err(Failure::Message("Response trailers are unsupported."));
                 }
                 self.done = true;
-                return Ok(None);
             }
         }
-        let count = READ_SIZE.min(self.remaining);
-        let count = read_payload(&mut self.reader, &mut bytes[..count])?;
-        self.remaining -= count;
-        self.total += count;
-        // Deliver ready payload before waiting for its trailing framing bytes.
-        // The next call must validate them before reading another size or EOF.
-        self.chunk_ending = self.remaining == 0;
-        Ok(Some(count))
+        Ok(())
     }
-}
-
-fn read_payload(reader: &mut impl Read, bytes: &mut [u8]) -> Result<usize> {
-    // One successful read releases its prefix immediately. read_exact here would
-    // hold a complete SSE event until the rest of an HTTP chunk arrived.
-    // Interrupted remains visible, preserving the cancellation contract below.
-    let count = reader.read(bytes).map_err(|_| {
-        Failure::Message("The connection to the model on this computer was interrupted before a complete reply was received.")
-    })?;
-    if count == 0 {
-        return Err(Failure::Message(LOCAL_CONNECTION_CLOSED));
-    }
-    Ok(count)
 }
 
 fn read_exact(reader: &mut impl Read, bytes: &mut [u8]) -> Result<()> {
@@ -1640,9 +1638,8 @@ mod tests {
         let mut sse = Sse::default();
         let mut text = String::new();
         let mut reasoning = String::new();
-        let mut bytes = [0; READ_SIZE];
-        while let Some(count) = body.next(&mut bytes)? {
-            sse.push(&bytes[..count], &mut |content, thought| {
+        while let Some(bytes) = body.next_payload()? {
+            sse.push(bytes, &mut |content, thought| {
                 text.push_str(&content);
                 reasoning.push_str(&thought);
                 Ok(())
@@ -1700,13 +1697,40 @@ mod tests {
                 wire.extend_from_slice(b"\r\n0\r\n\r\n");
             }
             let mut body = HttpBody::new(Fragmented(&wire))?;
-            let mut bytes = [0; READ_SIZE];
             let mut actual = Vec::new();
-            while let Some(count) = body.next(&mut bytes)? {
-                actual.extend_from_slice(&bytes[..count]);
+            while let Some(bytes) = body.next_payload()? {
+                actual.extend_from_slice(bytes);
             }
             assert_eq!(actual, expected);
-            assert_eq!(body.next(&mut bytes)?, None);
+            assert_eq!(body.next_payload()?, None);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn http_payload_lends_reader_storage_and_excludes_coalesced_framing() -> Result<(), Failure> {
+        for (framing, payload, offset) in [
+            ("Content-Length: 3\r\n\r\n", "abcdiscarded", 0),
+            (
+                "Transfer-Encoding: chunked\r\n\r\n",
+                "3\r\nabc\r\n2\r\nde\r\n0\r\n\r\ndiscarded",
+                3,
+            ),
+        ] {
+            let wire =
+                format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n{framing}{payload}");
+            let mut body = HttpBody::new(wire.as_bytes())?;
+            let expected = body.reader.buffer().as_ptr().wrapping_add(offset);
+            let bytes = body
+                .next_payload()?
+                .ok_or(Failure::Message("Buffered payload was not lent"))?;
+            assert_eq!(bytes, b"abc");
+            assert_eq!(bytes.as_ptr(), expected);
+            if offset != 0 {
+                assert_eq!(body.next_payload()?, Some(b"de".as_slice()));
+            }
+            assert_eq!(body.next_payload()?, None);
+            assert_eq!(body.next_payload()?, None);
         }
         Ok(())
     }
@@ -1733,18 +1757,19 @@ mod tests {
             wire.extend_from_slice(framing.as_bytes());
             wire.extend_from_slice(event);
             let mut body = HttpBody::new(ReadyPrefix(&wire))?;
-            let mut bytes = [0; READ_SIZE];
-            assert_eq!(body.next(&mut bytes)?, Some(event.len()));
-            assert_eq!(&bytes[..event.len()], event);
+            let bytes = body
+                .next_payload()?
+                .ok_or(Failure::Message("Ready payload was not lent"))?;
+            assert_eq!(bytes, event);
             let mut received = String::new();
-            Sse::default().push(&bytes[..event.len()], &mut |text, _| {
+            Sse::default().push(bytes, &mut |text, _| {
                 received.push_str(&text);
                 Ok(())
             })?;
             assert_eq!(received, "Ready");
             // The gate rejects a second underlying read. It was not needed to
             // publish the complete event, and the unfinished body cannot pass.
-            assert!(body.next(&mut bytes).is_err());
+            assert!(body.next_payload().is_err());
         }
         Ok(())
     }
@@ -1756,10 +1781,8 @@ mod tests {
             let mut wire = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc".to_vec();
             wire.extend_from_slice(ending);
             let mut body = HttpBody::new(ReadyPrefix(&wire))?;
-            let mut bytes = [0; READ_SIZE];
-            assert_eq!(body.next(&mut bytes)?, Some(3));
-            assert_eq!(&bytes[..3], b"abc");
-            assert!(body.next(&mut bytes).is_err());
+            assert_eq!(body.next_payload()?, Some(b"abc".as_slice()));
+            assert!(body.next_payload().is_err());
         }
         Ok(())
     }
@@ -1776,7 +1799,7 @@ mod tests {
         let head =
             b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 1\r\n\r\n";
         let mut body = HttpBody::new(head.as_slice().chain(Interrupted))?;
-        assert!(body.next(&mut [0; READ_SIZE]).is_err());
+        assert!(body.next_payload().is_err());
         for chunk in [
             "400001\r\n", // The declared payload exceeds the body budget.
             "1;extension\r\n",
@@ -1787,14 +1810,12 @@ mod tests {
                 "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n{chunk}"
             );
             let mut body = HttpBody::new(wire.as_bytes())?;
-            assert!(body.next(&mut [0; READ_SIZE]).is_err());
+            assert!(body.next_payload().is_err());
         }
         let wire = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n000000000000000000000000000001\r\nx\r\n0\r\n\r\n";
         let mut body = HttpBody::new(wire.as_slice())?;
-        let mut bytes = [0; READ_SIZE];
-        assert_eq!(body.next(&mut bytes)?, Some(1));
-        assert_eq!(bytes[0], b'x');
-        assert_eq!(body.next(&mut bytes)?, None);
+        assert_eq!(body.next_payload()?, Some(b"x".as_slice()));
+        assert_eq!(body.next_payload()?, None);
         Ok(())
     }
 
@@ -1803,9 +1824,8 @@ mod tests {
         let mut body = HttpBody::new(Fragmented(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nabc"))?;
         let mut received = Vec::new();
         loop {
-            let mut bytes = [0; READ_SIZE];
-            match body.next(&mut bytes) {
-                Ok(Some(count)) => received.extend_from_slice(&bytes[..count]),
+            match body.next_payload() {
+                Ok(Some(bytes)) => received.extend_from_slice(bytes),
                 Err(_) => break,
                 Ok(None) => return Err(Failure::Message("Truncated HTTP was accepted")),
             }
