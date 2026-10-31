@@ -24,6 +24,14 @@ revision 5916bf7c79dbb4e66fc059cdc507a79a23a28bb4.
 Copyright (c) 2023-2026 The omnivoice.cpp authors.
 MIT permission terms are retained in src/speech-tts/LICENSE.qwen-core.
 
+The Rust PTQ1 reference collector's ABI declarations and immutable controls use
+the pinned llama.cpp public headers at
+73bfe6cc485554822f80c473a3c0c4f25e80f41b from
+https://github.com/PrismML-Eng/llama.cpp.
+Copyright (c) 2023-2026 The ggml authors.
+The original MIT terms are retained in
+tools/native-reference/fixtures/LICENSE.llama-reference.
+
 The optional broker JSON comparison uses the published simd-json 0.19.0 crate:
 https://crates.io/crates/simd-json/0.19.0
 Upstream: https://github.com/simd-lite/simd-json

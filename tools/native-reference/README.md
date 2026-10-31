@@ -14,21 +14,43 @@ pending. A passing result covers only one Auto-requested token at scale 1.3.
 Backend requests do not provide operation-level dispatch counters. No default or
 admission change is authorized.
 
-The application and ordinary inference service remain Rust. The isolated native
-reference resolves the unchanged released DLL API without the CLI's shell dependency.
-It uses C++17 so function types and parameter structures come from the exact pinned
-public header. It compiles no inference implementation.
+The application, ordinary inference service and reference collector are Rust.
+The isolated collector resolves the unchanged released native DLL API without the
+CLI's shell dependency. Its private `repr(C)` declarations are bound to the exact
+pinned public header. Compile-time guards check all 62 field offsets, three sizes
+and alignments before any native structure return is read. The collector compiles
+no inference implementation; the reference DLL engine remains native.
+
+`fixtures/collector-abi-v1.txt` retains 369 independently captured native layout,
+type, enum, default/configured parameter and returned-aggregate observations.
+Adjacent provenance binds the exact headers, compiler, DLLs, original driver and
+license. Rust computes observations from its own declarations and the actual DLLs;
+expected records are not used to generate observations. The original C++ driver
+is removed. Seven focused tests retain success, every native failure phase,
+cleanup order, bounded output, create-new collisions and partial evidence.
+Returned native errors release acquired resources in order; an unexpected foreign
+exception aborts the isolated collector before damaged native state can be reused.
 
 `pins.json` binds native and Rust source archives and the native header. Capture
 tools must be built in hosted CI and delivered with `capture-tools.json`:
-`SchemaVersion: 1`, `RunnerRevision`, `NativeSource`, `RustSource`,
-`CollectorSourceSha256`, `Compiler`, `RustToolchain`, and exactly two `Files`
+`SchemaVersion: 2`, `RunnerRevision`, `NativeSource`, `RustSource`,
+`CollectorLanguage: rust`, `CollectorSourcePath`, `CollectorSourceSha256`,
+`AbiControlSha256`, `AbiProvenanceSha256`, `Compiler`, `RustToolchain`, and exactly two `Files`
 entries (`Name`, `Bytes`, lowercase `Sha256`) for `swift-ptq1-reference.exe` and
 `swift_model_check.exe`. The wrapper checks the current Runner revision, source
-pins, source digest, binary hashes/sizes and ARM64 PE architecture. Both binaries
+pins, Rust source/control digests, binary hashes/sizes and ARM64 PE architecture. Both binaries
 and their receipt are guarded during execution. There is no owner build fallback.
 Supply the separately hosted-prepared maintenance executable through `ToolPath`
 or `BONSAI_TOOLS_PATH`.
+
+Hosted preparation uses the pinned Rust compiler/LLD for the collector and its
+model-free tests; it no longer downloads native source headers or invokes a C++
+compiler for this tool. The native source pins remain provenance for the DLL ABI.
+Before owner model admission, both the original JSON ABI probe and the complete
+live 369-record observation set must match the frozen native control. Duplicate,
+missing, extra, changed or overflowing records reject the trial, as do changed
+expected control bytes after receipt validation. These checks share the existing
+240-second work allowance and do not replace the logits/state comparison.
 
 ```powershell
 ./scripts/Invoke-NativePtq1Numerics.ps1 -DataDirectory "$env:LOCALAPPDATA/SwiftBonsai2" -PlanOnly

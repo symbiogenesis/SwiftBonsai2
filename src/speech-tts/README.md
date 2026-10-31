@@ -180,11 +180,18 @@ token IDs, signed zero and exceptional floats. The duplicate header and native
 oracle are removed. A minimal generated declaration scaffold checks compilation;
 the full pinned probability pipeline still needs hosted owning-crate integration.
 
-Decode-window selection and rebuild decisions use pointer-free Rust exports.
-The native lifetime fixture invokes those actual exports and verifies every window,
-same-window reuse, fresh-request rewind, batch-width changes and allocation-failure
-recovery. GGML allocation/free and the graph vector remain native; that ownership
-control stays until the Rust execution path owns those resources.
+Rust owns one keyed decode workspace, its geometry, eviction and resource lifetime.
+A native builder transfers a completed graph to the Rust owner; replacement drops
+that owner before allocating another graph. An explicit compute lease prevents
+eviction or teardown while the native graph is active. The native lease guard
+synchronizes every exit before telling Rust that the borrow is complete. Pipeline
+teardown drops the cache before persistent KV/bridge/arena storage. Native GGML
+construction, compute and primitive release calls remain callback glue.
+The C++ lifetime fixture and dynamic test DLL compiler/loader are removed after
+tests of this production owner preserve every window, same-key reuse, fresh-request
+rewind, all batch-width pairs, partial allocation failure and final cleanup.
+Exact source identities and assertion mappings remain in
+`tests/fixtures/decode-graph-v1.provenance.json`.
 
 The source audit retains the probability pipeline, mel constants
 and resampler upstream. Top-k/top-p ordering and mel changes need separate
@@ -192,12 +199,12 @@ numerical evidence. Resampling is outside the current already-24-kHz reference
 path. Full-model speech output, quality and resource acceptance remain CI work
 under `PLAN.md`; bit parity alone makes no performance claim.
 
-The remaining checked-in C++ in Runner collects pinned native inference results
-or tests the native overlay. Prism's remaining native files are independent
-conformance bridges and C ABI checks; its serving runtime is already Rust.
-These controls are temporary under the [complete C++ retirement contract](../../docs/cpp-retirement.md).
-Each file needs independent replacement evidence and its operative build/control
-references removed. Replacing the speech inference cores requires separate model
+Runner's checked-in C++ controls are removed, with observations retained as data
+and ownership checks moved to the production Rust paths. Generated native glue,
+downloaded speech engines and native reference DLL execution remain under the
+[complete C++ retirement contract](../../docs/cpp-retirement.md). Prism's native
+conformance bridges and C ABI checks are separate pending families; its serving
+runtime is already Rust. Replacing speech inference cores still requires model
 and lifecycle qualification.
 
 ## Rust speech tokenizer

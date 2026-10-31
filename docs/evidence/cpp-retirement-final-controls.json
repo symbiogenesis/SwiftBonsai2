@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "scope": "final-checked-in-cpp-source-retirement; not complete native inference retirement",
+  "source_revision": "bbef0c6790db8031d92cedfcfddee179d0e7c3b7",
+  "target": "aarch64-pc-windows-msvc",
+  "rust_toolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+  "tracked_c_cpp_sources_and_headers": [],
+  "validation": {
+    "rust_harness": "Standalone offline Cargo harness includes exact production speech modules and standalone Rust collector, with full workspace Rust/rustdoc/Clippy lint policy. Not the full speech owning crate.",
+    "speech_tests": {
+      "passed": 36,
+      "failed": 0
+    },
+    "collector_tests": {
+      "passed": 7,
+      "failed": 0
+    },
+    "post_source_removal": true,
+    "strict_rust_clippy": {
+      "passed": true,
+      "configurations": [
+        "production",
+        "tests"
+      ]
+    },
+    "pinned_native_dll_probe": {
+      "passed": true,
+      "matches_prior_native_collector_json": true,
+      "result": {
+        "status": "native-default-parameter-abi-probe-passed",
+        "modelParamsBytes": 80,
+        "contextParamsBytes": 168,
+        "batchBytes": 56,
+        "modelLoaded": false
+      }
+    },
+    "pinned_native_abi_observations": {
+      "passed": true,
+      "records": 369,
+      "control_file": "collector-abi-v1.txt",
+      "control_sha256": "c1481b9101d5de3e05fccf53d04080f3a73e5b113949af964bbfe3cb041d175f",
+      "comparison": "Exact complete unique-key/value sets; Rust computes independently from its types and actual DLL defaults/configuration."
+    },
+    "compile_time_abi_guards": {
+      "field_offsets": 62,
+      "structure_sizes": 3,
+      "structure_alignments": 3
+    },
+    "powershell_cases": {
+      "HostedGuard": "passed",
+      "CollectorControls": "passed"
+    },
+    "powershell_parser": "All four modified scripts/modules parse without errors.",
+    "powershell_standards_analyzer": "Pending owning CI; pinned analyzer binary is not installed locally.",
+    "native_overlay_syntax": {
+      "passed": true,
+      "compiler_executable_sha256": "d5487944bbd56cea6ac4fdde2496f58b32802a3276c24b32e231e0d72e2122c9",
+      "units": {
+        "pipeline-tts.cpp": {
+          "bytes_normalized_lf": 66567,
+          "sha256_normalized_lf": "af155901054821f8ad2113b3e2870e4703a11dd0fec97397f1a2049468628079"
+        },
+        "qwen.cpp": {
+          "bytes_normalized_lf": 30095,
+          "sha256_normalized_lf": "6dda5498d5bd1224aa921b518b191f5af9fbb1faac1a276aa0121c42e55537f3"
+        }
+      },
+      "scope": "Exact-source production private overlays; syntax only, not full static library build/link. Existing upstream unused-function warnings remain."
+    },
+    "models_loaded": false,
+    "benchmarks_run": false,
+    "owner_device_budget_seconds": 300,
+    "bounded_local_validation_within_budget": true
+  },
+  "source_files": {
+    "tools/native-reference/swift_ptq1_reference.rs": {
+      "bytes_normalized_lf": 68229,
+      "sha256_normalized_lf": "02b7ac89084f34761ded80d28e16f6bc427a51773d50e1f33e0bf71053cc70d7"
+    },
+    "tools/native-reference/fixtures/collector-abi-v1.txt": {
+      "bytes_normalized_lf": 10985,
+      "sha256_normalized_lf": "c1481b9101d5de3e05fccf53d04080f3a73e5b113949af964bbfe3cb041d175f"
+    },
+    "tools/native-reference/fixtures/collector-abi-v1.provenance.json": {
+      "bytes_normalized_lf": 8356,
+      "sha256_normalized_lf": "2dd9eb831c46bf2112f6d97530371b6c1b48e930e73d1cba7000945f53d156f1"
+    },
+    "src/speech-tts/build_decode_graph.rs": {
+      "bytes_normalized_lf": 11478,
+      "sha256_normalized_lf": "1fda4f0fd13032be879197c78cb84b55e793bb372534c4daac45eca91f32fb45"
+    },
+    "src/speech-tts/build_overlay.rs": {
+      "bytes_normalized_lf": 26106,
+      "sha256_normalized_lf": "cbd20ecab779bde3035c97cb3256d169ee4033f02ed578a98c70f2a07e2781a0"
+    },
+    "src/speech-tts/build.rs": {
+      "bytes_normalized_lf": 8717,
+      "sha256_normalized_lf": "04e948ec6e27e8ec79b3a2ad11429687ce5dbf7bf9f912c381e143042e3ebb27"
+    },
+    "src/speech-tts/src/decode_graph.rs": {
+      "bytes_normalized_lf": 2647,
+      "sha256_normalized_lf": "7f21cadc9cda06ee1b8787e1617908b4e4dac0c2365c66d6797f581229e0018f"
+    },
+    "src/speech-tts/src/decode_graph_tests.rs": {
+      "bytes_normalized_lf": 4498,
+      "sha256_normalized_lf": "4bd5e937c607bc4c9bd49bb6a196dcfdfc31bb29cd61b1d4886894b48dbe419d"
+    },
+    "src/speech-tts/src/native/decode_graph.rs": {
+      "bytes_normalized_lf": 4128,
+      "sha256_normalized_lf": "bf35c66cadac8ef1ce3a3e78bcce3dd8cdecd64d5960d929cbd556836d496db8"
+    },
+    "src/speech-tts/src/native/decode_graph_tests.rs": {
+      "bytes_normalized_lf": 7693,
+      "sha256_normalized_lf": "63aee701f2e9e7081bf522535153a6077263a88c83998acabdb6ff43f8b60d83"
+    },
+    "src/speech-tts/tests/fixtures/decode-graph-v1.provenance.json": {
+      "bytes_normalized_lf": 6100,
+      "sha256_normalized_lf": "4096bba686c0037bb6906d9a583e09ca9373f1f0d9deb930d9878a4d4c143d5a"
+    },
+    "scripts/Build-NativePtq1CaptureTools.ps1": {
+      "bytes_normalized_lf": 9799,
+      "sha256_normalized_lf": "2c5b13198b0232b611d19af9df897206cceb7c08979793e841d80ce10cc16169"
+    },
+    "scripts/Invoke-NativePtq1Numerics.ps1": {
+      "bytes_normalized_lf": 13824,
+      "sha256_normalized_lf": "9b40a1ab5355b58251bf62adde8f3fc9c7f3306335674d4689dc5fe9d9dfc9aa"
+    },
+    "scripts/Bonsai.Ptq1Capture.psm1": {
+      "bytes_normalized_lf": 5348,
+      "sha256_normalized_lf": "ea02d13cd98754c1e6f59327a05c89189f59cd83b84cdadafa725d33f3afbd72"
+    },
+    "tests/Test-NativePtq1CaptureTools.ps1": {
+      "bytes_normalized_lf": 6686,
+      "sha256_normalized_lf": "c75e07006b73e33020ea8ee9894376b0f177d1e52d3e3e92fd896574c262ef21"
+    },
+    ".github/workflows/native-ptq1-numerics.yml": {
+      "bytes_normalized_lf": 8663,
+      "sha256_normalized_lf": "c795a4b0eb97a5241c89162eb903fd1bd83269ae9d4b059560288dd540074756"
+    }
+  },
+  "retained_native_control_provenance": "../../tools/native-reference/fixtures/collector-abi-v1.provenance.json",
+  "retained_graph_assertion_provenance": "../../src/speech-tts/tests/fixtures/decode-graph-v1.provenance.json",
+  "remaining_cpp_boundaries": [
+    "Downloaded Qwen/GGML TTS and transcribe-cpp ASR inference cores",
+    "Generated native model/graph/tokenizer holder and callback glue",
+    "Pinned native reference DLL engine and publisher paths",
+    "Native compiler/CMake/link/provisioning required by those remaining external engines"
+  ],
+  "pending": [
+    "Hosted full Qwen build/link and owning-crate graph/tokenizer lifecycle checks",
+    "Hosted Rust collector source-bound build/test bundle and PowerShell standards",
+    "Main-only native/Rust actual-model logits/state numerical comparison",
+    "Actual-model speech quality, cancellation, recovery, resource and distribution acceptance",
+    "External/generated C++ inference and compiler/build retirement"
+  ]
+}
