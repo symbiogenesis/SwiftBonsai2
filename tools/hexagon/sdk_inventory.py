@@ -285,6 +285,7 @@ def recipe_metadata(recipes, pin):
         if len(statement["tokens"]) > limits["recipeStatementTokens"] or any(len(token) > limits["recipeTokenCharacters"] for token in statement["tokens"]):
             raise ValueError("selected CMake argument token metadata exceeds its bound")
     return {
+        "status": "functional-token-metadata-collected-unreviewed",
         "scope": "functional-command-token-metadata-only-no-comments-or-CMake-evaluation",
         "functions": chosen,
         "relatedTopLevelSetup": setup,
@@ -363,6 +364,17 @@ def inventory(archive, pin):
         raise ValueError("the intended QAIC executable is absent from the checked archive")
     if not any(item["path"] == pin["requiredRecipePath"] for item in selected):
         raise ValueError("the required build_idl recipe is absent from the checked archive")
+    try:
+        recipe = recipe_metadata(recipes, pin)
+    except ValueError as error:
+        # An unsupported recipe never becomes guessed flags or permissions.
+        # Preserve the independent bounded file/license observations for review.
+        recipe = {
+            "status": "pending-functional-token-review",
+            "reason": str(error),
+            "variableExpansionExecuted": False,
+            "generatorCommandAuthorized": False,
+        }
     return {
         "schemaVersion": 1,
         "kind": "hexagon-SDK-data-only-inventory",
@@ -372,7 +384,7 @@ def inventory(archive, pin):
         "linkEntriesNotExtracted": links,
         "selectedBytesRead": selected_bytes,
         "selectedFiles": sorted(selected, key=lambda item: item["path"]),
-        "buildIdlRecipe": recipe_metadata(recipes, pin),
+        "buildIdlRecipe": recipe,
         "licenseFilenameSearch": {
             "scope": "all-regular-archive-entry-leaf-names-without-depth-or-prefix-restrictions",
             "substringIndicators": ["license", "licence", "eula", "notice", "copyright", "terms", "agreement", "copying"],
