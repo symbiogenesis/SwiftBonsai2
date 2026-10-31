@@ -291,6 +291,9 @@ jobs:
           python -B tools/hexagon/test_pq2_bridge.py
           python -B tools/hexagon/pq2_bridge.py
           ./tests/Test-HexagonPreflight.ps1
+          foreach ($case in @('Plan','Build','Result','Environment','Capture')) {
+            ./tests/Test-HexagonDispatch.ps1 -Case $case
+          }
       - name: Released GGUF command integration
         if: matrix.lane == 'foundation'
         shell: pwsh

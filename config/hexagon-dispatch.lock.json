@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "ggmlCommit": "94256114c229674ef96e76eb2dea596e65b43818",
+  "files": [
+    {
+      "name": "geniex_plugin.dll",
+      "bytes": 292352,
+      "sha256": "4eabfa6c518c597935b3e5487fce85e1287bdba191236587cdb519a720dfe28a"
+    },
+    {
+      "name": "ggml-base.dll",
+      "bytes": 664064,
+      "sha256": "16bb50b27aa67128ce9b558427325fdb2889c8915fb21783c1db05f109cdab96"
+    },
+    {
+      "name": "ggml-cpu.dll",
+      "bytes": 903680,
+      "sha256": "8eee316bb1d4bead011e042c77ab0a71b26eff5dd3554bd95e8d37c8fc508355"
+    },
+    {
+      "name": "ggml-hexagon.dll",
+      "bytes": 356352,
+      "sha256": "5cb97e9f9d1473d5f7f961158b5c5946dbfd947c864a17570ca9e1c7f09a3d7e"
+    },
+    {
+      "name": "ggml-opencl.dll",
+      "bytes": 3064320,
+      "sha256": "434b1efafd07ef5089eec79d23e6cd65a54d3e6a64abeaebd662dfa54543fd26"
+    },
+    {
+      "name": "ggml.dll",
+      "bytes": 72704,
+      "sha256": "58f200b482a8239c0851d22e0a3a414883f7cdfc692039340a858b756b31862c"
+    },
+    {
+      "name": "libggml-htp-v73.so",
+      "bytes": 826248,
+      "sha256": "4286ba2095b593a2c3a6d8ebbf565cca748c8dae2391a41eb90ac75eebbcdace"
+    },
+    {
+      "name": "libggml-htp-v75.so",
+      "bytes": 772104,
+      "sha256": "d6e5c96dde8428953feef501e50be7ea4fe6edb9da7d372cd0f8b673a6d4b216"
+    },
+    {
+      "name": "libggml-htp-v79.so",
+      "bytes": 780392,
+      "sha256": "938616a1191c51b9b8a29a0837c58ca5396920e5dc4cf18950f161d09cd4380c"
+    },
+    {
+      "name": "libggml-htp-v81.so",
+      "bytes": 809160,
+      "sha256": "79624453229f5be9565253a4f08247601888c17923e684f97794d5faf9e1c784"
+    },
+    {
+      "name": "libggml-htp.cat",
+      "bytes": 13087,
+      "sha256": "2555489322c1a87f629389cc32243a5790ce10c6b251ab0eaab2e980e9e91857"
+    },
+    {
+      "name": "libggml-htp.inf",
+      "bytes": 790,
+      "sha256": "e19530fffe17a934f0bd5f35a9ef78935305c2349229b9b3552cddf68e42230d"
+    },
+    {
+      "name": "libomp140.aarch64.dll",
+      "bytes": 796728,
+      "sha256": "4b7108af47f2f1bd1973a9ae3a61861e13e787e1846d24fa90e7a6240a0b566c"
+    },
+    {
+      "name": "llama-common.dll",
+      "bytes": 5059072,
+      "sha256": "3db418ac7b967c8c4f10efada3da3abe20493f62e282113fda3d8204fe33e45f"
+    },
+    {
+      "name": "llama.dll",
+      "bytes": 2783232,
+      "sha256": "208f66a257f3c2bd4ec95c650bb9ba9ef6d25ebcd794c1bed4ac76745a7df66a"
+    },
+    {
+      "name": "mtmd.dll",
+      "bytes": 1498112,
+      "sha256": "b4abe314a41cde8ed90da7172bd5c21e08d55615a3b52393b4698a1954254d3e"
+    }
+  ],
+  "catalog": {
+    "name": "libggml-htp.cat",
+    "member": "libggml-htp-v81.so",
+    "members": ["libggml-htp-v73.so", "libggml-htp-v75.so", "libggml-htp-v79.so", "libggml-htp-v81.so"]
+  },
+  "signtool": {
+    "bytes": 552888,
+    "sha256": "cf81ce1946885a1495a1092942d4be7f34d55bf9ec77bcd19117207e5a2b0f5f"
+  }
+}

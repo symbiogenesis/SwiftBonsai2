@@ -33,11 +33,21 @@ struct Failure {
 
 impl Failure {
     const fn pending(stage: &'static str, code: &'static str) -> Self {
-        Self { outcome: "pending", stage, code, native_code: None }
+        Self {
+            outcome: "pending",
+            stage,
+            code,
+            native_code: None,
+        }
     }
 
     const fn failed(stage: &'static str, code: &'static str) -> Self {
-        Self { outcome: "failed", stage, code, native_code: None }
+        Self {
+            outcome: "failed",
+            stage,
+            code,
+            native_code: None,
+        }
     }
 }
 
@@ -55,14 +65,37 @@ struct Receipt {
 
 impl Receipt {
     fn new(self_test: bool) -> Self {
-        Self { self_test, backend_verified: false, cases: Vec::with_capacity(2), failure: None }
+        Self {
+            self_test,
+            backend_verified: false,
+            cases: Vec::with_capacity(2),
+            failure: None,
+        }
     }
 
     fn write(&self) -> std::io::Result<()> {
         use std::io::Write as _;
         let (outcome, stage, failure, native_code) = self.failure.map_or(
-            ("passed", if self.self_test { "host-control-complete" } else { "numeric-dispatch-complete" }, "null".to_owned(), "null".to_owned()),
-            |error| (error.outcome, error.stage, format!("\"{}\"", error.code), error.native_code.map_or_else(|| "null".to_owned(), |code| code.to_string())),
+            (
+                "passed",
+                if self.self_test {
+                    "host-control-complete"
+                } else {
+                    "numeric-dispatch-complete"
+                },
+                "null".to_owned(),
+                "null".to_owned(),
+            ),
+            |error| {
+                (
+                    error.outcome,
+                    error.stage,
+                    format!("\"{}\"", error.code),
+                    error
+                        .native_code
+                        .map_or_else(|| "null".to_owned(), |code| code.to_string()),
+                )
+            },
         );
         let cases = self.cases.iter().map(|case| format!(
             "{{\"Columns\":{COLUMNS},\"Rows\":{ROWS},\"Batch\":{},\"OutputValuesChecked\":{},\"MatmulParity\":true,\"ExecutedOnHexagon\":{}}}",
@@ -73,13 +106,19 @@ impl Receipt {
             && self.backend_verified
             && self.cases.len() == BATCHES.len()
             && self.cases.iter().all(|case| case.on_hexagon);
-        let backend = if self.backend_verified { "\"HTP0\"" } else { "null" };
+        let backend = if self.backend_verified {
+            "\"HTP0\""
+        } else {
+            "null"
+        };
         // Only fixed strings and bounded integers enter this one-line protocol.
         // Runtime/vendor diagnostics may use stderr; the wrapper must require
         // exactly one matching JSON receipt and reject ambiguous output.
-        writeln!(std::io::stdout().lock(),
+        writeln!(
+            std::io::stdout().lock(),
             "{{\"SchemaVersion\":1,\"Kind\":\"runner-hexagon-dispatch-fixture\",\"SourceRevision\":\"{SOURCE_REVISION}\",\"Outcome\":\"{outcome}\",\"Stage\":\"{stage}\",\"Failure\":{failure},\"NativeCode\":{native_code},\"SelfTest\":{},\"BackendName\":{backend},\"DeviceDispatchVerified\":{dispatch_verified},\"DispatchEvidence\":\"explicit-hexagon-compute-sync-and-full-output-oracle\",\"CpuFallbackAllowed\":false,\"ModelLoaded\":false,\"SwiftQualified\":false,\"ProfileEligible\":false,\"SessionCleanup\":\"supervised-process-exit-required\",\"Cases\":[{cases}]}}",
-            self.self_test)
+            self.self_test
+        )
     }
 }
 
@@ -111,9 +150,10 @@ fn expected(row: usize, token: usize) -> f32 {
 
 fn matches_reference(output: &[f32], batch: usize) -> bool {
     output.len() == ROWS * batch
-        && output.iter().enumerate().all(|(index, value)| {
-            value.to_bits() == expected(index % ROWS, index / ROWS).to_bits()
-        })
+        && output
+            .iter()
+            .enumerate()
+            .all(|(index, value)| value.to_bits() == expected(index % ROWS, index / ROWS).to_bits())
 }
 
 fn self_test(receipt: &mut Receipt) -> Result<(), Failure> {
@@ -130,19 +170,30 @@ fn self_test(receipt: &mut Receipt) -> Result<(), Failure> {
             }
         }
         if !matches_reference(&scalar, batch) {
-            return Err(Failure::failed("host-control", "independent-oracle-mismatch"));
+            return Err(Failure::failed(
+                "host-control",
+                "independent-oracle-mismatch",
+            ));
         }
         if batch == ROWS {
-            let transposed = (0..scalar.len()).map(|index| scalar[(index % ROWS) * ROWS + index / ROWS]).collect::<Vec<_>>();
+            let transposed = (0..scalar.len())
+                .map(|index| scalar[(index % ROWS) * ROWS + index / ROWS])
+                .collect::<Vec<_>>();
             if matches_reference(&transposed, batch) {
-                return Err(Failure::failed("host-control", "transposed-output-accepted"));
+                return Err(Failure::failed(
+                    "host-control",
+                    "transposed-output-accepted",
+                ));
             }
         }
         scalar[0] += 1.0;
         if matches_reference(&scalar, batch) {
             return Err(Failure::failed("host-control", "corrupted-output-accepted"));
         }
-        receipt.cases.push(CaseResult { batch, on_hexagon: false });
+        receipt.cases.push(CaseResult {
+            batch,
+            on_hexagon: false,
+        });
     }
     #[cfg(all(windows, target_arch = "aarch64"))]
     device::check_abi()?;
@@ -167,9 +218,17 @@ fn main() -> ExitCode {
         Ok(None) => self_test(&mut receipt),
         Ok(Some(path)) => {
             #[cfg(all(windows, target_arch = "aarch64"))]
-            { device::run(&path, &mut receipt) }
+            {
+                device::run(&path, &mut receipt)
+            }
             #[cfg(not(all(windows, target_arch = "aarch64")))]
-            { let _ = path; Err(Failure::pending("platform", "native-windows-arm64-required")) }
+            {
+                let _ = path;
+                Err(Failure::pending(
+                    "platform",
+                    "native-windows-arm64-required",
+                ))
+            }
         }
         Err(error) => Err(error),
     };
@@ -181,7 +240,9 @@ fn main() -> ExitCode {
     }
     match receipt.failure {
         None => ExitCode::SUCCESS,
-        Some(Failure { outcome: "pending", .. }) => ExitCode::from(2),
+        Some(Failure {
+            outcome: "pending", ..
+        }) => ExitCode::from(2),
         Some(_) => ExitCode::FAILURE,
     }
 }
@@ -232,7 +293,10 @@ mod device {
     fn native_failure(stage: &'static str, code: &'static str) -> Failure {
         // SAFETY: GetLastError takes no pointers and reads this thread's error.
         let native_code = unsafe { GetLastError() };
-        Failure { native_code: Some(native_code), ..Failure::pending(stage, code) }
+        Failure {
+            native_code: Some(native_code),
+            ..Failure::pending(stage, code)
+        }
     }
 
     struct Library {
@@ -242,16 +306,30 @@ mod device {
 
     impl Library {
         fn load(path: &Path) -> Result<Self, Failure> {
-            let wide = path.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+            let wide = path
+                .as_os_str()
+                .encode_wide()
+                .chain(Some(0))
+                .collect::<Vec<_>>();
             if wide[..wide.len() - 1].contains(&0) {
                 return Err(Failure::pending("load", "invalid-runtime-path"));
             }
             // SAFETY: The wrapper verified the selected exact package. The path
             // is absolute, NUL terminated and alive through the call; only its
             // own directory and Windows System32 can supply dependencies.
-            let raw = unsafe { LoadLibraryExW(wide.as_ptr(), null_mut(), LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32) };
-            let module = NonNull::new(raw).ok_or_else(|| native_failure("load", "runtime-library-load-failed"))?;
-            Ok(Self { module, pin_until_process_exit: false })
+            let raw = unsafe {
+                LoadLibraryExW(
+                    wide.as_ptr(),
+                    null_mut(),
+                    LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32,
+                )
+            };
+            let module = NonNull::new(raw)
+                .ok_or_else(|| native_failure("load", "runtime-library-load-failed"))?;
+            Ok(Self {
+                module,
+                pin_until_process_exit: false,
+            })
         }
 
         fn symbol(&self, name: &'static [u8]) -> Result<*mut c_void, Failure> {
@@ -366,12 +444,19 @@ mod device {
     }
 
     impl Owned {
-        fn checked(raw: *mut c_void, release: Free, stage: &'static str, code: &'static str) -> Result<Self, Failure> {
+        fn checked(
+            raw: *mut c_void,
+            release: Free,
+            stage: &'static str,
+            code: &'static str,
+        ) -> Result<Self, Failure> {
             let pointer = NonNull::new(raw).ok_or_else(|| Failure::pending(stage, code))?;
             Ok(Self { pointer, release })
         }
 
-        fn raw(&self) -> *mut c_void { self.pointer.as_ptr() }
+        fn raw(&self) -> *mut c_void {
+            self.pointer.as_ptr()
+        }
     }
 
     impl Drop for Owned {
@@ -389,24 +474,37 @@ mod device {
 
     fn valid_directory(path: &Path) -> bool {
         let spelling = path.as_os_str().encode_wide().collect::<Vec<_>>();
-        if spelling.len() < 3 || spelling.len() > 260 || spelling[1] != u16::from(b':')
-            || !matches!(spelling[2], 47 | 92) || !path.is_absolute() || spelling.contains(&0)
+        if spelling.len() < 3
+            || spelling.len() > 260
+            || spelling[1] != u16::from(b':')
+            || !matches!(spelling[2], 47 | 92)
+            || !path.is_absolute()
+            || spelling.contains(&0)
         {
             return false;
         }
         path.ancestors().all(|ancestor| {
-            ancestor.symlink_metadata().is_ok_and(|metadata| metadata.is_dir()
-                && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0)
+            ancestor.symlink_metadata().is_ok_and(|metadata| {
+                metadata.is_dir() && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0
+            })
         })
     }
 
     fn reject_overrides(path: &Path) -> Result<(), Failure> {
         for (key, value) in std::env::vars_os() {
             let key = key.to_string_lossy().to_ascii_uppercase();
-            if ["GGML_", "GENIEX_", "QNN_", "QAIRT_", "HEXAGON_", "CDSP_"].iter().any(|prefix| key.starts_with(*prefix))
-                || (key.starts_with("ADSP_") && (key != "ADSP_LIBRARY_PATH" || Path::new(&value) != path))
+            if [
+                "GGML_", "GENIEX_", "QNN_", "QAIRT_", "HEXAGON_", "CDSP_", "FASTRPC_", "RPCMEM_",
+            ]
+            .iter()
+            .any(|prefix| key.starts_with(*prefix))
+                || (key.starts_with("ADSP_")
+                    && (key != "ADSP_LIBRARY_PATH" || Path::new(&value) != path))
             {
-                return Err(Failure::pending("environment", "inherited-runtime-override-rejected"));
+                return Err(Failure::pending(
+                    "environment",
+                    "inherited-runtime-override-rejected",
+                ));
             }
         }
         Ok(())
@@ -416,13 +514,26 @@ mod device {
         eprintln!("hexagon-fixture:stage=context");
         // SAFETY: This repr(C) by-value record matches the checked 24-byte ABI;
         // ggml owns the fixed two-MiB metadata pool, with tensor data unallocated.
-        let raw = unsafe { (api.init)(InitParams { mem_size: 2 * 1024 * 1024, mem_buffer: null_mut(), no_alloc: true }) };
-        let context = Owned::checked(raw, api.context_free, "context", "context-allocation-failed")?;
+        let raw = unsafe {
+            (api.init)(InitParams {
+                mem_size: 2 * 1024 * 1024,
+                mem_buffer: null_mut(),
+                no_alloc: true,
+            })
+        };
+        let context = Owned::checked(
+            raw,
+            api.context_free,
+            "context",
+            "context-allocation-failed",
+        )?;
         // SAFETY: Context is live, F32 is the pinned enum value zero, and all
         // dimensions are fixed small positive integers bounded by this fixture.
-        let weights = unsafe { (api.new_tensor)(context.raw(), GGML_TYPE_F32, COLUMNS as i64, ROWS as i64) };
+        let weights =
+            unsafe { (api.new_tensor)(context.raw(), GGML_TYPE_F32, COLUMNS as i64, ROWS as i64) };
         // SAFETY: Same context/type/dimension contract as the weights above.
-        let activations = unsafe { (api.new_tensor)(context.raw(), GGML_TYPE_F32, COLUMNS as i64, batch as i64) };
+        let activations =
+            unsafe { (api.new_tensor)(context.raw(), GGML_TYPE_F32, COLUMNS as i64, batch as i64) };
         if weights.is_null() || activations.is_null() {
             return Err(Failure::pending("graph", "tensor-construction-failed"));
         }
@@ -439,32 +550,64 @@ mod device {
         // SAFETY: Backend and output tensor remain live; this asks only the
         // explicit Hexagon backend, with no scheduler or CPU backend present.
         if !unsafe { (api.supports_op)(backend.raw(), output) } {
-            return Err(Failure::pending("operation-support", "fixed-f32-matmul-unsupported"));
+            return Err(Failure::pending(
+                "operation-support",
+                "fixed-f32-matmul-unsupported",
+            ));
         }
         eprintln!("hexagon-fixture:stage=allocation");
         // SAFETY: The context contains only the fixed graph tensors. The returned
         // buffer is owned separately and is dropped before its context/backend.
         let raw_buffer = unsafe { (api.allocate)(context.raw(), backend.raw()) };
-        let _buffer = Owned::checked(raw_buffer, api.buffer_free, "allocation", "hexagon-buffer-allocation-failed")?;
+        let _buffer = Owned::checked(
+            raw_buffer,
+            api.buffer_free,
+            "allocation",
+            "hexagon-buffer-allocation-failed",
+        )?;
         let (weight_values, activation_values) = fixture(batch);
         let mut output_values = vec![f32::NAN; ROWS * batch];
         // SAFETY: All pointers are live context tensors; reported byte extents
         // are checked against owned Rust slices before either set or get call.
-        let extents_match = unsafe { (api.tensor_bytes)(weights) == std::mem::size_of_val(weight_values.as_slice())
-            && (api.tensor_bytes)(activations) == std::mem::size_of_val(activation_values.as_slice())
-            && (api.tensor_bytes)(output) == std::mem::size_of_val(output_values.as_slice()) };
+        let extents_match = unsafe {
+            (api.tensor_bytes)(weights) == std::mem::size_of_val(weight_values.as_slice())
+                && (api.tensor_bytes)(activations)
+                    == std::mem::size_of_val(activation_values.as_slice())
+                && (api.tensor_bytes)(output) == std::mem::size_of_val(output_values.as_slice())
+        };
         if !extents_match {
             return Err(Failure::failed("abi", "tensor-byte-extent-mismatch"));
         }
         eprintln!("hexagon-fixture:stage=transfer");
         // SAFETY: Synchronous tensor_set copies exactly the checked slice extent
         // into allocated buffers. Sources stay owned through graph synchronization.
-        unsafe { (api.tensor_set)(weights, weight_values.as_ptr().cast(), 0, std::mem::size_of_val(weight_values.as_slice())) };
+        unsafe {
+            (api.tensor_set)(
+                weights,
+                weight_values.as_ptr().cast(),
+                0,
+                std::mem::size_of_val(weight_values.as_slice()),
+            )
+        };
         // SAFETY: Same synchronous-copy and exact-extent contract as above.
-        unsafe { (api.tensor_set)(activations, activation_values.as_ptr().cast(), 0, std::mem::size_of_val(activation_values.as_slice())) };
+        unsafe {
+            (api.tensor_set)(
+                activations,
+                activation_values.as_ptr().cast(),
+                0,
+                std::mem::size_of_val(activation_values.as_slice()),
+            )
+        };
         // SAFETY: Poison every output value so missing writes cannot pass using
         // stale device bytes. This allocated output extent was checked above.
-        unsafe { (api.tensor_set)(output, output_values.as_ptr().cast(), 0, std::mem::size_of_val(output_values.as_slice())) };
+        unsafe {
+            (api.tensor_set)(
+                output,
+                output_values.as_ptr().cast(),
+                0,
+                std::mem::size_of_val(output_values.as_slice()),
+            )
+        };
         eprintln!("hexagon-fixture:stage=dispatch");
         // SAFETY: All graph storage and input slices outlive synchronous compute.
         // It is invoked directly on verified Hexagon, with no CPU fallback.
@@ -482,7 +625,10 @@ mod device {
         // and spans exactly the checked output tensor extent.
         unsafe { (api.tensor_get)(output, output_values.as_mut_ptr().cast(), 0, output_bytes) };
         if !matches_reference(&output_values, batch) {
-            return Err(Failure::failed("comparison", "independent-f32-oracle-mismatch"));
+            return Err(Failure::failed(
+                "comparison",
+                "independent-f32-oracle-mismatch",
+            ));
         }
         Ok(())
     }
@@ -490,14 +636,20 @@ mod device {
     pub(super) fn run(path: &Path, receipt: &mut Receipt) -> Result<(), Failure> {
         check_abi()?;
         if !valid_directory(path) {
-            return Err(Failure::pending("arguments", "expanded-local-runtime-directory-required"));
+            return Err(Failure::pending(
+                "arguments",
+                "expanded-local-runtime-directory-required",
+            ));
         }
         reject_overrides(path)?;
         // SAFETY: Restricts bare-name loads inside this one-shot process to
         // System32. Explicit runtime libraries add their own verified directory
         // per LoadLibraryExW call; no global machine search policy is changed.
         if unsafe { SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32) } == 0 {
-            return Err(native_failure("load-policy", "restricted-dll-search-unavailable"));
+            return Err(native_failure(
+                "load-policy",
+                "restricted-dll-search-unavailable",
+            ));
         }
         eprintln!("hexagon-fixture:stage=load");
         let mut base = Library::load(&path.join("ggml-base.dll"))?;
@@ -515,7 +667,10 @@ mod device {
         // SAFETY: Resolved exact Hexagon export, not generic backend discovery.
         let registry = unsafe { (api.registry)() };
         if registry.is_null() {
-            return Err(Failure::pending("registry", "hexagon-driver-initialization-unavailable"));
+            return Err(Failure::pending(
+                "registry",
+                "hexagon-driver-initialization-unavailable",
+            ));
         }
         // SAFETY: Registry came from the same live Hexagon library; count does
         // not transfer ownership. Only its sole default physical device is used.
@@ -530,17 +685,28 @@ mod device {
         eprintln!("hexagon-fixture:stage=backend-init");
         // SAFETY: Device is live and null supplies the pinned default parameters.
         let raw_backend = unsafe { (api.device_init)(device, null()) };
-        let backend = Owned::checked(raw_backend, api.backend_free, "backend-init", "hexagon-backend-unavailable")?;
+        let backend = Owned::checked(
+            raw_backend,
+            api.backend_free,
+            "backend-init",
+            "hexagon-backend-unavailable",
+        )?;
         // SAFETY: The exact library's identity predicate receives its own live
         // backend. It rejects an accidental alternate implementation.
         if !unsafe { (api.backend_is_hexagon)(backend.raw()) } {
-            return Err(Failure::failed("backend-identity", "explicit-backend-is-not-hexagon"));
+            return Err(Failure::failed(
+                "backend-identity",
+                "explicit-backend-is-not-hexagon",
+            ));
         }
         // SAFETY: The pinned backend returns a valid NUL-terminated constant or
         // owned name for its lifetime. Read only the five expected HTP0+NUL bytes.
         let name = unsafe { (api.backend_name)(backend.raw()) };
         if name.is_null() {
-            return Err(Failure::failed("backend-identity", "backend-name-unavailable"));
+            return Err(Failure::failed(
+                "backend-identity",
+                "backend-name-unavailable",
+            ));
         }
         for (index, expected) in b"HTP0\0".iter().enumerate() {
             // SAFETY: The public API promises a NUL-terminated name. A shorter
@@ -548,13 +714,19 @@ mod device {
             // is never read. A longer name mismatches at the expected NUL.
             let actual = unsafe { *name.cast::<u8>().add(index) };
             if actual != *expected {
-                return Err(Failure::failed("backend-identity", "unexpected-hexagon-session"));
+                return Err(Failure::failed(
+                    "backend-identity",
+                    "unexpected-hexagon-session",
+                ));
             }
         }
         receipt.backend_verified = true;
         for batch in BATCHES {
             run_case(&api, &backend, batch)?;
-            receipt.cases.push(CaseResult { batch, on_hexagon: true });
+            receipt.cases.push(CaseResult {
+                batch,
+                on_hexagon: true,
+            });
         }
         // Backend drops after every graph buffer/context has synchronized and
         // dropped. Process exit owns residual upstream registry/session teardown.

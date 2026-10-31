@@ -1,4 +1,4 @@
-name: Hexagon prerequisites and bounded device inventory
+name: Hexagon native controls and bounded signed dispatch
 on:
   push:
     branches: [main]
@@ -7,18 +7,28 @@ on:
       - tools/hexagon/**
       - scripts/*Hexagon*
       - tests/Test-HexagonPreflight.ps1
+      - tests/Test-HexagonDispatch.ps1
       - src/cpu-policy/**
       - config/hexagon-experiment.lock.json
+      - config/hexagon-dispatch.lock.json
   workflow_dispatch:
     inputs:
       run_device:
         description: Collect inventory only within one five-minute owner-device job
         type: boolean
         default: false
+      run_dispatch:
+        description: Run only the two tiny signed-package F32 access fixtures after hosted preparation
+        type: boolean
+        default: false
       package_directory:
         description: Optional existing absolute runtime directory on the owner device
         type: string
         default: ''
+      signtool_path:
+        description: Existing pinned ARM64 Windows SDK catalog verifier on the owner device
+        type: string
+        default: 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\arm64\signtool.exe'
 permissions:
   contents: read
 jobs:
@@ -33,6 +43,10 @@ jobs:
       - uses: ./.github/actions/rust-toolchain
         with:
           toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Require one owner operation within the shared device budget
+        if: inputs.run_device && inputs.run_dispatch
+        shell: pwsh
+        run: throw 'Select inventory or dispatch, not two owner jobs for one investigation.'
       - name: Validate packed layout and bounded inventory supervision without models
         shell: pwsh
         run: |
@@ -42,6 +56,9 @@ jobs:
           python -B tools/hexagon/test_pq2_bridge.py
           python -B tools/hexagon/pq2_bridge.py
           ./tests/Test-HexagonPreflight.ps1
+          foreach ($case in @('Plan','Build','Result','Environment','Capture')) {
+            ./tests/Test-HexagonDispatch.ps1 -Case $case
+          }
       - name: Validate comparative CPU GPU NPU ranking without opening a device
         shell: pwsh
         working-directory: ${{ runner.temp }}
@@ -54,9 +71,38 @@ jobs:
           cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --manifest-path $manifest --target-dir $target --locked --release -p bonsai-cpu-policy hardware::ranking::tests
           cargo +nightly-2026-10-22-aarch64-pc-windows-msvc clippy --manifest-path $manifest --target-dir $target --locked --release -p bonsai-cpu-policy --all-targets -- -D warnings
           cargo +nightly-2026-10-22-aarch64-pc-windows-msvc fmt --manifest-path $manifest -p bonsai-cpu-policy -- --check
+      - name: Prepare source-bound native Rust diagnostics without a device
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $output = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Hexagon-Prepared'
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-HexagonDispatch.ps1') -OutputDirectory $output | ConvertTo-Json -Depth 5
+      - name: Retain this run's exact two-file access fixture bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hexagon-dispatch-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/bundle
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain hosted compile and model-free direct Rust controls
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hexagon-hosted-controls-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/dispatch-build.txt
+            ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/dispatch-self-test.json
+            ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/native-rpc
+          if-no-files-found: warn
+          retention-days: 90
   inventory:
     needs: controls
-    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.run_device
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.run_device && !inputs.run_dispatch
     runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
     timeout-minutes: 5
     concurrency:
@@ -117,4 +163,68 @@ jobs:
             ${{ env.BONSAI_HEXAGON_EVIDENCE }}/preflight.json
             ${{ env.BONSAI_HEXAGON_EVIDENCE }}/host.json
           if-no-files-found: error
+          retention-days: 90
+  dispatch:
+    needs: controls
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.run_dispatch && !inputs.run_device
+    runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
+    timeout-minutes: 5
+    concurrency:
+      group: swift-lora-snapdragon
+      cancel-in-progress: false
+    steps:
+      - name: Start the complete owner budget before checkout and artifact intake
+        shell: pwsh
+        run: |
+          "BONSAI_HEXAGON_JOB_STARTED_UTC=$([DateTime]::UtcNow.ToString('o'))" >> $env:GITHUB_ENV
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: hexagon-dispatch-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/SwiftBonsai-Hexagon-Dispatch-Bundle
+      - name: Verify same-run intake and execute the fixed signed access control
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          HEXAGON_PACKAGE_DIRECTORY: ${{ inputs.package_directory }}
+          HEXAGON_SIGNTOOL_PATH: ${{ inputs.signtool_path }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $started = [DateTimeOffset]::Parse($env:BONSAI_HEXAGON_JOB_STARTED_UTC, [Globalization.CultureInfo]::InvariantCulture)
+          $bundle = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Hexagon-Dispatch-Bundle'
+          $build = Get-Content -LiteralPath (Join-Path $bundle 'fixture-build.json') -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate
+          if ($build.RunnerRevision -cne $env:GITHUB_SHA -or $build.RunId -cne $env:GITHUB_RUN_ID -or $build.RunAttempt -cne $env:GITHUB_RUN_ATTEMPT) {
+            throw 'The fixture does not belong to this exact trusted hosted job and revision.'
+          }
+          $setup = ([DateTimeOffset]::UtcNow - $started).TotalSeconds
+          $allowance = [int][Math]::Floor([Math]::Min(120, 270 - $setup))
+          if ($setup -lt 0 -or $allowance -le 75) { throw 'Owner setup consumed the verified teardown reserve; dispatch remains pending.' }
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-Hexagon-Dispatch-' + [guid]::NewGuid().ToString('N'))
+          "BONSAI_HEXAGON_DISPATCH_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          $result = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-HexagonDispatch.ps1') -PackageDirectory $env:HEXAGON_PACKAGE_DIRECTORY -FixtureDirectory $bundle -OutputDirectory $evidence -SigntoolPath $env:HEXAGON_SIGNTOOL_PATH -ExpectedRunnerRevision $env:GITHUB_SHA -MaximumSeconds $allowance
+          [ordered]@{
+            SchemaVersion = 1; RunnerRevision = $env:GITHUB_SHA; RunId = $env:GITHUB_RUN_ID; RunAttempt = $env:GITHUB_RUN_ATTEMPT
+            WholeJobMaximumSeconds = 300; PreparationElapsedMilliseconds = [Math]::Ceiling($setup * 1000)
+            DispatchAggregateAllowanceSeconds = $allowance; PostProcessReserveSeconds = 30
+            TrustedSameRunIntake = $true; Outcome = $result.Outcome
+            DeviceDispatchVerified = $result.DeviceDispatchVerified; SwiftQualified = $false; ProfileEligible = $false
+          } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidence 'host.json') -Encoding utf8NoBOM
+          @('Two tiny F32 graphs through the exact signed generic Hexagon package; no model or CPU fallback.',
+            'Native Rust Prism packed inference remains independently pending.',
+            'No driver/catalog installation, trust changes or performance selection occurs.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          if ($result.Outcome -cne 'passed' -or -not $result.DeviceDispatchVerified) { throw 'The signed access gate remains pending; inspect retained stage evidence.' }
+      - name: Retain only credential-free bounded dispatch evidence
+        if: always() && env.BONSAI_HEXAGON_DISPATCH_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hexagon-dispatch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.BONSAI_HEXAGON_DISPATCH_EVIDENCE }}/dispatch.json
+            ${{ env.BONSAI_HEXAGON_DISPATCH_EVIDENCE }}/worker.json
+            ${{ env.BONSAI_HEXAGON_DISPATCH_EVIDENCE }}/host.json
+          if-no-files-found: warn
           retention-days: 90

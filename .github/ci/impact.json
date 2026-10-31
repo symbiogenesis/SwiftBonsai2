@@ -33,6 +33,8 @@
         "scripts/Doctor.ps1", "scripts/Bonsai.Capabilities.psm1", "scripts/Get-Inference.ps1", "scripts/New-InferenceLock.ps1",
         "scripts/Invoke-HexagonPreflight.ps1", "scripts/Bonsai.Hexagon.psm1", "tests/Test-HexagonPreflight.ps1",
         "tools/hexagon/**", "config/hexagon-experiment.lock.json", ".github/workflows/hexagon-qualification.yml",
+        "scripts/Build-HexagonDispatch.ps1", "scripts/Invoke-HexagonDispatch.ps1", "scripts/Bonsai.HexagonDispatch.psm1",
+        "config/hexagon-dispatch.lock.json", "tests/Test-HexagonDispatch.ps1",
         "scripts/Read-Gguf.ps1", "scripts/Export-SwiftPtq1.ps1", "scripts/Bonsai.Gguf.psm1",
         "scripts/Get-Model.ps1", "scripts/Get-ServerPlan.ps1", "scripts/Start-Chat.ps1", "scripts/Bonsai.ServerPolicy.psm1",
         "scripts/New-ChatPackage.ps1", "scripts/Install-ChatPackage.ps1", "scripts/Start-InstalledChat.ps1", "scripts/Bonsai.ChatPackage.psm1", "tests/Test-ChatPackage.ps1",
