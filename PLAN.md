@@ -500,14 +500,21 @@ Follow [Hexagon contracts](docs/hexagon.md).
   dispatch fixture built on hosted CI. Use the [pinned access source decision and
   operation ledger](docs/hexagon-source-audit.md) and bounded inventory workflow;
   extend the [local X2 driver/catalog observation](docs/evidence/hexagon-x2-inventory.json)
-  to actual mapping/dispatch and retain independent X1 evidence. Resolve a supported signing/distribution route for
+  to actual mapping/dispatch and retain independent X1 evidence. Resolve a supported
+  signing/distribution route for
   custom packed kernels: GenieX's catalog covers only its bundled generic kernels.
   Verify DMA64, effective VTCM and low-bit Hadamard/HTP leads against matching signed
   binaries; retain scoped no-go reasons.
   Trust/Secure Boot changes need a separate owner decision.
-- Implement the audited native Rust driver/RPC/mapping boundary in Prism, with safe
-  asynchronous ownership and separately signed DSP kernels, without a C/C++ inference
-  dependency. Start with `blk.0.ffn_up.weight`, K=5120/M=17408/N=1, keeping transforms,
+- Review and release the experimental native Rust capability/terminal-buffer boundary
+  prepared in Prism, preserving the existing runtime publication boundary. Extend it
+  to session-correct FD/delayed/extended mapping, safe asynchronous ownership and
+  separately signed DSP kernels, without a C/C++ inference dependency. The local
+  4 KiB STATIC mapping probe returned generic FastRPC error 512 after allocation,
+  descriptor and host read/write success; it does not rule out the signed runtime's
+  established-session FD flow. Preserve that scoped failure and prove the next
+  supported mapping before computation. Start with `blk.0.ffn_up.weight`,
+  K=5120/M=17408/N=1, keeping transforms,
   adapter corrections and all committed state on CPU. Implement lossless PQ2
   tiling/fused matvec against exact Q8_K preparation/reduction, then separately qualify
   PTQ1 canonicality and Q8_0. Extend the ledger to actual placement/fallback/transfer

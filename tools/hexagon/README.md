@@ -59,3 +59,9 @@ activation quantization, accumulation order, Hadamard transforms, grouped SSM
 basis, LoRA, complete logits/state and signed Windows kernels still need separate
 qualification. In particular, renaming PQ2 to Q2_0 does not preserve the PQ2
 Q8_K path. No performance, admission or backend-selection decision follows.
+
+The [native Rust driver boundary](native_rpc/README.md) and
+[signed-package numeric fixture](dispatch_fixture.rs) cover separate access
+questions. [Current evidence and execution commands](../../docs/hexagon-native-progress.md)
+describe the successful driver queries, scoped STATIC-mode refusal and hosted
+numeric-dispatch gate. Neither tool changes the production runtime.

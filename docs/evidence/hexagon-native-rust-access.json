@@ -1,0 +1,241 @@
+{
+  "SchemaVersion": 1,
+  "Kind": "native-rust-fastrpc-local-observations",
+  "ReviewDateLocal": "2026-10-30",
+  "Driver": {
+    "Service": "qcnspmcdm",
+    "Bytes": 593472,
+    "Sha256": "5cf6aa86670cceb84461050ad00b012662e4859d15be2a1cf147d98d5002f37d",
+    "SignatureStatus": "Valid",
+    "Signer": "CN=Microsoft Windows Hardware Compatibility Publisher, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
+    "SignerThumbprint": "32B4E7CE92A59C722B8BDF7AE3E66520CFB9DE21",
+    "DriverStoreDirectory": "qcnspmcdm8480.inf_arm64_4feba84cfc7ee278"
+  },
+  "Capabilities": {
+    "schemaVersion": 1,
+    "kind": "native-fastrpc-capabilities",
+    "domain": 3,
+    "requestId": 2,
+    "queries": [
+      {
+        "attribute": "domain-support",
+        "status": "queried",
+        "raw": 1,
+        "decodedArchitecture": null
+      },
+      {
+        "attribute": "hvx-64b",
+        "status": "queried",
+        "raw": 0,
+        "decodedArchitecture": null
+      },
+      {
+        "attribute": "hvx-128b",
+        "status": "queried",
+        "raw": 8,
+        "decodedArchitecture": null
+      },
+      {
+        "attribute": "vtcm-page",
+        "status": "queried",
+        "raw": 8388608,
+        "decodedArchitecture": null
+      },
+      {
+        "attribute": "vtcm-count",
+        "status": "queried",
+        "raw": 1,
+        "decodedArchitecture": null
+      },
+      {
+        "attribute": "architecture",
+        "status": "queried",
+        "raw": 32897,
+        "decodedArchitecture": 81
+      },
+      {
+        "attribute": "hmx-depth",
+        "status": "queried",
+        "raw": 0,
+        "decodedArchitecture": null
+      },
+      {
+        "attribute": "hmx-spatial",
+        "status": "queried",
+        "raw": 0,
+        "decodedArchitecture": null
+      }
+    ],
+    "signaturePolicy": "cached-authenticode-no-ui",
+    "driverLoaded": true,
+    "dspCodeLoaded": false,
+    "mappingExecuted": false,
+    "inferenceExecuted": false,
+    "profileEligible": false,
+    "ggmlSource": "94256114c229674ef96e76eb2dea596e65b43818",
+    "fastrpcSource": "a56e9d4de3614a8d8f4b0e15ff561350c4b686e3"
+  },
+  "MappingProbe": {
+    "schemaVersion": 1,
+    "kind": "native-fastrpc-mapping-probe",
+    "passed": false,
+    "stage": "mapping-failed-pinned",
+    "bytes": 4096,
+    "domain": 3,
+    "heapId": 25,
+    "allocationFlags": 1,
+    "mapFlags": 0,
+    "allocationSucceeded": true,
+    "descriptorObserved": true,
+    "descriptorError": null,
+    "cpuRoundtripVerified": true,
+    "mappingAttempted": true,
+    "mappingResult": 512,
+    "unmappingResult": null,
+    "freeCompleted": false,
+    "poisoned": true,
+    "ownerPinnedUntilExit": true,
+    "implicitSessionMayOpen": true,
+    "customDspModuleLoaded": false,
+    "dmaExecuted": false,
+    "computeExecuted": false,
+    "sessionTeardownVerified": false,
+    "profileEligible": false
+  },
+  "CapabilityPreparation": {
+    "SourceInputs": [
+      {
+        "Name": "lib.rs",
+        "Sha256": "32c3a38f38e20f19b57ee0949ad47629e23aff266f35659771af460821b5ba98"
+      },
+      {
+        "Name": "windows.rs",
+        "Sha256": "bab626581d9121b4f4c4b9ee6b40c9de77413f2df44ba6ba97a97b7e6679a6db"
+      },
+      {
+        "Name": "query.rs",
+        "Sha256": "ef979ce2251d6e094750fca48f20f3ab7d5af41e9648231d1394792cb42b3acd"
+      }
+    ],
+    "Results": [
+      {
+        "Name": "library-build",
+        "ExitCode": 0
+      },
+      {
+        "Name": "query-build",
+        "ExitCode": 0
+      },
+      {
+        "Name": "self-test",
+        "ExitCode": 0
+      },
+      {
+        "Name": "inspect",
+        "ExitCode": 0
+      },
+      {
+        "Name": "capability-query",
+        "ExitCode": 0
+      }
+    ],
+    "ElapsedMilliseconds": 2755,
+    "DeviceDispatchAttempted": false,
+    "ProfileEligible": false,
+    "ValidationSourceScope": "exact local source snapshot hashes; not settled-main qualification"
+  },
+  "MappingPreparation": {
+    "SourceInputs": [
+      {
+        "Name": "lib.rs",
+        "Sha256": "8d90cd0492c604e6141c4d95ba4065babb217d6019efbfc8eea8fc0bdf967546"
+      },
+      {
+        "Name": "windows.rs",
+        "Sha256": "2338691fd1f39f364081018ac78bdae6de5f6771a0db3376928984e37f6d788c"
+      },
+      {
+        "Name": "mapping.rs",
+        "Sha256": "c116d2a5d39bbee6cfd55b84a8423dd8d1aca8b9d8fabfd9c6a8bad19b0dd4f0"
+      },
+      {
+        "Name": "query.rs",
+        "Sha256": "6bcd2392c40a06d45e8d683e2f68987a69115e6be026adc67030d3ea24bea846"
+      }
+    ],
+    "Results": [
+      {
+        "Name": "library-build",
+        "ExitCode": 0,
+        "OwnedJobTeardown": "confirmed-empty"
+      },
+      {
+        "Name": "query-build",
+        "ExitCode": 0,
+        "OwnedJobTeardown": "confirmed-empty"
+      },
+      {
+        "Name": "self-test",
+        "ExitCode": 0,
+        "OwnedJobTeardown": "confirmed-empty"
+      },
+      {
+        "Name": "inspect",
+        "ExitCode": 0,
+        "OwnedJobTeardown": "confirmed-empty"
+      },
+      {
+        "Name": "mapping-probe",
+        "ExitCode": 0,
+        "OwnedJobTeardown": "confirmed-empty"
+      }
+    ],
+    "ElapsedMilliseconds": 2545,
+    "DspComputeAttempted": false,
+    "ProfileEligible": false,
+    "ValidationSourceScope": "exact local source snapshot hashes; not settled-main qualification"
+  },
+  "RawCapabilityReceiptSha256": "b14dc3d3c68feca5f0dfeed364d6d918be1eadd6a1bf9ff9a5048023529482ff",
+  "RawMappingReceiptSha256": "e385962b9efccc55f207648d4def2e271024269f17c4fb784a92d1e65f9910df",
+  "MappingClassification": {
+    "NativeCode": 512,
+    "HostHeaderName": "AEE_ERPC",
+    "Meaning": "generic FastRPC implementation error; underlying driver/session cause unknown",
+    "Source": "https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/AEEStdErr.h",
+    "Scope": "one 4096-byte FASTRPC_MAP_STATIC=0 attempt; no FD/delayed/extended-mode verdict"
+  },
+  "PrismCandidate": {
+    "BaseRevision": "7aca2251f09acb345d4afb53d5ce411f81017745",
+    "Commits": [
+      "4725616d8fa8ab0a729e2fef5618ab243ccdaec8",
+      "e3935d5a43fe160c91ca0131664043b493df5002",
+      "66c587e7480491470de6d5669f4565e912beb3d0",
+      "52629f5cfbd782cc70885ac0601fad2e14c6f0e5"
+    ],
+    "Package": "bonsai-hexagon-native",
+    "WorkspaceOnly": true,
+    "Published": false,
+    "ServingRuntimeChanged": false
+  },
+  "Validation": {
+    "ClippyAllTargets": "passed for isolated native crate",
+    "FocusedAbiRegression": "passed",
+    "FocusedPartialMappingRegression": "passed",
+    "HostOnlyMatmulFixture": "passed two fixed graphs; no device code",
+    "FullHostedRegressions": "pending",
+    "SignedPackageDeviceMatmul": "pending hosted-built artifact"
+  },
+  "DspComputeExecuted": false,
+  "DriverInstalled": false,
+  "TrustChanged": false,
+  "SwiftQualified": false,
+  "ProfileEligible": false,
+  "Limits": [
+    "Owner-context local observations do not qualify inference-worker isolation.",
+    "VTCM page/count and HVX contexts are capability reports, not free capacity or throughput.",
+    "Zero HMX query values do not establish unavailable HMX hardware.",
+    "The mapping owner and allocation were pinned after refusal; owned process/Job exit was confirmed, but vendor session cleanup is not independently qualified.",
+    "Driver-library identities were prechecked and held against mutation; the capability snapshot predates the CLI retained-path field.",
+    "Raw receipts/source snapshots remain in external temporary storage; durable archive and matching-device CI remain pending."
+  ]
+}

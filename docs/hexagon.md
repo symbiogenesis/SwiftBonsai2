@@ -18,8 +18,12 @@ It always leaves execution unqualified. Its worker has an aggregate deadline and
 normal cancellation cleanup; abrupt parent-death Job containment remains a
 diagnostic-helper limitation. The [packed layout audit](../tools/hexagon/README.md)
 checks an independent lossless PQ2/Q2 control, not a production GGUF conversion.
+[Native Rust access progress](hexagon-native-progress.md) records direct driver
+capability success and the scoped 4 KiB STATIC mapping refusal. The separate
+native boundary is prepared in an unpublished Prism workspace crate.
 [Hosted prerequisite CI](../.github/workflows/hexagon-qualification.yml) owns full
-regressions and an opt-in inventory-only five-minute device job. No startup
+regressions, source-bound fixture preparation and a main-only opt-in inventory or
+tiny numeric-dispatch job within five minutes. No startup
 benchmark or family-wide accelerator choice follows from these controls.
 
 ## Device and route boundaries

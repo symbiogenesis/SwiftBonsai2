@@ -89,6 +89,9 @@ GenieX signature for a rebuild. Source arithmetic inspection and independent
 operation fixtures must precede any timing.
 
 The intended runtime integration belongs directly in **native Rust Prism**.
+The later [native access candidate](hexagon-native-progress.md) implements the
+first driver-query and terminal-buffer boundary and records its scoped local
+outcomes. The pinned production release still has no NPU inference backend.
 Retain its GGUF loader, PQ2/PTQ1 kernels, transform and adapter identities, graph,
 sampler and transaction/state ownership. Add a small audited host boundary for
 the supported Qualcomm driver/RPC/mapping ABI, with safe Rust ownership around
