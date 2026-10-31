@@ -12,3 +12,7 @@ tools/native-reference/swift_ptq1_reference.rs text eol=lf
 # Preserve original CRLF/LF bytes of retained hosted SDK inventory receipts.
 docs/evidence/hexagon-sdk-inventory-41168523349/*.json -text
 docs/evidence/hexagon-sdk-inventory-41168523349/host.json whitespace=cr-at-eol
+
+# Preserve the second hosted SDK recipe/license metadata receipt bytes.
+docs/evidence/hexagon-sdk-inventory-41168872514/*.json -text
+docs/evidence/hexagon-sdk-inventory-41168872514/host.json whitespace=cr-at-eol

@@ -368,13 +368,16 @@
         "ownerArchiveDownloaded": false,
         "ownerArchiveDigestVerified": false,
         "sdkContentsExtracted": false,
-        "observation": "docs/evidence/hexagon-sdk-inventory-41168523349/provenance.json"
+        "observation": "docs/evidence/hexagon-sdk-inventory-41168872514/provenance.json",
+        "priorObservation": "docs/evidence/hexagon-sdk-inventory-41168523349/provenance.json"
       },
       "qaicExecutableIdentity": {
         "archivePath": "6.7.0.0/ipc/fastrpc/qaic/bin/qaic.exe",
         "bytes": 35301888,
         "sha256": "e7fd5d03e030fa5cc9b85d9364fa9d34719edf483a26475fa08e7ca1cfd30f36",
-        "identitySource": "digest-verified-SDK-archive-data-only"
+        "identitySource": "digest-verified-SDK-archive-data-only",
+        "peMachine": "8664",
+        "architecture": "Windows-x64"
       },
       "importedRemoteAndAeeIdlIdentity": {
         "candidates": [
@@ -453,7 +456,7 @@
         "sha256": "805e17e0df4e3a476038c66e7f08787a017e62a9432c2d100212fd9a972cdd85",
         "identitySource": "digest-verified-SDK-archive-data-only"
       },
-      "sdkBuildIdlRecipeInterpretationReviewed": false,
+      "sdkBuildIdlRecipeInterpretationReviewed": true,
       "sdkRpcHeaderIdentities": [
         {
           "archivePath": "6.7.0.0/incs/dspqueue.h",
@@ -475,13 +478,117 @@
         }
       ],
       "sdkLicenseInventory": {
-        "matchingHeuristicFileCount": 0,
-        "heuristic": "prefix-and-depth-restricted-legal-filename-filter",
+        "matchingHeuristicFileCount": 6,
+        "heuristic": "all-regular-archive-leaf-name-substring-search",
         "absenceEstablished": false,
         "termsReviewed": false,
+        "sdkBinaryLicenseQualified": false,
         "generatedSourceRedistributionQualified": false,
-        "nextReview": "broader-all-entry-legal-name-and-inline-notice-metadata-plus-exact-build_idl-functional-statement-metadata"
-      }
+        "matchingFiles": [
+          {
+            "archivePath": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/NOTICE.txt",
+            "bytes": 118826,
+            "sha256": "39af9dbb366f4bbbd28c6d07a411a400bd4b33ad4b7d745287820a9cdcac359a",
+            "identitySource": "digest-verified-SDK-archive-data-only"
+          },
+          {
+            "archivePath": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/Tools/lib/python311/Lib/site-packages/click-8.1.7-py3.11.egg/EGG-INFO/LICENSE.rst",
+            "bytes": 1475,
+            "sha256": "9a8ad106a394e853bfe21f42f4e72d592819a22805d991b5f3275029292b658d",
+            "identitySource": "digest-verified-SDK-archive-data-only"
+          },
+          {
+            "archivePath": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/Tools/lib/python311/Lib/site-packages/colorama-0.4.6-py3.11.egg/EGG-INFO/licenses/LICENSE.txt",
+            "bytes": 1491,
+            "sha256": "cac35c02686e5d04a5a7140bfb3b36e73aed496656e891102e428886d7930318",
+            "identitySource": "digest-verified-SDK-archive-data-only"
+          },
+          {
+            "archivePath": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/Tools/lib/python311/Lib/site-packages/dictdiffer-0.9.0-py3.11.egg/EGG-INFO/LICENSE",
+            "bytes": 1398,
+            "sha256": "1f9e05b3b9a6fad24cc67455578bcdfd3e89b09a25c45369a5254203bbe2bdd3",
+            "identitySource": "digest-verified-SDK-archive-data-only"
+          },
+          {
+            "archivePath": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/Tools/lib/python311/Lib/site-packages/pip-23.1.2.dist-info/LICENSE.txt",
+            "bytes": 1093,
+            "sha256": "634300a669d49aeae65b12c6c48c924c51a4cdf3d1ff086dc3456dc8bcaa2104",
+            "identitySource": "digest-verified-SDK-archive-data-only"
+          },
+          {
+            "archivePath": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/Tools/lib/python311/Lib/site-packages/setuptools-65.5.0.dist-info/LICENSE",
+            "bytes": 1050,
+            "sha256": "db3f0246b1f9278f15845b99fec478b8b506eb76487993722f8c6e254285faf8",
+            "identitySource": "digest-verified-SDK-archive-data-only"
+          }
+        ],
+        "relevantNoticeEncoding": "not-UTF8-in-first-decoder; actual-encoding-and-clauses-not-reviewed",
+        "relevantNoticeScope": "Hexagon-tools-NOTICE; applicability-to-QAIC-not-established",
+        "remainingMatchesScope": "five-bundled-Python-package-licenses; not-an-SDK-or-QAIC-license-grant",
+        "sdkHeaderNoticeMarkers": "dspqueue-and-remote-header-confidential/proprietary-markers; text-metadata-does-not-establish-effective-license",
+        "qaicBinaryNoticeMarkers": "license/BSD/distribution-byte-markers; not-a-license-grant-or-public-source-identity",
+        "publicProductPage": "https://www.qualcomm.com/developer/software/hexagon-npu-sdk",
+        "publicCatalogPage": "https://softwarecenter.qualcomm.com/catalog/item/Hexagon_SDK",
+        "productTermsRenderedInReviewedPublicPages": false,
+        "nextRoute": "independent-pinned-public-BSD-QAIC-source-build-and-public-import-control; SDK-equivalence-still-pending"
+      },
+      "sdkCommandTemplateReview": {
+        "status": "source-derived-command-template-reviewed; no-CMake-expansion-or-generator-execution",
+        "recipeIdentity": {
+          "archivePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+          "bytes": 36308,
+          "sha256": "805e17e0df4e3a476038c66e7f08787a017e62a9432c2d100212fd9a972cdd85",
+          "identitySource": "digest-verified-SDK-archive-data-only"
+        },
+        "recipeFunctionLines": [
+          269,
+          323
+        ],
+        "helperIdentity": {
+          "archivePath": "6.7.0.0/build/cmake/hexagon_fun_internal.cmake",
+          "bytes": 18651,
+          "sha256": "feed055f0b9c3be99efbe89b28aaf68d1e3bcf3561b21734d9ae14d77ca7884a",
+          "identitySource": "digest-verified-SDK-archive-data-only"
+        },
+        "helperFunctionLines": [
+          10,
+          45
+        ],
+        "hostTargetSource": "ggml-org/llama.cpp@19cce6919992fdffd92e0ac152caaf1e2b8f254e:ggml/src/ggml-hexagon/CMakeLists.txt",
+        "sdkRootPlaceholder": "absolute-new-checked-SDK-root",
+        "sourceRootPlaceholder": "exact-pinned-llama-source-root",
+        "outputPlaceholder": "new-empty-output-directory",
+        "executable": "{SDK_ROOT}/ipc/fastrpc/qaic/bin/qaic.exe",
+        "workingDirectory": "{LLAMA_ROOT}/ggml/src/ggml-hexagon",
+        "arguments": [
+          "-mdll",
+          "-o",
+          "{OUTPUT}",
+          "-I{SDK_ROOT}/incs/",
+          "-I{SDK_ROOT}/incs/stddef/",
+          "-I{SDK_ROOT}/incs",
+          "-I{SDK_ROOT}/incs/stddef",
+          "-I{SDK_ROOT}/utils/examples",
+          "-I{LLAMA_ROOT}/ggml/src/ggml-hexagon/htp",
+          "-I{OUTPUT}",
+          "htp/htp_iface.idl"
+        ],
+        "recipeExternalPreprocessorFlagPresent": false,
+        "recipeRfFlagPresent": false,
+        "expectedOutputs": [
+          "htp_iface.h",
+          "htp_iface_stub.c",
+          "htp_iface_skel.c"
+        ],
+        "sdkQaicPeMachine": "8664",
+        "sdkQaicArchitecture": "Windows-x64; Windows-ARM64-execution-would-require-emulation",
+        "CMakeVariableExpansionExecuted": false,
+        "effectiveImportClosureReviewed": false,
+        "importResolutionExecuted": false,
+        "generatorExecuted": false,
+        "generatorCommandAuthorized": false
+      },
+      "sdkGeneratorExecutionQualified": false
     }
   },
   "budgets": {

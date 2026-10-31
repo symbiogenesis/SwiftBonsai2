@@ -28,7 +28,7 @@ v0.9.1 and v0.9.3 releases use `e467e5b5e5ba43071d6151b3d881deb9300d000e`.
 The stable candidate is sufficient for this source decision; no automatic latest-tag
 selection follows from this inventory.
 
-All twenty-six reviewed source files have exact repository, revision, path, byte
+All twenty-six reviewed public source files have exact repository, revision, path, byte
 extent, SHA-256 and URL entries in the candidate lock. They include the release
 pipeline, package installation rules, host solver/repack/queue implementation,
 DSP operation types, matmul arithmetic, IDL and public compiler sources. The llama
@@ -153,15 +153,36 @@ by themselves prove incompatible semantics.
 
 The SDK `hexagon_fun.cmake` is 36,308 bytes, SHA-256
 `805e17e0df4e3a476038c66e7f08787a017e62a9432c2d100212fd9a972cdd85`.
-The first receipt locates QAIC references at lines 70, 260 and 297 and records file-wide
-flag spellings; it does not retain the `build_idl` control flow, effective import
-paths or expanded generator command. The exact recipe, generated stub and wire
-control remain pending. The initial restricted legal-filename/depth filter matched
-no files; it does not establish absent license terms or permission to redistribute
-generated source. Review broader legal-name and inline-notice metadata together
-with the precise recipe before executing the generator. SDK queue declarations
-and imports remain distinct from the reviewed public controls until compared.
-This preparation stays on hosted CI, outside the owner-device trial allowance.
+The [second retained review](evidence/hexagon-sdk-inventory-41168872514/provenance.json)
+binds run 41168872514 to exact recipe/helper statement tokens without executing
+CMake expansion or SDK code. Its `build_idl` function at lines 269–323 selects
+`-mdll`, `-o` and the binary directory, followed by default SDK `incs/` and
+`incs/stddef/` include paths and every target include directory in order. The
+[pinned host target](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/CMakeLists.txt)
+adds SDK `incs`, `incs/stddef`, `utils/examples`, the source `htp` directory and
+the output directory. Working directory is `ggml/src/ggml-hexagon`; input is
+`htp/htp_iface.idl`. The retained command template preserves those paths and
+duplicate includes. This function adds no `-rf` or external-preprocessor option.
+The helper predicts the header, stub and skeleton filenames. Actual import
+resolution, generated output and wire compatibility remain unqualified.
+
+The SDK generator's PE machine is `8664` (Windows x64), so running this binary on
+hosted Windows ARM64 would involve emulation. The broader legal-filename scan
+found six files: a Hexagon-tools `NOTICE.txt` and five bundled Python-package
+licenses. The notice is 118,826 bytes, SHA-256
+`39af9dbb366f4bbbd28c6d07a411a400bd4b33ad4b7d745287820a9cdcac359a`;
+the first UTF-8 decoder did not decode it. That does not identify its encoding,
+make it a binary file or establish its applicability to QAIC. Header
+confidential/proprietary markers, import redistribution words and binary BSD
+strings likewise do not establish the applicable tool/output terms. The
+[official product page](https://www.qualcomm.com/developer/software/hexagon-npu-sdk)
+names a product license agreement, but the reviewed public response and
+[catalog page](https://softwarecenter.qualcomm.com/catalog/item/Hexagon_SDK)
+do not expose the exact SDK 6.7 agreement. SDK-generator execution and generated
+source redistribution remain unqualified by this evidence; this is not a finding
+that the SDK has no license. SDK queue declarations and imports also remain
+distinct from the public controls until compared. All further preparation stays
+on hosted CI, outside the owner-device trial allowance.
 
 An independent public source control is also obtainable. Qualcomm's
 [QAIC compiler](https://github.com/qualcomm/QAIC/tree/a66a0019fb488abae955bbc9b3a9de3dc15962d0)
@@ -187,14 +208,17 @@ digest. These public imports and generator offer an independent model-free wire
 control; equivalence to the SDK6.7 tool/imports and exact signed-module build is
 unproven. They do not supply the missing SDK `build_idl` invocation by inference.
 
-The public compiler's
+The pinned public compiler's
 [BSD-3-Clause-Clear license](https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/LICENSE.txt)
 permits redistribution subject to its notice/conditions requirements and excludes
 an express or implied patent grant. The reviewed C templates carry license and
 copyright notices. Preserve those notices and inspect actual generated output
 before publishing artifacts; this source license does not establish the terms of
-the separate SDK archive. Both generation controls stay outside the production
-Rust inference dependency graph.
+the separate SDK archive. A bounded hosted source build can proceed after its
+toolchain/dependency inputs are bound, retaining the public imports and generated
+identities for review. Passing that control still cannot establish equivalence to
+the SDK binary/imports or signed module. Both generation controls stay outside
+the production Rust inference dependency graph.
 
 A tiny old-package F32 compute fixture is a feasible development target after
 that queue/lifetime boundary is built; its passing generic C++ fixture remains

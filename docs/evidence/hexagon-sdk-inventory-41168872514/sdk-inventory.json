@@ -1,0 +1,1273 @@
+{
+  "schemaVersion": 1,
+  "kind": "hexagon-SDK-data-only-inventory",
+  "archive": {
+    "id": 657669213,
+    "filename": "hexagon-sdk-v6.7.0.0-arm64-wos.tar.xz",
+    "bytes": 900461020,
+    "sha256": "9eb256cc7b102f721365151a470a33980069a18b9209e1d56a6d2fa430369759",
+    "url": "https://github.com/snapdragon-toolchain/hexagon-sdk/releases/download/v6.7.0.0/hexagon-sdk-v6.7.0.0-arm64-wos.tar.xz"
+  },
+  "archiveEntriesRead": 12895,
+  "declaredUncompressedBytes": 3759640141,
+  "linkEntriesNotExtracted": 0,
+  "selectedBytesRead": 35644710,
+  "selectedFiles": [
+    {
+      "path": "6.7.0.0/build/cmake/android_toolchain.cmake",
+      "category": "build-recipe-helper",
+      "bytes": 954,
+      "sha256": "1b9ba7410edf640f3f40cacf735e536c7b3485e4d344468a017fe4bd85b8d623",
+      "noticeClassification": {
+        "markersPresent": [],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/build/cmake/custom_toolchain.cmake",
+      "category": "build-recipe-helper",
+      "bytes": 2911,
+      "sha256": "2ae1cd552fa67100d8b050181d88c1decadc231df780108efc60cd0cd235e36a",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "all-rights-reserved",
+          "qualcomm-name",
+          "confidential-marker",
+          "proprietary-marker"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          2
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/build/cmake/hexagon_arch.cmake",
+      "category": "build-recipe-helper",
+      "bytes": 1678,
+      "sha256": "35e00947c62524f18d377775e334ab808e35a056aa279f604159bc64e2089da1",
+      "noticeClassification": {
+        "markersPresent": [],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+      "category": "build-idl-recipe",
+      "bytes": 36308,
+      "sha256": "805e17e0df4e3a476038c66e7f08787a017e62a9432c2d100212fd9a972cdd85",
+      "noticeClassification": {
+        "markersPresent": [],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      },
+      "review": {
+        "textEncoding": "UTF8",
+        "qaicReferenceLines": [
+          70,
+          260,
+          297
+        ],
+        "qaicReferenceExcerpt": "set(proj-qaic_src ${HEXAGON_SDK_ROOT}/ipc/fastrpc/qaic/) # This function will set up a custom_target to build <idlFile> using qaic COMMAND \"${proj-qaic_src}/bin/qaic\" ${cmdLineOptions}",
+        "flagSpellingsMentionedInRecipe": [
+          "-DADD_SYMBOLS",
+          "-DANDROID_ABI",
+          "-DANDROID_NATIVE_API_LEVEL",
+          "-DANDROID_NDK",
+          "-DANDROID_STL",
+          "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY",
+          "-DCMAKE_BUILD_TYPE",
+          "-DCMAKE_GENERATOR",
+          "-DCMAKE_INSTALL_PREFIX",
+          "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY",
+          "-DCMAKE_MAKE_PROGRAM",
+          "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY",
+          "-DCMAKE_SYSTEM_NAME",
+          "-DCMAKE_TOOLCHAIN_FILE",
+          "-DCMAKE_VERBOSE_MAKEFILE",
+          "-DDEPENDENCIES",
+          "-DDSP_TYPE",
+          "-DDSP_VERSION",
+          "-DHEXAGON_CMAKE_ROOT",
+          "-DHEXAGON_SDK_ROOT",
+          "-DHEXAGON_TOOLS_ROOT",
+          "-DOPEN_WRT",
+          "-DOS_TYPE",
+          "-DPREBUILT_LIB_DIR",
+          "-DSOFT_FLOAT",
+          "-DSYSTEM_TYPE",
+          "-DUBUNTUARM_TOOLS_DIR",
+          "-DV",
+          "-E",
+          "-I",
+          "-L",
+          "-ext",
+          "-isystem",
+          "-lib",
+          "-llog",
+          "-mdll",
+          "-o",
+          "-rf"
+        ],
+        "commandAndImportInterpretationReviewed": false
+      }
+    },
+    {
+      "path": "6.7.0.0/build/cmake/hexagon_fun_internal.cmake",
+      "category": "build-recipe-helper",
+      "bytes": 18651,
+      "sha256": "feed055f0b9c3be99efbe89b28aaf68d1e3bcf3561b21734d9ae14d77ca7884a",
+      "noticeClassification": {
+        "markersPresent": [],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/build/cmake/hexagon_toolchain.cmake",
+      "category": "build-recipe-helper",
+      "bytes": 23175,
+      "sha256": "bf59da6e9323af6273ab59e8b4be7464e75d6a893dda7b7cd6225afb88757e53",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "all-rights-reserved",
+          "qualcomm-name",
+          "confidential-marker",
+          "proprietary-marker"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          2
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/build/cmake/ubuntuARM32_toolchain.cmake",
+      "category": "build-recipe-helper",
+      "bytes": 5384,
+      "sha256": "c0e74726301bb0f6fa4338cc574296704edfd303f10c4eca0cbc6455c02959ca",
+      "noticeClassification": {
+        "markersPresent": [],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/build/cmake/ubuntuARM64_toolchain.cmake",
+      "category": "build-recipe-helper",
+      "bytes": 4644,
+      "sha256": "17daf1f3cee9779a5c6387752b73aad35c66d938dedde40e17feaec613edb4c6",
+      "noticeClassification": {
+        "markersPresent": [],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/incs/dspqueue.h",
+      "category": "sdk-rpc-header-candidate",
+      "bytes": 37079,
+      "sha256": "2b5f94766610586ae89684a1ad08994760efa38c604c81e91ea0fba64860177a",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "all-rights-reserved",
+          "qualcomm-name",
+          "confidential-marker",
+          "proprietary-marker"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          2
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/incs/remote.h",
+      "category": "sdk-rpc-header-candidate",
+      "bytes": 67004,
+      "sha256": "3ab10e0e7915d0059baa9b71c80531bcb9673633f16e1caad43d37fe0688a442",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "all-rights-reserved",
+          "qualcomm-name",
+          "confidential-marker",
+          "proprietary-marker",
+          "bsd-name"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          2
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/incs/remote.idl",
+      "category": "sdk-idl-input-candidate",
+      "bytes": 1387,
+      "sha256": "7c934edc9185adb26878e9e5e7d5df0ba179e7ee87158c4734e6c5b7910a1bb8",
+      "noticeClassification": {
+        "markersPresent": [],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/incs/rpcmem.h",
+      "category": "sdk-rpc-header-candidate",
+      "bytes": 7613,
+      "sha256": "619f2e68ca75594cf6056c9b2d2963b06604bfb1dde3ea92faf86fefeb82b8ab",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "all-rights-reserved",
+          "qualcomm-name",
+          "redistribution-word",
+          "distribution-word",
+          "bsd-name"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          2,
+          7,
+          10,
+          14,
+          18,
+          21
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/incs/stddef/AEEStdDef.idl",
+      "category": "sdk-idl-input-candidate",
+      "bytes": 3448,
+      "sha256": "0779a289a081b67dccaf48a9403bf33215017b3d6f4cc636318bd584072e1835",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "all-rights-reserved",
+          "qualcomm-name",
+          "redistribution-word",
+          "distribution-word"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          7,
+          8,
+          14,
+          17,
+          21,
+          25,
+          28
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/incs/stddef/AEEStdErr.idl",
+      "category": "sdk-idl-input-candidate",
+      "bytes": 7253,
+      "sha256": "d14903198cdc9e733bdf2566bc6b74b989440a6f0e3f7aa814a3226578396438",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "all-rights-reserved",
+          "qualcomm-name",
+          "redistribution-word",
+          "distribution-word"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          7,
+          8,
+          14,
+          17,
+          21,
+          25,
+          28
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      }
+    },
+    {
+      "path": "6.7.0.0/ipc/fastrpc/qaic/bin/qaic.exe",
+      "category": "qaic-generator",
+      "bytes": 35301888,
+      "sha256": "e7fd5d03e030fa5cc9b85d9364fa9d34719edf483a26475fa08e7ca1cfd30f36",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "qualcomm-name",
+          "distribution-word",
+          "license-word",
+          "bsd-name"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "classificationScope": "binary-byte-markers-only-not-a-license-grant"
+      },
+      "peHeader": {
+        "validPeHeader": true,
+        "machine": 34404,
+        "machineHex": "8664"
+      }
+    },
+    {
+      "path": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/NOTICE.txt",
+      "category": "license-review",
+      "bytes": 118826,
+      "sha256": "39af9dbb366f4bbbd28c6d07a411a400bd4b33ad4b7d745287820a9cdcac359a",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "all-rights-reserved",
+          "qualcomm-name",
+          "redistribution-word",
+          "distribution-word",
+          "license-word",
+          "agreement-word",
+          "terms-word",
+          "bsd-name",
+          "apache-name",
+          "gpl-name"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "classificationScope": "binary-byte-markers-only-not-a-license-grant"
+      },
+      "review": {
+        "textEncoding": "not-UTF8",
+        "excerpt": null
+      }
+    },
+    {
+      "path": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/Tools/lib/python311/Lib/site-packages/click-8.1.7-py3.11.egg/EGG-INFO/LICENSE.rst",
+      "category": "license-review",
+      "bytes": 1475,
+      "sha256": "9a8ad106a394e853bfe21f42f4e72d592819a22805d991b5f3275029292b658d",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "redistribution-word",
+          "distribution-word"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          1,
+          7,
+          10,
+          14,
+          18,
+          21
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      },
+      "review": {
+        "textEncoding": "UTF8",
+        "excerpt": "Copyright 2014 Pallets Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met: 1."
+      }
+    },
+    {
+      "path": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/Tools/lib/python311/Lib/site-packages/colorama-0.4.6-py3.11.egg/EGG-INFO/licenses/LICENSE.txt",
+      "category": "license-review",
+      "bytes": 1491,
+      "sha256": "cac35c02686e5d04a5a7140bfb3b36e73aed496656e891102e428886d7930318",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "all-rights-reserved",
+          "redistribution-word",
+          "distribution-word"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          1,
+          7,
+          10,
+          14,
+          18,
+          21
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      },
+      "review": {
+        "textEncoding": "UTF8",
+        "excerpt": "Copyright (c) 2010 Jonathan Hartley All rights reserved. Redistribution and use in source and binary forms, with or without modification, are permitted provided that the"
+      }
+    },
+    {
+      "path": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/Tools/lib/python311/Lib/site-packages/dictdiffer-0.9.0-py3.11.egg/EGG-INFO/LICENSE",
+      "category": "license-review",
+      "bytes": 1398,
+      "sha256": "1f9e05b3b9a6fad24cc67455578bcdfd3e89b09a25c45369a5254203bbe2bdd3",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "license-word",
+          "terms-word"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          4,
+          5,
+          15,
+          21
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      },
+      "review": {
+        "textEncoding": "UTF8",
+        "excerpt": "Dictdiffer is free software; you can redistribute it and/or modify it under the terms of the MIT License quoted below. Copyright (C) 2013 Fatih Erikli."
+      }
+    },
+    {
+      "path": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/Tools/lib/python311/Lib/site-packages/pip-23.1.2.dist-info/LICENSE.txt",
+      "category": "license-review",
+      "bytes": 1093,
+      "sha256": "634300a669d49aeae65b12c6c48c924c51a4cdf3d1ff086dc3456dc8bcaa2104",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "license-word"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          1,
+          11,
+          17
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      },
+      "review": {
+        "textEncoding": "UTF8",
+        "excerpt": "Copyright (c) 2008-present The pip developers (see AUTHORS.txt file) Permission is hereby granted, free of charge, to any person obtaining a copy of this software"
+      }
+    },
+    {
+      "path": "6.7.0.0/tools/HEXAGON_Tools/21.0.04/Tools/lib/python311/Lib/site-packages/setuptools-65.5.0.dist-info/LICENSE",
+      "category": "license-review",
+      "bytes": 1050,
+      "sha256": "db3f0246b1f9278f15845b99fec478b8b506eb76487993722f8c6e254285faf8",
+      "noticeClassification": {
+        "markersPresent": [
+          "copyright",
+          "license-word"
+        ],
+        "licenseRightsInterpretationReviewed": false,
+        "spdxIdentifiersMentioned": [],
+        "copyrightMarkerLines": [
+          1,
+          10,
+          16
+        ],
+        "classificationScope": "text-markers-only-not-a-license-grant"
+      },
+      "review": {
+        "textEncoding": "UTF8",
+        "excerpt": "Copyright Jason R. Coombs Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the"
+      }
+    }
+  ],
+  "buildIdlRecipe": {
+    "status": "functional-token-metadata-collected-unreviewed",
+    "scope": "functional-command-token-metadata-only-no-comments-or-CMake-evaluation",
+    "functions": [
+      {
+        "name": "build_idl",
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+        "statements": [
+          {
+            "command": "function",
+            "tokens": [
+              "build_idl",
+              "idlFile",
+              "currentTarget"
+            ],
+            "startLine": 269,
+            "endLine": 269
+          },
+          {
+            "command": "message",
+            "tokens": [],
+            "startLine": 270,
+            "endLine": 270,
+            "nonfunctionalMessageTextOmitted": true
+          },
+          {
+            "command": "string",
+            "tokens": [
+              "RANDOM",
+              "_random"
+            ],
+            "startLine": 271,
+            "endLine": 271
+          },
+          {
+            "command": "set",
+            "tokens": [
+              "QIDLINC",
+              "\"\""
+            ],
+            "startLine": 273,
+            "endLine": 273
+          },
+          {
+            "command": "set",
+            "tokens": [
+              "defaultIncs",
+              "${HEXAGON_SDK_ROOT}/incs/",
+              "${HEXAGON_SDK_ROOT}/incs/stddef/"
+            ],
+            "startLine": 274,
+            "endLine": 277
+          },
+          {
+            "command": "foreach",
+            "tokens": [
+              "path",
+              "${defaultIncs}"
+            ],
+            "startLine": 278,
+            "endLine": 278
+          },
+          {
+            "command": "set",
+            "tokens": [
+              "QIDLINC",
+              "${QIDLINC}",
+              "\"-I${path}\""
+            ],
+            "startLine": 279,
+            "endLine": 279
+          },
+          {
+            "command": "endforeach",
+            "tokens": [
+              "path"
+            ],
+            "startLine": 280,
+            "endLine": 280
+          },
+          {
+            "command": "get_target_property",
+            "tokens": [
+              "dirs",
+              "${currentTarget}",
+              "INCLUDE_DIRECTORIES"
+            ],
+            "startLine": 282,
+            "endLine": 282
+          },
+          {
+            "command": "foreach",
+            "tokens": [
+              "path",
+              "${dirs}"
+            ],
+            "startLine": 283,
+            "endLine": 283
+          },
+          {
+            "command": "set",
+            "tokens": [
+              "QIDLINC",
+              "${QIDLINC}",
+              "\"-I${path}\""
+            ],
+            "startLine": 284,
+            "endLine": 284
+          },
+          {
+            "command": "endforeach",
+            "tokens": [
+              "path"
+            ],
+            "startLine": 285,
+            "endLine": 285
+          },
+          {
+            "command": "get_filename_component",
+            "tokens": [
+              "fileName",
+              "${idlFile}",
+              "NAME_WE"
+            ],
+            "startLine": 287,
+            "endLine": 287
+          },
+          {
+            "command": "set",
+            "tokens": [
+              "cmdLineOptions",
+              "-mdll",
+              "-o",
+              "${CMAKE_CURRENT_BINARY_DIR}",
+              "${QIDLINC}",
+              "${idlFile}"
+            ],
+            "startLine": 288,
+            "endLine": 288
+          },
+          {
+            "command": "set",
+            "tokens": [
+              "qidlTarget",
+              "qidlTarget${fileName}${_random}"
+            ],
+            "startLine": 289,
+            "endLine": 289
+          },
+          {
+            "command": "if",
+            "tokens": [
+              "NOT",
+              "TARGET",
+              "${qidlTarget}"
+            ],
+            "startLine": 291,
+            "endLine": 291
+          },
+          {
+            "command": "idl_generated_files",
+            "tokens": [
+              "${idlFile}",
+              "byproduct_files"
+            ],
+            "startLine": 292,
+            "endLine": 292
+          },
+          {
+            "command": "add_custom_command",
+            "tokens": [
+              "OUTPUT",
+              "${byproduct_files}",
+              "${CMAKE_CURRENT_BINARY_DIR}/${fileName}.h",
+              "WORKING_DIRECTORY",
+              "${CMAKE_CURRENT_SOURCE_DIR}/",
+              "COMMAND",
+              "\"${proj-qaic_src}/bin/qaic\"",
+              "${cmdLineOptions}",
+              "DEPENDS",
+              "${idlFile}"
+            ],
+            "startLine": 294,
+            "endLine": 299
+          },
+          {
+            "command": "add_custom_target",
+            "tokens": [
+              "${qidlTarget}",
+              "DEPENDS",
+              "${byproduct_files}",
+              "${CMAKE_CURRENT_BINARY_DIR}/${fileName}.h",
+              "WORKING_DIRECTORY",
+              "${CMAKE_CURRENT_SOURCE_DIR}/"
+            ],
+            "startLine": 301,
+            "endLine": 304
+          },
+          {
+            "command": "message",
+            "tokens": [],
+            "startLine": 306,
+            "endLine": 306,
+            "nonfunctionalMessageTextOmitted": true
+          },
+          {
+            "command": "set_source_files_properties",
+            "tokens": [
+              "${byproduct_files}",
+              "${CMAKE_CURRENT_BINARY_DIR}/${fileName}.h",
+              "PROPERTIES",
+              "GENERATED",
+              "TRUE"
+            ],
+            "startLine": 307,
+            "endLine": 312
+          },
+          {
+            "command": "endif",
+            "tokens": [],
+            "startLine": 313,
+            "endLine": 313
+          },
+          {
+            "command": "add_dependencies",
+            "tokens": [
+              "${currentTarget}",
+              "${qidlTarget}"
+            ],
+            "startLine": 315,
+            "endLine": 315
+          },
+          {
+            "command": "foreach",
+            "tokens": [
+              "target",
+              "${ARGN}"
+            ],
+            "startLine": 316,
+            "endLine": 316
+          },
+          {
+            "command": "if",
+            "tokens": [
+              "TARGET",
+              "target"
+            ],
+            "startLine": 317,
+            "endLine": 317
+          },
+          {
+            "command": "add_dependencies",
+            "tokens": [
+              "${target}",
+              "${qidlTarget}"
+            ],
+            "startLine": 318,
+            "endLine": 318
+          },
+          {
+            "command": "else",
+            "tokens": [],
+            "startLine": 319,
+            "endLine": 319
+          },
+          {
+            "command": "message",
+            "tokens": [],
+            "startLine": 320,
+            "endLine": 320,
+            "nonfunctionalMessageTextOmitted": true
+          },
+          {
+            "command": "endif",
+            "tokens": [],
+            "startLine": 321,
+            "endLine": 321
+          },
+          {
+            "command": "endforeach",
+            "tokens": [],
+            "startLine": 322,
+            "endLine": 322
+          },
+          {
+            "command": "endfunction",
+            "tokens": [],
+            "startLine": 323,
+            "endLine": 323
+          }
+        ]
+      },
+      {
+        "name": "idl_generated_files",
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_fun_internal.cmake",
+        "statements": [
+          {
+            "command": "function",
+            "tokens": [
+              "idl_generated_files",
+              "idlFile",
+              "generatedFiles"
+            ],
+            "startLine": 10,
+            "endLine": 10
+          },
+          {
+            "command": "file",
+            "tokens": [
+              "READ",
+              "${idlFile}",
+              "idl_data"
+            ],
+            "startLine": 11,
+            "endLine": 11
+          },
+          {
+            "command": "string",
+            "tokens": [
+              "REPLACE",
+              "\";\"",
+              "\"\"",
+              "stripped_idl_data",
+              "${idl_data}"
+            ],
+            "startLine": 13,
+            "endLine": 13
+          },
+          {
+            "command": "string",
+            "tokens": [
+              "FIND",
+              "${stripped_idl_data}",
+              "\"/*\"",
+              "found_start_index"
+            ],
+            "startLine": 16,
+            "endLine": 16
+          },
+          {
+            "command": "while",
+            "tokens": [
+              "NOT",
+              "(",
+              "found_start_index",
+              "EQUAL",
+              "-1",
+              ")"
+            ],
+            "startLine": 17,
+            "endLine": 17
+          },
+          {
+            "command": "string",
+            "tokens": [
+              "FIND",
+              "${stripped_idl_data}",
+              "\"*/\"",
+              "found_end_index"
+            ],
+            "startLine": 18,
+            "endLine": 18
+          },
+          {
+            "command": "if",
+            "tokens": [
+              "found_end_string",
+              "EQUAL",
+              "-1"
+            ],
+            "startLine": 19,
+            "endLine": 19
+          },
+          {
+            "command": "message",
+            "tokens": [],
+            "startLine": 20,
+            "endLine": 20,
+            "nonfunctionalMessageTextOmitted": true
+          },
+          {
+            "command": "endif",
+            "tokens": [],
+            "startLine": 21,
+            "endLine": 21
+          },
+          {
+            "command": "math",
+            "tokens": [
+              "EXPR",
+              "comment_len",
+              "${found_end_index}-${found_start_index}+2"
+            ],
+            "startLine": 23,
+            "endLine": 23
+          },
+          {
+            "command": "string",
+            "tokens": [
+              "SUBSTRING",
+              "${stripped_idl_data}",
+              "${found_start_index}",
+              "${comment_len}",
+              "temp_comment"
+            ],
+            "startLine": 25,
+            "endLine": 25
+          },
+          {
+            "command": "string",
+            "tokens": [
+              "REPLACE",
+              "${temp_comment}",
+              "\"\"",
+              "stripped_idl_data_without_comment",
+              "${stripped_idl_data}"
+            ],
+            "startLine": 26,
+            "endLine": 26
+          },
+          {
+            "command": "set",
+            "tokens": [
+              "stripped_idl_data",
+              "${stripped_idl_data_without_comment}"
+            ],
+            "startLine": 27,
+            "endLine": 27
+          },
+          {
+            "command": "string",
+            "tokens": [
+              "FIND",
+              "${stripped_idl_data}",
+              "\"/*\"",
+              "found_start_index"
+            ],
+            "startLine": 28,
+            "endLine": 28
+          },
+          {
+            "command": "endwhile",
+            "tokens": [],
+            "startLine": 29,
+            "endLine": 29
+          },
+          {
+            "command": "string",
+            "tokens": [
+              "REGEX",
+              "REPLACE",
+              "\"//[^\\n]*\"",
+              "\"\"",
+              "interface_data",
+              "${stripped_idl_data}"
+            ],
+            "startLine": 32,
+            "endLine": 32
+          },
+          {
+            "command": "string",
+            "tokens": [
+              "REGEX",
+              "MATCHALL",
+              "\"interface[ \\n]+[a-zA-Z0-9_]+\"",
+              "interface_strings",
+              "${interface_data}"
+            ],
+            "startLine": 35,
+            "endLine": 35
+          },
+          {
+            "command": "foreach",
+            "tokens": [
+              "interface",
+              "${interface_strings}"
+            ],
+            "startLine": 36,
+            "endLine": 36
+          },
+          {
+            "command": "string",
+            "tokens": [
+              "REGEX",
+              "MATCH",
+              "\"interface[ \\n]+([a-zA-Z0-9_]+)\"",
+              "temp_match",
+              "${interface}"
+            ],
+            "startLine": 37,
+            "endLine": 37
+          },
+          {
+            "command": "set",
+            "tokens": [
+              "${generatedFiles}",
+              "${${generatedFiles}}",
+              "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_MATCH_1}_skel.c",
+              "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_MATCH_1}_stub.c"
+            ],
+            "startLine": 38,
+            "endLine": 41
+          },
+          {
+            "command": "endforeach",
+            "tokens": [],
+            "startLine": 42,
+            "endLine": 42
+          },
+          {
+            "command": "set",
+            "tokens": [
+              "${generatedFiles}",
+              "${${generatedFiles}}",
+              "PARENT_SCOPE"
+            ],
+            "startLine": 44,
+            "endLine": 44
+          },
+          {
+            "command": "endfunction",
+            "tokens": [],
+            "startLine": 45,
+            "endLine": 45
+          }
+        ]
+      }
+    ],
+    "relatedTopLevelSetup": [
+      {
+        "sourcePath": "6.7.0.0/build/cmake/ubuntuARM64_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "UBUNTUARM64_TOOLCHAIN_INCLUDED",
+          "true"
+        ],
+        "startLine": 4,
+        "endLine": 4
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/ubuntuARM64_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "HEXAGON_SDK_ROOT",
+          "$ENV{HEXAGON_SDK_ROOT}"
+        ],
+        "startLine": 8,
+        "endLine": 8
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/ubuntuARM64_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "CMAKE_TRY_COMPILE_PLATFORM_VARIABLES",
+          "HEXAGON_SDK_ROOT",
+          "UBUNTUARM_TOOLS_DIR",
+          "OPENWRT"
+        ],
+        "startLine": 70,
+        "endLine": 74
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/custom_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "CUSTOM_TOOLCHAIN_INCLUDED",
+          "true"
+        ],
+        "startLine": 9,
+        "endLine": 9
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/custom_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "CMAKE_TRY_COMPILE_PLATFORM_VARIABLES",
+          "HEXAGON_SDK_ROOT"
+        ],
+        "startLine": 31,
+        "endLine": 33
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/ubuntuARM32_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "UBUNTUARM32_TOOLCHAIN_INCLUDED",
+          "true"
+        ],
+        "startLine": 4,
+        "endLine": 4
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/ubuntuARM32_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "HEXAGON_SDK_ROOT",
+          "$ENV{HEXAGON_SDK_ROOT}"
+        ],
+        "startLine": 8,
+        "endLine": 8
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/ubuntuARM32_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "CMAKE_TRY_COMPILE_PLATFORM_VARIABLES",
+          "HEXAGON_SDK_ROOT",
+          "UBUNTUARM_TOOLS_DIR",
+          "OPENWRT",
+          "SOFT_FLOAT"
+        ],
+        "startLine": 81,
+        "endLine": 86
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/android_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "ANDROID_TOOLCHAIN_INCLUDED",
+          "true"
+        ],
+        "startLine": 4,
+        "endLine": 4
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/android_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "CMAKE_TRY_COMPILE_PLATFORM_VARIABLES",
+          "HEXAGON_SDK_ROOT",
+          "ANDROID_NDK"
+        ],
+        "startLine": 11,
+        "endLine": 14
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+        "command": "set",
+        "tokens": [
+          "HEXAGON_SDK_ROOT",
+          "$ENV{HEXAGON_SDK_ROOT}"
+        ],
+        "startLine": 6,
+        "endLine": 6
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+        "command": "set",
+        "tokens": [
+          "proj-qaic_src",
+          "${HEXAGON_SDK_ROOT}/ipc/fastrpc/qaic/"
+        ],
+        "startLine": 70,
+        "endLine": 70
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+        "command": "set",
+        "tokens": [
+          "HEXAGON_ALL_INCS",
+          "${HEXAGON_SDK_ROOT}/incs/",
+          "${HEXAGON_SDK_ROOT}/incs/stddef/",
+          "${HEXAGON_SDK_ROOT}/libs/worker_pool/inc",
+          "${HEXAGON_SDK_ROOT}/ipc/fastrpc/remote/ship/${PREBUILT_LIB_DIR}/"
+        ],
+        "startLine": 72,
+        "endLine": 77
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+        "command": "set",
+        "tokens": [
+          "CMAKE_CXX_FLAGS",
+          "\"${CMAKE_CXX_FLAGS} -isystem ${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1/\""
+        ],
+        "startLine": 88,
+        "endLine": 88
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+        "command": "set",
+        "tokens": [
+          "CMAKE_CXX_FLAGS",
+          "\"${CMAKE_CXX_FLAGS} -isystem ${ANDROID_NDK}/toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/include/c++/v1/\""
+        ],
+        "startLine": 92,
+        "endLine": 92
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+        "command": "set",
+        "tokens": [
+          "googletest_incs",
+          "\"${HEXAGON_SDK_ROOT}/utils/googletest/gtest/include\"",
+          "\"${HEXAGON_SDK_ROOT}/utils/googletest/include\""
+        ],
+        "startLine": 187,
+        "endLine": 190
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "HEXAGON_TOOLCHAIN_INCLUDED",
+          "true"
+        ],
+        "startLine": 9,
+        "endLine": 9
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "CMAKE_FIND_ROOT_PATH_MODE_INCLUDE",
+          "ONLY"
+        ],
+        "startLine": 18,
+        "endLine": 18
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "HEXAGON_SDK_ROOT",
+          "$ENV{HEXAGON_SDK_ROOT}"
+        ],
+        "startLine": 24,
+        "endLine": 24
+      },
+      {
+        "sourcePath": "6.7.0.0/build/cmake/hexagon_toolchain.cmake",
+        "command": "set",
+        "tokens": [
+          "CMAKE_TRY_COMPILE_PLATFORM_VARIABLES",
+          "HEXAGON_SDK_ROOT",
+          "HEXAGON_TOOLS_ROOT"
+        ],
+        "startLine": 57,
+        "endLine": 60
+      }
+    ],
+    "otherRecipeFilesNotParsed": [],
+    "variableExpansionExecuted": false,
+    "generatorCommandAuthorized": false
+  },
+  "licenseFilenameSearch": {
+    "scope": "all-regular-archive-entry-leaf-names-without-depth-or-prefix-restrictions",
+    "substringIndicators": [
+      "license",
+      "licence",
+      "eula",
+      "notice",
+      "copyright",
+      "terms",
+      "agreement",
+      "copying"
+    ],
+    "matchingNamesEstablishLicenseAbsenceOrRights": false
+  },
+  "sdkContentsExtracted": false,
+  "sdkCodeExecuted": false,
+  "generatorExecuted": false,
+  "generatedSourceUploaded": false,
+  "licenseReview": "pending; bounded necessary review excerpts and file identities only",
+  "generatorInvocationReviewed": false,
+  "deviceCodeLoaded": false,
+  "profileEligible": false,
+  "inventorySourceSha256": "9cc70223986c02da484f2a9715159e1c3d85019d9624aa233c7ae21cbfe033d4",
+  "inventoryPinSha256": "c843f4512737129a0f36bc2a4a1ce7ec77e646f0afe01dd043537cacef8a0373"
+}
