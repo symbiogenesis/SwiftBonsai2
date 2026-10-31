@@ -148,7 +148,7 @@ mod native {
         ffi::{CStr, CString, c_char, c_void},
         io,
         marker::PhantomData,
-        mem::{align_of, offset_of, size_of, size_of_val},
+        mem::offset_of,
         os::windows::ffi::OsStrExt as _,
         panic::{AssertUnwindSafe, catch_unwind},
         path::Path,
