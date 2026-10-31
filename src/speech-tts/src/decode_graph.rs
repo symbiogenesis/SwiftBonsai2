@@ -49,16 +49,16 @@ impl<T> Cache<T> {
             return None;
         }
         let key = (window_index(padded_tokens, self.windows)?, width);
-        if self
-            .current
-            .as_ref()
-            .is_none_or(|(cached, _)| *cached != key)
+        if let Some((cached, resource)) = self.current.as_mut()
+            && *cached == key
         {
-            self.current = None;
-            self.current = Some((key, build()?));
+            self.active = true;
+            return Some(resource);
         }
+        self.current = None;
+        let resource = build()?;
         self.active = true;
-        self.current.as_mut().map(|(_, resource)| resource)
+        Some(&mut self.current.insert((key, resource)).1)
     }
 
     /// End a lease only after native graph work and output reads synchronize.
