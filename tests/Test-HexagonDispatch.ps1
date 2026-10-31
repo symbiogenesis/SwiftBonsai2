@@ -111,6 +111,9 @@ if ($Case -ceq 'Plan') {
     $changed.Stage = 'device-dispatch'; $changed.FixtureResult = $null
     $checkedWorker = Get-BonsaiHexagonDispatchWorkerResult -Json ($changed | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision
     Assert ($checkedWorker.LastFixtureStage -ceq 'readback' -and -not $checkedWorker.DeviceDispatchVerified) 'Interrupted worker lost its distinct progress observation.'
+    $changed.LastFixtureStage = 'context'
+    $checkedWorker = Get-BonsaiHexagonDispatchWorkerResult -Json ($changed | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision
+    Assert ($checkedWorker.LastFixtureStage -ceq 'context' -and -not $checkedWorker.DeviceDispatchVerified) 'Context-stage progress was rejected as partial evidence.'
 } elseif ($Case -ceq 'Environment') {
     $environment = Get-BonsaiHexagonDispatchEnvironment -RuntimeDirectory 'C:\runtime' -SystemDirectory 'C:\Windows\System32'
     Assert ($environment.Set.PATH -ceq 'C:\runtime;C:\Windows\System32' -and $environment.Set.ADSP_LIBRARY_PATH -ceq 'C:\runtime') 'Child DLL/HTP lookup escaped fixed directories.'
@@ -136,11 +139,11 @@ Import-Module '__MODULE__'
         $progress = [ordered]@{ LastFixtureStage = 'not-started' }
         # An invalid vendor label must never enter retained evidence; a fixed
         # marker split across pipe reads must be recovered once its LF arrives.
-        $markers = '[Console]::Error.Write("hexagon-fixture:stage=private-path`nhexagon-fixture:stage=reg"); Start-Sleep -Milliseconds 30; [Console]::Error.Write("istry`n"); exit 2'
+        $markers = '[Console]::Error.Write("hexagon-fixture:stage=private-path`nhexagon-fixture:stage=con"); Start-Sleep -Milliseconds 30; [Console]::Error.Write("text`n"); exit 2'
         $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($markers)))
         $result = Invoke-BonsaiHexagonBoundedCapture -Executable (Join-Path $PSHOME 'pwsh.exe') -ArgumentList $arguments -WorkingDirectory ([IO.Path]::GetTempPath()) -ProgressReceipt $progress -ProgressPath $progressPath
         $saved = [IO.File]::ReadAllText($progressPath) | ConvertFrom-Json -AsHashtable
-        if ($result.ExitCode -ne 2 -or $progress.LastFixtureStage -cne 'registry' -or $saved.LastFixtureStage -cne 'registry') { throw 'Bounded native progress was not retained.' }
+        if ($result.ExitCode -ne 2 -or $progress.LastFixtureStage -cne 'context' -or $saved.LastFixtureStage -cne 'context') { throw 'Bounded native progress was not retained.' }
     } finally { if ([IO.File]::Exists($progressPath)) { [IO.File]::Delete($progressPath) } }
     $overflow = '[Console]::Out.Write("x" * 131073)'
     $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($overflow)))

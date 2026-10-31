@@ -175,7 +175,7 @@ function Get-BonsaiHexagonDispatchWorkerResult {
         $record.SourceRevision -isnot [string] -or $record.SourceRevision -cne $ExpectedRunnerRevision -or
         $record.Outcome -isnot [string] -or $record.Outcome -cnotin @('passed', 'pending', 'failed') -or
         $record.Stage -isnot [string] -or $record.Stage -cnotmatch '^[a-z][a-z0-9-]{0,63}$' -or
-        $record.LastFixtureStage -isnot [string] -or $record.LastFixtureStage -cnotin @('not-started', 'load', 'registry', 'backend-init', 'allocation', 'transfer', 'dispatch', 'readback') -or
+        $record.LastFixtureStage -isnot [string] -or $record.LastFixtureStage -cnotin @('not-started', 'load', 'registry', 'backend-init', 'context', 'allocation', 'transfer', 'dispatch', 'readback') -or
         ($null -ne $record.Failure -and ($record.Failure -isnot [string] -or $record.Failure -cnotmatch '^[a-z][a-z0-9-]{0,95}$')) -or
         $record.SelectedDspArchitecture -isnot [string] -or $record.SelectedDspArchitecture -cne 'unknown') {
         throw 'Invalid dispatch worker identity or stage.'
@@ -316,7 +316,7 @@ function Invoke-BonsaiHexagonBoundedCapture {
                             # vendor stderr, local paths or credential text. A later
                             # abort/hang must not erase the last entered fixture stage.
                             $progress = [Text.Encoding]::UTF8.GetString($channel.Store.ToArray())
-                            $markers = [regex]::Matches($progress, '(?m)^hexagon-fixture:stage=(load|registry|backend-init|allocation|transfer|dispatch|readback)\r?\n')
+                            $markers = [regex]::Matches($progress, '(?m)^hexagon-fixture:stage=(load|registry|backend-init|context|allocation|transfer|dispatch|readback)\r?\n')
                             if ($markers.Count) {
                                 $stage = $markers[$markers.Count - 1].Groups[1].Value
                                 if ($ProgressReceipt.LastFixtureStage -cne $stage) {
