@@ -223,3 +223,26 @@ and vendor runtime binaries are excluded. Off-device backup, retrieval without
 the original runner and independent qualification review remain pending.
 The final charged owner total, including archive verification, is **140,537 ms**
 within the single 300,000 ms allowance; this is accounting, not a performance result.
+
+## Independently checked public RPC bytes
+
+The [hosted public-source control](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41171859264)
+built pinned Qualcomm QAIC with frozen dependency identities, generated the
+seven-argument interface in documented standard-width mode, and compiled its C
+stub against pinned public headers and host RPC mocks. Two synthetic calls
+matched the independent source-derived fixture: start uses scalars `0x02010000`
+and a complete 48-byte input, including zero padding; stop uses `0x03000000`
+and a null argument array. The separately compiled
+[Rust encoder](../tools/hexagon/public_idl_control.rs) and its contract test
+matched every shared field and payload byte. Public result-type declarations
+are explicit compiler inputs; losing legacy-type and missing-alias builds are
+retained as separate observations.
+
+The [candidate audit](hexagon-signed-q2-candidate.md) binds the distinct SDK
+headers, matching normalized IDL inputs, additional queue declarations and
+remaining Windows extensions. This control ran with synthetic handles on hosted
+Linux LP64. Matching Windows ABI, provider exports, asynchronous queue ownership,
+signed device execution, Swift state/adapter parity and measured benefit remain
+[PLAN gates](../PLAN.md#hexagon-npu). Production admission and automatic selection
+remain disabled. Subsequent SDK and source controls ran in hosted CI; the owner
+investigation remains charged at **140,537 ms**.
