@@ -41,6 +41,9 @@ matching and speech-runner policy. Local compilation exhausted its bounded
 allowance before those cases could execute; formatting and the focused PowerShell
 speech-policy check do not replace them.
 
+The Rust speech tokenizer also needs the hosted full Qwen build/link and owning
+crate checks. Local model-free token parity does not close that integration gate.
+
 - Qualify startup, supplied-history streaming, full 8K context and 4K output, long
   conversations, speech, offline restart and recovery. Cover Stop, abandonment,
   deadlines, memory pressure, owned-process cleanup and explicit retry without replay.
@@ -229,9 +232,11 @@ identities and leaves missing evidence pending.
   references](docs/streaming-resources.md#native-speech-generation-and-streaming)
   through Design teardown and Base extraction on first use, profile changes and
   bootstrap failure. Include Rust parameter defaults, CPU thread selection,
-  reserved-token suppression, repetition penalties and Philox semantic and predictor
-  sampling in actual-model, listening and resource acceptance; exact vectors/C++
-  field and bit comparisons are insufficient.
+  reserved-token suppression, repetition penalties, Philox semantic and predictor
+  sampling and Rust-owned speech tokenization in actual-model, listening and resource
+  acceptance. Cover tokenizer initialization/rejection, worker teardown, exact utterance,
+  instruction and Base reference token IDs; model-free token/vector/C++ field and bit
+  comparisons are insufficient.
 - Qualify chat alone, warm TTS and overlap with a small shared thread-budget set: UI
   frames, audio continuity, useful-answer time, sustained memory and heat. Check cold
   idle separately from active, warm and Canary monitoring, including wake and Stop

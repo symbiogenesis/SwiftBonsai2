@@ -2,7 +2,8 @@
 
 This library owns the native Qwen3-TTS 1.7B VoiceDesign GGML engine through a
 small Rust binding to its public C ABI. Safe Rust initializes the complete
-parameter structures, selects bounded CPU thread counts, masks reserved tokens,
+parameter structures, owns speech tokenization, selects bounded CPU thread counts,
+masks reserved tokens,
 applies repetition penalties and implements shared Philox random draws for the
 semantic and predictor samplers. A reviewed build helper routes these helpers
 to Rust and adds a SIMD compile guard to a private copy of the external C++ core.
@@ -104,7 +105,7 @@ logical CPU query remains unchanged; Rust owns the atomic override and fallback
 policy. Exact replacement anchors reject mismatched inputs. The immutable
 provisioned source cache is never patched. Cached native libraries must include
 this overlay; the hosted cache identity covers all build helper sources and
-the embedded pinned Philox and sampling source anchors.
+the embedded pinned Philox, sampling and tokenizer source anchors.
 The build script builds only the external CPU
 static `qwen-core` target; Cargo compiles all Runner-owned glue as Rust. The
 third-party Qwen/GGML inference core still requires a C++ compiler. Shared libraries, dynamic backend
@@ -169,9 +170,8 @@ model-free C++ oracle for 722 bit-comparison cases, including duplicate/invalid
 token IDs, signed zero and exceptional float inputs. Focused checks also compile
 the generated native header and exercise empty/no-op ABI calls and source drift.
 
-The source audit retains the BPE tokenizer, probability pipeline, mel constants
-and resampler upstream. BPE needs vocabulary/lifecycle integration and exact
-Unicode/token qualification; top-k/top-p ordering and mel changes need separate
+The source audit retains the probability pipeline, mel constants
+and resampler upstream. Top-k/top-p ordering and mel changes need separate
 numerical evidence. Resampling is outside the current already-24-kHz reference
 path. Full-model speech output, quality and resource acceptance remain CI work
 under `PLAN.md`; bit parity alone makes no performance claim.
@@ -182,6 +182,41 @@ conformance bridges and C ABI checks; its serving runtime is already Rust.
 These references retain their native implementation so they can detect Rust
 porting errors. Replacing the speech inference cores requires separate model
 and lifecycle qualification.
+
+## Rust speech tokenizer
+
+`src/tokenizer.rs` and its scanner port the pinned Qwen `bpe.h` byte encoder,
+pretokenization, ranked merges, vocabulary, reverse lookup and special-token
+matching into safe Rust. They preserve the source's simplified Unicode categories,
+byte-oriented whitespace boundaries, first-registered special-token precedence,
+leftmost merge ties, duplicate-spelling overwrites and raw encoded-byte fallback.
+This is the pinned speech tokenizer; the Prism Qwen35 tokenizer has a different
+contract and is not substituted.
+
+The native overlay retains GGUF access and a small RAII wrapper around one opaque
+Rust owner. It streams metadata into that owner without retaining native copies
+of the tokenizer tables. Initialization failure releases the candidate and its
+GGUF context. The context releases its tokenizer after joining the compute worker.
+Encoding produces an independently owned Rust ID vector; the native prompt builder
+copies those IDs into its existing vector, then releases the Rust result even if
+the copy throws. Prompt framing, token slicing, embedding projections and GGML
+graphs remain native.
+
+The supported subset rejects invalid UTF-8, input beyond 64 KiB, spellings beyond
+4 KiB, table IDs/ranks of one million or greater, more than one million entries
+in either table, ambiguous reverse IDs, more than 64 MiB
+of unique table spelling bytes, more than 64 special tokens and more than
+64 million merge-pair probes per encoding. These spelling limits do not describe
+total process memory: maps, reverse lookup and scratch have additional storage.
+Errors reject the request or initialization without publishing partial token IDs.
+The full unmodified `tests/reference/bpe.h` anchors the build overlay and supplies
+the independent model-free C++ oracle. The focused tests compare 1,835 inputs
+across five synthetic metadata fixtures through the safe core and actual Rust ABI,
+and exercise initialization faults, independent results, malformed input and the
+generated native wrapper's metadata access and RAII. Source drift rejects a build.
+Full native builds remain hosted checks. Actual-model VoiceDesign/Base conditioning,
+speech output and resource qualification
+remain pending under `PLAN.md`; model-free token parity makes no speedup claim.
 
 ## Native waveform ownership
 
