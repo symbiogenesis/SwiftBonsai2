@@ -220,22 +220,37 @@ records lacking host identity. The speech-host query agrees on CPU/kernel. Repor
 comparison receipts are retained externally in `Bonsai-PerfNext3-20261029/x2-evidence`; they contain
 no model timing.
 
-The manual [X2 CPU workflow](../.github/workflows/x2-cpu-evaluation.yml) runs a bounded first thread
-screen on the owner-managed native ARM64 runner and settled `main`, sharing the model-capture
-concurrency group. Performance execution remains [CI-only](validation.md).
+The manual [X2 CPU workflow](../.github/workflows/x2-cpu-evaluation.yml) prepares exact maintenance
+tools on hosted ARM64 CI. Its default `run_device: false` performs no owner-device execution.
+The optional device job requires settled `main`, a native ARM64 owner runner with the single-run
+label `x2-cpu-<run_id>` and the shared model-capture concurrency group. Register that runner as
+ephemeral only for the reviewed run; a persistent generic runner could accept old queued jobs.
+Performance execution remains [CI-only](validation.md).
 
 ### Controls and cost
 
-The Rust maintenance planner selects at most three candidates from the reviewed decode/prefill
-thread budgets `6/6`, `8/8`, `4/12`, `8/12`, `8/18`, pruning budgets larger than the observed
-logical processor count. If more than three remain, it selects the first, middle and last. On this
-18-core machine those are `6/6`, `4/12` and `8/18`. These are thread counts without affinity
-pinning; Windows chooses their placement.
+The Rust maintenance planner selects only `6/6` decode/prefill threads against the unchanged
+`4/4` control. These are thread counts without affinity pinning; Windows chooses placement.
+One fixed short synthetic creative-writing prompt runs in two reversed pairs, at most four fresh
+processes with a 16-token cap and a 45-second per-process deadline. The former 24-process,
+two-prompt matrix is retired, not partitioned across repeated short jobs. Other budgets and long
+prompts remain pending work in PLAN. OS file cache is not flushed.
 
-Each candidate pairs with the unchanged `4/4` control on two fixed synthetic creative-writing
-prompts of different lengths, reversing pair order in the second repetition. The cap is 24 fresh
-processes, each with 128 tokens and a 180-second deadline: at most 72 minutes of model execution,
-plus verification/setup within a two-hour job. OS file cache is not flushed.
+All setup, verification, preflight, model loading and comparison share one at-most-240-second
+process budget within the five-minute owner job. Hosted tool compilation is outside that device
+job; the device verifies this run's exact revision, digest and ARM64 tools instead of compiling.
+The parent charges checkout and tool intake to its remaining job clock, caps the child at the
+lesser of 240 seconds and the remaining time before 270 job seconds, and bounds teardown at ten
+seconds. The script reserves twenty seconds for cleanup/reporting and refuses model trials when
+the remaining budget cannot fit the four per-sample deadlines plus teardown room.
+
+The completion batch's opt-in `totalTimeoutSeconds` (1..240) charges artifact/runtime hashing and
+all samples to one monotonic clock. Hash verification checks that clock at the existing one-second
+caller checkpoints. Before each launch, native supervision requires room for the full per-sample
+deadline, the ten-second owned teardown and one watchdog interval. Exhaustion retains failure and
+partial sample receipts; it neither resumes the matrix nor produces a completed comparison.
+The outer process watchdog also bounds synchronous setup and reporting. If startup, verification
+or even one sample cannot fit, leave the gate pending; never weaken policy or extend the job.
 
 The screen fixes the pinned original PQ2 model, runtime, adapter at scale 1.3, publisher sampler,
 seed 42, 8,192-token context, FP16 KV, 128/64 prompt batches, CPU-only placement, no repacking and
@@ -330,17 +345,20 @@ boundaries cannot exclude within-sample changes or same-scheme edits. Conditions
 
 All repository device workflows, including TTS/sandbox trials, share one non-cancelling physical-
 runner concurrency group; unrelated applications may still contend. Emit candidate/control
-ratios only when both reach 128 tokens with matching prompt/decode counts. Natural early
+ratios only when both reach 16 tokens with matching prompt/decode counts. Natural early
 completion stays visible without a fixed-length ratio; response equality is separate from quality.
-Two pairs per workload give an initial screen, not significance/sustained qualification.
+Two short pairs give an initial smoke, not significance or sustained qualification.
 Retain losses/failures; promising phases need complete-task, quality, responsiveness and comfort
 follow-up. The screen supplies no energy verdict, accelerator enablement or new default.
 
 #### CI availability and headless startup
 
 The retained **2026-10-29** GitHub Actions inventory contains zero self-hosted runners and no
-X2 screen runs. Device evidence requires native ARM64 `swift-bonsai-snapdragon` on settled `main`;
-local model execution cannot substitute for CI.
+X2 screen runs. A fresh read-only `gh api repos/symbiogenesis/SwiftBonsai2Runner/actions/runners`
+query on **2026-10-30** also returned `total_count: 0` and `runners: []`. This is an inventory
+snapshot, not proof of a broken persistent configuration. Device evidence requires native ARM64
+on settled `main` and the exact `x2-cpu-<run_id>` ephemeral label; local model execution cannot
+substitute for CI. No runner was registered and no device job was dispatched for this check.
 
 The pinned legacy `llama-completion.exe --version` fails with `3221225794` (`0xC0000142`, DLL
 initialization failure) under ordinary supervision: ten seconds, 512 MiB Job, one process, all 63

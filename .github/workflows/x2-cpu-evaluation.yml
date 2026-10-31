@@ -2,6 +2,10 @@ name: Snapdragon X2 CPU thread screening
 on:
   workflow_dispatch:
     inputs:
+      run_device:
+        description: Run the single five-minute X2 screen after hosted preparation
+        type: boolean
+        default: false
       observe_output_progress:
         description: Capture output/memory attribution separately, suppressing timing ratios
         type: boolean
@@ -14,27 +18,70 @@ concurrency:
   group: swift-lora-snapdragon
   cancel-in-progress: false
 jobs:
-  evaluate:
+  prepare:
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
-    timeout-minutes: 5
+    runs-on: windows-11-arm
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Build the exact packaged maintenance tools
-        uses: ./.github/actions/bonsai-tools
+      - uses: ./.github/actions/bonsai-tools
+      - name: Bind checked tools to this exact source revision
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $package = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-CheckedTools'
+          [void][IO.Directory]::CreateDirectory($package)
+          $tool = Join-Path $package 'bonsai-tools.exe'
+          $probe = Join-Path $package 'bonsai-completion-test-probe.exe'
+          Copy-Item -LiteralPath $env:BONSAI_TOOLS_PATH -Destination $tool
+          Copy-Item -LiteralPath $env:BONSAI_COMPLETION_PROBE_PATH -Destination $probe
+          @{
+            SchemaVersion = 2; Revision = $env:GITHUB_SHA
+            Sha256 = (Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash.ToLowerInvariant()
+            ProbeSha256 = (Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash.ToLowerInvariant()
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $package 'receipt.json') -Encoding utf8NoBOM
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bonsai-tools-windows-arm64-${{ github.sha }}
+          path: ${{ runner.temp }}/SwiftBonsai-CheckedTools
+          if-no-files-found: error
+          retention-days: 90
+  evaluate:
+    needs: prepare
+    if: github.ref == 'refs/heads/main' && inputs.run_device
+    # Register one ephemeral owner runner for this exact run only. A generic
+    # restored runner could accidentally accept historical queued model jobs.
+    runs-on: [self-hosted, Windows, ARM64, "x2-cpu-${{ github.run_id }}"]
+    timeout-minutes: 5
+    steps:
+      - name: Start the complete owner-job budget before checkout and tool intake
+        shell: pwsh
+        run: |
+          "BONSAI_X2_JOB_STARTED_UTC=$([DateTime]::UtcNow.ToString('o'))" >> $env:GITHUB_ENV
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/use-bonsai-tools
       - name: Capture bounded X2 Elite Extreme thread pairs
         shell: pwsh
         working-directory: ${{ runner.temp }}
         env:
           BONSAI_X2_ATTRIBUTION: ${{ inputs.observe_output_progress }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           $script = Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-X2CpuEvaluation.ps1'
           $data = Join-Path $env:LOCALAPPDATA 'SwiftBonsai2'
+          $jobStarted = [DateTime]::Parse($env:BONSAI_X2_JOB_STARTED_UTC, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+          # All checkout/download/intake time is charged to the same job clock.
+          # Stop work by 270 seconds, retaining thirty seconds for teardown/upload.
+          $workSeconds = [int][Math]::Floor([Math]::Min(240, 270 - ([DateTime]::UtcNow - $jobStarted).TotalSeconds))
+          if ($workSeconds -lt 1) { throw 'Owner-job setup exhausted the complete X2 budget; qualification remains pending.' }
           # Keep Actions upload credentials in this step, outside the complete
           # evaluation/model process tree. Preserve CI identity and Windows env.
           $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME 'pwsh.exe'))
@@ -43,7 +90,7 @@ jobs:
           $start.CreateNoWindow = $true
           $start.RedirectStandardOutput = $true
           $start.RedirectStandardError = $true
-          foreach ($argument in @('-NoProfile', '-File', $script, '-DataDirectory', $data)) {
+          foreach ($argument in @('-NoProfile', '-File', $script, '-DataDirectory', $data, '-WorkBudgetSeconds', [string]$workSeconds)) {
             $start.ArgumentList.Add($argument)
           }
           if ($env:BONSAI_X2_ATTRIBUTION -cnotin @('true', 'false')) { throw 'Invalid attribution input.' }
@@ -55,13 +102,16 @@ jobs:
           try {
             $stdout = $child.StandardOutput.ReadToEndAsync()
             $stderr = $child.StandardError.ReadToEndAsync()
-            $child.WaitForExit()
+            if (-not $child.WaitForExit($workSeconds * 1000)) { throw 'The complete X2 screen exceeded its remaining owner-job budget.' }
             [Console]::Out.Write($stdout.GetAwaiter().GetResult())
             [Console]::Error.Write($stderr.GetAwaiter().GetResult())
             $code = $child.ExitCode
           } finally {
             try {
-              if (-not $child.HasExited) { $child.Kill($true); $child.WaitForExit() }
+              if (-not $child.HasExited) {
+                $child.Kill($true)
+                if (-not $child.WaitForExit(10000)) { throw 'X2 screen cleanup exceeded ten seconds.' }
+              }
             } finally { $child.Dispose() }
           }
           if ($code -ne 0) { throw 'X2 CPU screening failed; inspect retained evidence.' }

@@ -30,30 +30,17 @@ impl Threads {
 }
 
 fn candidates(available: u16) -> Vec<Threads> {
-    let mut eligible: Vec<_> = [(6, 6), (8, 8), (4, 12), (8, 12), (8, 18)]
+    // One candidate is the entire owner-device screen, not a slice of a matrix.
+    [(6, 6)]
         .into_iter()
         .filter(|(decode, prefill)| *decode <= available && *prefill <= available)
         .map(|(decode, prefill)| Threads { decode, prefill })
-        .collect();
-    // Cover small, middle and large eligible budgets without an open-ended grid.
-    if eligible.len() > 3 {
-        eligible = vec![
-            eligible[0],
-            eligible[eligible.len() / 2],
-            eligible[eligible.len() - 1],
-        ];
-    }
-    eligible
+        .collect()
 }
 
-fn workloads() -> [(&'static str, String); 2] {
+fn workloads() -> [(&'static str, String); 1] {
     let short = "Write a hopeful scene about a lighthouse keeper opening a letter from their future self. Include a sensory detail and one line of dialogue. Continue the scene for at least 200 words.";
-    let detail = "The lighthouse stands above a quiet harbor. Its keeper repairs a brass clock, tends a small garden, and leaves a lamp in the window for returning boats. ";
-    let long = format!(
-        "Use the following background as context for a new scene. {}\nWrite a hopeful scene about the keeper opening a letter from their future self. Refer to two details from the background, include one line of dialogue, and continue for at least 200 words.",
-        detail.repeat(16)
-    );
-    [("short", short.into()), ("long", long)]
+    [("short", short.into())]
 }
 
 fn arguments(model: &str, threads: Threads, prompt: &str) -> Result<Vec<String>> {
@@ -88,7 +75,7 @@ fn arguments(model: &str, threads: Threads, prompt: &str) -> Result<Vec<String>>
             "--jinja",
             "--single-turn",
             "--n-predict",
-            "128",
+            "16",
             "--seed",
             "42",
             "--reasoning",
@@ -192,10 +179,11 @@ pub fn run(request: Value) -> Result<Value> {
             "Id": threads.id(), "DecodeThreads": threads.decode, "PrefillThreads": threads.prefill,
         })).collect::<Vec<_>>(),
         "Workloads": workloads.iter().map(|(id, text)| json!({"Id": id, "Text": text})).collect::<Vec<_>>(),
-        "Repetitions": 2, "GeneratedTokenCap": 128, "PerSampleTimeoutSeconds": 180,
-        "MaximumSamples": 24, "MaximumModelExecutionSeconds": schedule.len() * 180,
+        "Repetitions": 2, "GeneratedTokenCap": 16, "PerSampleTimeoutSeconds": 45,
+        "MaximumSamples": 4, "MaximumModelExecutionSeconds": schedule.len() * 45,
+        "WorkBudgetSeconds": 240, "WholeJobMinutes": 5,
         "TemplateMode": "pinned-completion-template-defaults",
-        "Scope": "Fresh processes; OS file cache is not flushed. CLI template defaults differ from chat. No energy, sustained-comfort, quality or default-profile verdict.",
+        "Scope": "One candidate and short prompt only, with two reversed pairs under one shared setup/verification/loading/comparison budget. Not a partition of a longer matrix. Fresh processes; OS file cache is not flushed. CLI template defaults differ from chat. No significance, energy, sustained-comfort, quality or default-profile verdict.",
         "Schedule": schedule,
     }))
 }
@@ -214,7 +202,13 @@ mod tests {
     fn paired_screen_reverses_order_and_prunes_cpu_budgets() -> Result<()> {
         let plan = run(request(18))?;
         let schedule = plan["Schedule"].as_array().ok_or("Missing schedule.")?;
-        assert_eq!(schedule.len(), 24);
+        assert_eq!(schedule.len(), 4);
+        assert_eq!(plan["MaximumModelExecutionSeconds"], 180);
+        assert_eq!(plan["WorkBudgetSeconds"], 240);
+        assert_eq!(plan["WholeJobMinutes"], 5);
+        assert_eq!(plan["GeneratedTokenCap"], 16);
+        assert_eq!(plan["Candidates"].as_array().map(Vec::len), Some(1));
+        assert_eq!(plan["Workloads"].as_array().map(Vec::len), Some(1));
         for pair in schedule.as_chunks::<2>().0 {
             assert_eq!(pair[0]["CandidateId"], pair[1]["CandidateId"]);
             assert_eq!(pair[0]["Workload"], pair[1]["Workload"]);
@@ -236,7 +230,7 @@ mod tests {
                 .as_array()
                 .ok_or("Missing schedule.")?
                 .len(),
-            16
+            4
         );
         for trial in small["Schedule"].as_array().ok_or("Missing schedule.")? {
             assert!(
@@ -293,7 +287,7 @@ mod tests {
             ("--batch-size", "128"),
             ("--ubatch-size", "64"),
             ("--lora-scaled", "bonsai-abliterate-lora.gguf:1.3"),
-            ("--n-predict", "128"),
+            ("--n-predict", "16"),
         ] {
             let index = candidate
                 .iter()

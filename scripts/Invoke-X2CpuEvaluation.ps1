@@ -4,11 +4,13 @@
 Captures bounded paired X2 Elite Extreme CPU thread trials on main CI.
 .DESCRIPTION
 Uses already provisioned pinned Swift PQ2, the approved LoRA at scale 1.3 and
-the publisher sampler. A fixed 4/4 decode/prefill control is paired against at
-most three eligible thread budgets, with reversed order on the second repeat.
-Short and long synthetic prompts retain separate prefill/decode/process timings.
+the publisher sampler. A fixed 4/4 decode/prefill control is paired against 6/6,
+with reversed order on the second repeat and one short synthetic prompt.
 The native supervisor owns fresh processes, artifact handles, caller lifetime,
-180-second trial deadlines, 11.5 GiB Job commit limits and a 4 GiB physical reserve.
+45-second trial deadlines, 11.5 GiB Job commit limits and a 4 GiB physical reserve.
+The complete four-process screen shares 240 seconds for setup, verification,
+loading and comparison; the owning five-minute job reserves cleanup/upload time.
+It never resumes a longer matrix. Missing budget leaves qualification pending.
 PlanOnly observes hardware and builds a plan without loading a model. CLI template
 defaults differ from chat; results do not promote defaults or qualify quality,
 energy, sustained comfort, GPU or NPU execution.
@@ -25,13 +27,28 @@ param(
     [Parameter(Mandatory)][string]$DataDirectory,
     [string]$ToolPath,
     [switch]$PlanOnly,
-    [switch]$ObserveOutputProgress
+    [switch]$ObserveOutputProgress,
+    [ValidateRange(1,240)][int]$WorkBudgetSeconds = 240
 )
+$workClock = [Diagnostics.Stopwatch]::StartNew()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+if (-not $ToolPath) { $ToolPath = $env:BONSAI_TOOLS_PATH }
+if (-not $ToolPath) { throw 'Provide hosted-prepared ToolPath; X2 owner-device builds are disabled.' }
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
+function Get-X2WorkAllowance {
+    <# .SYNOPSIS
+    Charges setup and preceding operations, reserving bounded cleanup and reporting.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param()
+    $remaining = [int][Math]::Floor($WorkBudgetSeconds - $workClock.Elapsed.TotalSeconds) - 20
+    if ($remaining -lt 1) { throw 'The complete X2 CPU work budget is exhausted; qualification remains pending.' }
+    return $remaining
+}
 if (-not $IsWindows -or
     [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64' -or
     [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
@@ -39,20 +56,20 @@ if (-not $IsWindows -or
 }
 $data = Resolve-ExternalPath $DataDirectory
 $processors = @(Get-CimInstance -ClassName Win32_Processor -Property Name, NumberOfLogicalProcessors -OperationTimeoutSec 10)
-$native = Invoke-BonsaiTool -Command host-cpu -ToolPath $ToolPath
+$native = Invoke-BonsaiTool -Command host-cpu -ToolPath $ToolPath -TimeoutSeconds (Get-X2WorkAllowance)
 if ($processors.Count -ne 1 -or $native.status -cne 'observed' -or
     $native.architecture -cne 'aarch64' -or
     $processors[0].NumberOfLogicalProcessors -ne $native.topology.logical_processors) {
     throw 'CPU evaluation requires matching observed CIM and native CPU topology.'
 }
-$initialConditions = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -Request @{
+$initialConditions = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -TimeoutSeconds (Get-X2WorkAllowance) -Request @{
     operation = 'compare-conditions'; before = $native; after = $native
 }
 if ('host-identity-unavailable' -cin $initialConditions.Unknown -or
     $processors[0].Name.Trim() -cne $native.host_identity.processor_name.Trim()) {
     throw 'CPU evaluation requires complete native host identity and matching CIM/native processor names.'
 }
-$plan = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -Request @{
+$plan = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -TimeoutSeconds (Get-X2WorkAllowance) -Request @{
     operation = 'plan'; dataDirectory = $data; processorName = $processors[0].Name
     logicalProcessors = [int]$native.topology.logical_processors
 }
@@ -60,6 +77,7 @@ $plan['HostIdentity'] = $native.host_identity
 $plan['InstrumentedAttribution'] = [bool]$ObserveOutputProgress
 if ($PlanOnly) { return [pscustomobject]$plan }
 if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main' -or
+    $env:RUNNER_ENVIRONMENT -cne 'self-hosted' -or
     $env:GITHUB_REPOSITORY -cne 'symbiogenesis/SwiftBonsai2Runner' -or
     $env:RUNNER_ARCH -cne 'ARM64' -or $env:GITHUB_RUN_ID -cnotmatch '^[0-9]+$' -or
     [string]::IsNullOrWhiteSpace($env:RUNNER_NAME) -or
@@ -72,15 +90,6 @@ foreach ($name in @('ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN', '
     if (Test-Path -LiteralPath ('Env:' + $name)) { throw 'CPU evaluation requires CI credentials omitted from the model process environment.' }
 }
 $cpu = $plan.CpuPlan
-$admission = & (Join-Path $PSScriptRoot 'Invoke-CpuCheck.ps1') -DataDirectory $data -Profile swift-pq2-assessment -UseAbliterateLora -CheckOnly -ToolPath $ToolPath
-if ($admission.Status -cne 'admission-passed') { throw 'The shared 15.5 GiB available-memory admission requirement was not met.' }
-$runtime = & (Join-Path $PSScriptRoot 'Get-Engine.ps1') -DataDirectory $data -LockPath (Join-Path $PSScriptRoot '../config/swift-assessment.lock.json') -VerifyOnly -ToolPath $ToolPath
-$adapter = & (Join-Path $PSScriptRoot 'Get-Adapter.ps1') -DataDirectory $data -VerifyOnly
-if ($runtime.Commit -cne $cpu.Lock.runtime.commit -or
-    $runtime.Runtime.archiveSha256 -cne $cpu.Lock.runtime.asset.sha256 -or
-    $runtime.Runtime.archiveBytes -ne $cpu.Lock.runtime.asset.bytes -or
-    $adapter.AdapterPath -cne $cpu.AdapterPath -or
-    $adapter.Sha256 -cne $cpu.AdapterLock.adapter.sha256) { throw 'Verified runtime/adapter and compiled evaluation plan disagree.' }
 $evidence = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('Bonsai-X2CpuEvaluation-' + [guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($evidence)
 if ([string]::IsNullOrWhiteSpace($env:GITHUB_ENV) -or $evidence.Contains("`n") -or $evidence.Contains("`r")) {
@@ -111,6 +120,7 @@ $report = [ordered]@{
     Qualification = 'screen-only'; DefaultProfileChanged = $false
     InstrumentedAttribution = [bool]$ObserveOutputProgress
     ModelTrialsRequested = $false
+    WorkBudgetSeconds = $WorkBudgetSeconds
     WorkerPreflight = [ordered]@{
         Kind = 'model-free-worker-startup'; Status = 'pending'; Arguments = @('--version')
         ModelLoaded = $false; WorkerPolicy = 'required-headless'
@@ -122,6 +132,23 @@ try {
     $plan | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath (Join-Path $evidence 'plan.json') -Encoding utf8
     $native | ConvertTo-Json -Depth 32 | Set-Content -LiteralPath (Join-Path $evidence 'native-cpu.json') -Encoding utf8
     $report | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $reportPath -Encoding utf8
+    $admission = Invoke-BonsaiTool -Command cpu-check-report -ToolPath $ToolPath -TimeoutSeconds (Get-X2WorkAllowance) -Request @{
+        operation = 'plan'; dataDirectory = $data; profile = 'swift-pq2-assessment'
+        useAbliterateLora = $true; useRepackedPtq1 = $false
+    }
+    if ($admission.Report.Status -cne 'admission-passed') { throw 'The shared 15.5 GiB available-memory admission requirement was not met.' }
+    $asset = $cpu.Lock.runtime.asset
+    $runtime = Invoke-BonsaiTool -Command runtime-verify -ToolPath $ToolPath -TimeoutSeconds (Get-X2WorkAllowance) -Request @{
+        schemaVersion = 1; commit = $cpu.Lock.runtime.commit; includeHelp = $false
+        runtime = @{
+            archivePath = Join-Path $data -ChildPath 'downloads' -AdditionalChildPath $asset.filename
+            runtimeDirectory = Join-Path $data -ChildPath 'runtime' -AdditionalChildPath $cpu.Lock.runtime.commit
+            archiveBytes = [long]$asset.bytes; archiveSha256 = $asset.sha256
+        }
+    }
+    if ($runtime.Commit -cne $cpu.Lock.runtime.commit -or
+        $runtime.Runtime.archiveSha256 -cne $asset.sha256 -or
+        $runtime.Runtime.archiveBytes -ne $asset.bytes) { throw 'Verified runtime and compiled evaluation plan disagree.' }
     $preflightLane = Join-Path $evidence 'worker-preflight'
     [void][IO.Directory]::CreateDirectory($preflightLane)
     $report.WorkerPreflight.Status = 'running'
@@ -129,7 +156,7 @@ try {
     # Use the ordinary headless worker, not the relaxed inspection launch.
     # ciOnly is false solely to skip model timing parsing for this fixed command;
     # the enclosing script already enforced main/device CI before reaching here.
-    $preflight = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -Request @{
+    $preflight = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -TimeoutSeconds (Get-X2WorkAllowance) -Request @{
         schemaVersion = 1; executable = Join-Path $runtime.Runtime.runtimeDirectory 'llama-completion.exe'
         arguments = @('--version'); workingDirectory = $preflightLane; evidenceDirectory = $preflightLane
         runtime = $runtime.Runtime; artifacts = @()
@@ -142,6 +169,9 @@ try {
     $report.WorkerPreflight.Status = 'passed'
     $report.WorkerPreflight['Supervision'] = $preflight
     $report | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $reportPath -Encoding utf8
+    $adapter = & (Join-Path $PSScriptRoot 'Get-Adapter.ps1') -DataDirectory $data -VerifyOnly
+    if ($adapter.AdapterPath -cne $cpu.AdapterPath -or
+        $adapter.Sha256 -cne $cpu.AdapterLock.adapter.sha256) { throw 'Verified adapter and compiled evaluation plan disagree.' }
     $adapterCopy = Join-Path $evidence 'bonsai-abliterate-lora.gguf'
     [IO.File]::Copy($adapter.AdapterPath, $adapterCopy, $false)
     $samples = [Collections.Generic.List[object]]::new()
@@ -151,10 +181,14 @@ try {
         $trial.Arguments | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $lane 'arguments.json') -Encoding utf8
         $samples.Add(@{ id = $trial.Id; arguments = $trial.Arguments; evidenceDirectory = $lane })
     }
+    $remaining = Get-X2WorkAllowance
+    if ($remaining -lt ([int]$plan.MaximumModelExecutionSeconds + 21)) {
+        throw 'Setup left insufficient room for the complete four-sample X2 screen and teardown; qualification remains pending.'
+    }
     $report.Status = 'running'
     $report.ModelTrialsRequested = $true
     $report | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $reportPath -Encoding utf8
-    $supervision = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -TimeoutSeconds 0 -Request @{
+    $supervision = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -TimeoutSeconds $remaining -Request @{
         schemaVersion = 1; executable = Join-Path $runtime.Runtime.runtimeDirectory 'llama-completion.exe'
         arguments = @(); samples = $samples.ToArray(); workingDirectory = $evidence; evidenceDirectory = $evidence
         runtime = $runtime.Runtime
@@ -166,6 +200,7 @@ try {
         requiredAvailableBytes = [long]$cpu.Policy.RequiredAvailableBytes
         physicalReserveBytes = [long]$cpu.Policy.AvailableMemoryFloorBytes
         timeoutSeconds = [int]$plan.PerSampleTimeoutSeconds
+        totalTimeoutSeconds = [int]($remaining - 10)
         stdoutLimitBytes = 4194304; stderrLimitBytes = 67108864; requireNonemptyStdout = $true; ciOnly = $true
         observeCpuConditions = $true
         observeOutputProgress = [bool]$ObserveOutputProgress
@@ -189,8 +224,8 @@ try {
         }
         $report.Records.Add($record)
     }
-    $report['NativeCpuAfter'] = Invoke-BonsaiTool -Command host-cpu -ToolPath $ToolPath
-    $report['ExecutionConditions'] = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -Request @{
+    $report['NativeCpuAfter'] = Invoke-BonsaiTool -Command host-cpu -ToolPath $ToolPath -TimeoutSeconds (Get-X2WorkAllowance)
+    $report['ExecutionConditions'] = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -TimeoutSeconds (Get-X2WorkAllowance) -Request @{
         operation = 'compare-conditions'; before = $native; after = $report.NativeCpuAfter
     }
     for ($index = 0; $index -lt $report.Records.Count; $index += 2) {
@@ -200,7 +235,7 @@ try {
         $matchingTokenCounts = $baseline.ReachedTokenCap -and $candidate.ReachedTokenCap -and
             $baseline.Timing.PromptTokens -eq $candidate.Timing.PromptTokens -and
             $baseline.Timing.DecodeTokens -eq $candidate.Timing.DecodeTokens
-        $pairConditions = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -Request @{
+        $pairConditions = Invoke-BonsaiTool -Command cpu-evaluation -ToolPath $ToolPath -TimeoutSeconds (Get-X2WorkAllowance) -Request @{
             operation = 'compare-sample-conditions'; baseline = $baseline.CpuConditions; candidate = $candidate.CpuConditions
         }
         $comparable = -not $ObserveOutputProgress -and $matchingTokenCounts -and $report.ExecutionConditions.Comparable -and $pairConditions.Comparable
@@ -219,6 +254,7 @@ try {
     }
     $report.Status = 'completed'
     $report.CompletedUtc = [DateTime]::UtcNow.ToString('o')
+    $report['ElapsedMilliseconds'] = $workClock.ElapsedMilliseconds
     $report | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $reportPath -Encoding utf8
     [pscustomobject]@{ Status = $report.Status; ReportPath = $reportPath; EvidenceDirectory = $evidence
         Samples = $report.Records.Count; Qualification = $report.Qualification; DefaultProfileChanged = $false }
@@ -226,6 +262,7 @@ try {
     $report.Status = 'failed'
     if ($report.WorkerPreflight.Status -ceq 'running') { $report.WorkerPreflight.Status = 'failed' }
     $report['Failure'] = $_.Exception.Message
+    $report['ElapsedMilliseconds'] = $workClock.ElapsedMilliseconds
     $report | ConvertTo-Json -Depth 64 | Set-Content -LiteralPath $reportPath -Encoding utf8
     Write-Warning "X2 CPU evaluation failure evidence retained at $evidence"
     throw
