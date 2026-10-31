@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "purpose": "source-review-and-model-free-access-candidate-only",
+  "reviewDate": "2026-10-30",
+  "admission": "disabled",
+  "automaticSelection": false,
+  "sourceAudit": "docs/hexagon-source-audit.md",
+  "productionArchitecture": {
+    "engine": "native-Rust-Prism",
+    "hostBoundary": "audited-vendor-driver-RPC-and-mapping-bindings-with-safe-ownership",
+    "deviceKernels": "separately-versioned-and-signed",
+    "cppInferenceDependency": false,
+    "wholeGgufQ2Bridge": false
+  },
+  "deviceQualification": {
+    "X1": "pending-independent-device-workload-evidence",
+    "X2": "pending-independent-device-workload-evidence",
+    "selection": "measured-relative-to-qualified-CPU-and-GPU-with-total-costs",
+    "unknown": "ineligible-without-changing-CPU-policy"
+  },
+  "signedAccessLead": {
+    "repository": "https://github.com/qualcomm/GenieX",
+    "tag": "v0.8.0",
+    "commit": "a5c8e7fb4a364ddcccefbf187afd1bac52d88de5",
+    "license": "BSD-3-Clause; third-party binary terms require separate review",
+    "bundledGgmlRepository": "https://github.com/ggml-org/llama.cpp",
+    "bundledGgmlCommit": "94256114c229674ef96e76eb2dea596e65b43818",
+    "bundledGgmlLicense": "MIT",
+    "asset": {
+      "filename": "geniex-sdk-windows-arm64-v0.8.0.zip",
+      "url": "https://github.com/qualcomm/GenieX/releases/download/v0.8.0/geniex-sdk-windows-arm64-v0.8.0.zip",
+      "bytes": 84788957,
+      "sha256": "5676e27cc5639717890ce92f3beec937a6aefc645c9cc57bcb537f972b4fecc7",
+      "digestSource": "https://api.github.com/repos/qualcomm/GenieX/releases/tags/v0.8.0",
+      "downloadedOrExecutedBySourceAudit": false
+    },
+    "signatureEvidence": "publisher-release-reports-Microsoft-signed-HTP-catalog; local-catalog-membership-chain-and-driver-access-pending",
+    "supportedMatmulWeightsAtBundledSource": ["Q4_0", "Q4_1", "Q8_0", "IQ4_NL", "MXFP4", "Q4_K", "Q6_K", "F16", "F32"],
+    "swiftPackedTypesAtBundledSource": "unsupported",
+    "modelFreeTestExecutable": "LLAMA_BUILD_TESTS-OFF; hosted-fixture-build-required",
+    "qualification": "device-access-only; not-a-Swift-runtime"
+  },
+  "otherSourceLeads": [
+    {
+      "repository": "https://github.com/ggml-org/llama.cpp",
+      "tag": "b11913",
+      "commit": "7aca0d2ea8d92b56911233b822db01f9fbb1ae50",
+      "license": "MIT",
+      "purpose": "Q1-Q2-DMA64-VTCM-source-research",
+      "signedWindowsCoverage": "not-established-by-GenieX-v0.8.0-catalog"
+    },
+    {
+      "repository": "https://github.com/aakar-mutha/llama.cpp",
+      "branchAtReview": "ternary-bonsai-htp",
+      "commit": "5183c091447a0ed31fe41809a54408f5a586e674",
+      "license": "MIT",
+      "purpose": "PQ2-PTQ1-tile-and-HVX-source-research",
+      "swiftQualification": "pending; hinted-Hadamard-matmul-is-explicitly-refused",
+      "signedWindowsCoverage": "not-established"
+    }
+  ],
+  "prototype": {
+    "region": "single-ffn-up-projection-before-adapter-and-state-commit",
+    "tensor": "blk.0.ffn_up.weight",
+    "columns": 5120,
+    "rows": 17408,
+    "weightType": "PQ2_0",
+    "packedWeightBytes": 23674880,
+    "activationContract": "exact-pinned-Q8_K-preparation-and-scale-reduction-order",
+    "inputTransform": "explicit-sign-normalized-1024-Sylvester-Walsh-Hadamard-on-input-last-dimension",
+    "execution": "pending-signed-kernel-and-operation-oracle",
+    "stateOwner": "CPU-until-full-state-qualification",
+    "sessionLimit": 1,
+    "wholeModelExpansion": false
+  },
+  "budgets": {
+    "ownerDeviceAggregateSeconds": 300,
+    "swiftServiceBytes": 12348030976,
+    "physicalReserveBytes": 4294967296,
+    "includesOutsideJobAllocations": true
+  }
+}
