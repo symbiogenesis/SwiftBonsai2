@@ -54,6 +54,26 @@
     "stateOwner": "CPU",
     "transformsAndAdapters": "CPU-with-exact-original-basis"
   },
+  "proposedKernelWireContract": {
+    "source": "packed_tiles.rs",
+    "version": 1,
+    "magic": "PQ2Q8K01",
+    "integerEncoding": "fixed-u32-little-endian-with-no-native-struct-padding",
+    "headerBytes": 64,
+    "tileCount": 2720,
+    "maximumPayloadBytes": 9936,
+    "headerTransferBytes": 174080,
+    "totalPayloadTransferBytes": 27025920,
+    "execution": "CPU-only-strict-ordered-payload-replay",
+    "vendorRpcAbi": false,
+    "bundledGenieXOperation": false,
+    "signedKernelImplemented": false,
+    "authenticatesArtifactsOrSignArrays": false,
+    "cpuReplayAdditionalActivationIdentityBytes": 5840,
+    "preserves": ["original-PQ2-bytes", "prepared-Q8_K-records", "ordered-per-block-FMA", "cross-column-tile-reduction-carry"],
+    "rejects": ["unknown-version", "changed-geometry-or-flags", "duplicate-or-out-of-order-tiles", "truncated-or-extended-payloads", "nonfinite-scales", "inconsistent-Q8_K-sums", "changed-activation-records-across-row-tiles", "cancellation-or-incomplete-final-commit"],
+    "excludes": ["vendor-RPC-framing", "DMA-descriptors", "queue-storage", "mapping-and-padding-costs", "asynchronous-buffer-ownership", "artifact-authentication", "actual-device-execution"]
+  },
   "pending": [
     "actual-artifact-packed-tile-and-explicit-sign-array-identities",
     "independent-actual-transform-activation-logit-and-complete-state-parity",

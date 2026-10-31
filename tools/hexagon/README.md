@@ -70,3 +70,7 @@ The separate [packed projection operation control](packed-projection.md) keeps
 original PQ2 blocks and pinned Swift Q8_K/FMA arithmetic in a bounded CPU tile
 schedule. Retained native captures, Walsh ordering and rollback controls prepare
 an oracle for future signed kernels; they establish no DSP execution or speedup.
+Its [proposed tile wire contract](packed-projection.md#proposed-signed-kernel-tile-protocol)
+serializes bounded original-PQ2/Q8_K work units and strictly replays them on CPU,
+including sequencing, corruption and cancellation controls. It is an application
+protocol for a future separately signed kernel, not an existing vendor operation.

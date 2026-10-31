@@ -13,6 +13,9 @@ const MAX_ROWS: usize = 17408;
 const PQ2_BYTES: usize = 34;
 const Q8K_BYTES: usize = 292;
 
+mod packed_tiles;
+pub use packed_tiles::{TileReceiver, TileSource, TileWireLedger};
+
 /// Fixed validation, allocation, cancellation or numerical rejection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -28,6 +31,8 @@ pub enum Error {
     Cancelled,
     /// Explicit Hadamard signs have the wrong extent or contain other values.
     Signs,
+    /// A versioned packed-tile payload, sequence or terminal receiver was invalid.
+    Protocol,
 }
 
 /// Bounded N=1 packed schedule; it grants no device or profile admission.
