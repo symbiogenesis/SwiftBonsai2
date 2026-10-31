@@ -30,6 +30,12 @@ benchmarks and performance captures stay in owning CI.
 
 ### Actual-model acceptance
 
+Before further owner-device trials, pass the focused hosted Windows ARM64 Rust
+regressions for optional acceptance receipt retention, Find replacement/Unicode
+matching and speech-runner policy. Local compilation exhausted its bounded
+allowance before those cases could execute; formatting and the focused PowerShell
+speech-policy check do not replace them.
+
 - Qualify startup, supplied-history streaming, full 8K context and 4K output, long
   conversations, speech, offline restart and recovery. Cover Stop, abandonment,
   deadlines, memory pressure, owned-process cleanup and explicit retry without replay.
@@ -40,18 +46,23 @@ benchmarks and performance captures stay in owning CI.
   Skipped requested workloads remain pending; bounded history does not close
   long-history acceptance. Retain context
   rejection, same-instance reuse, termination and usage, Stop, Job and listener cleanup
-  and fresh-owner evidence. Fixture size and output reservations do not prove exact
-  occupancy or generation; stalled forwarding does not prove socket saturation or an
-  active backend at Stop.
+  and fresh-owner evidence, including completed optional substeps when a later
+  request or nonreading pause is cancelled. Fixture size and output reservations
+  do not prove exact occupancy or generation; stalled forwarding does not prove
+  socket saturation or an active backend at Stop.
 - Qualify [transcript and Find](docs/streaming-resources.md#native-chat-and-transcript)
   through appends, replacements, conversation switches and the 512-message limit,
   including retry-heavy sessions and saturated results, cached matches, highlights,
   active underlines, Unicode wrapping, query, width and scale changes, selection
-  preservation and recovery.
+  preservation and recovery. Include queued Find navigation after shortened or
+  same-length response replacement and eviction, and identical Unicode query/body
+  matching through streamed appends.
 - Qualify speech after X1-to-X2 data-directory moves and CPU-feature or Windows changes;
-  model-free cache checks are insufficient. Review Windows assistive technology,
-  keyboard and focus, scaling, high contrast, minimum-window layout and multilingual
-  input.
+  model-free cache checks are insufficient. Prepare a reduced actual-model workload
+  on hosted CI with one aggregate owner-device setup/loading/comparison/cleanup
+  allowance; the full TTS comparison remains hosted-only. Review Windows assistive
+  technology, keyboard and focus, scaling, high contrast, minimum-window layout
+  and multilingual input.
 - Complete [signed distribution acceptance](docs/chat-packages.md): binary provenance,
   dependency and license notices, clean-machine ARM64 Visual C++ prerequisites,
   installation, upgrades and rollback.
