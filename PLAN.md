@@ -40,6 +40,20 @@ benchmarks and performance captures stay in owning CI.
 
 ### Actual-model acceptance
 
+Qualify source-launch time to the first native frame and authenticated model
+readiness after excluding worker checkouts from startup fingerprints and switching
+shared Windows artifact hashing to CNG. Retain cold-build versus unchanged-launch
+attribution and complete checksum/cancellation controls. The pinned experimental
+Rust runtime still performs a separate software SHA-256 pass over model weights;
+optimize that upstream and review a verified release before claiming its delay is
+removed. End-to-end startup gains remain pending within the owner-device budget;
+performance comparisons and complete checks remain in owning CI.
+Run the owning Windows ARM64 startup-cache and artifact hash-stream regressions
+and Release analyzers in hosted CI. Native CNG known vectors pass locally and the
+updated maintenance bootstrap is published; the bounded local checks stopped
+after compilation limits and source-harness metadata/linkage failures, without
+running those cache/stream regressions or a model trial.
+
 Before further owner-device trials, pass the focused hosted Windows ARM64 Rust
 regressions for optional acceptance receipt retention, Find replacement/Unicode
 matching and speech-runner policy. Local compilation exhausted its bounded
