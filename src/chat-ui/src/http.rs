@@ -17,7 +17,7 @@ pub(super) struct HeaderEnd {
 impl HeaderEnd {
     /// Receives the same growing buffer until its first complete header ending.
     pub(super) fn find(&mut self, bytes: &[u8]) -> Option<usize> {
-        for (offset, window) in bytes[self.next..].windows(4).enumerate() {
+        for (offset, window) in bytes[self.next..].array_windows().enumerate() {
             #[cfg(test)]
             {
                 self.comparisons += 1;
