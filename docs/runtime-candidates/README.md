@@ -237,3 +237,31 @@ runtime or a model speed result. A passed hosted preparation still needs a
 separately authorized owner-device trial within the existing five-minute total
 budget and the independent numerical, adapter, resource and quality gates before
 any release or lock update.
+
+### Bounded X2 model-free startup
+
+[Invoke-HeadlessPublisherStartup.ps1](../../scripts/Invoke-HeadlessPublisherStartup.ps1)
+checks an already extracted copy of that exact hosted candidate using a prebuilt
+maintenance tool. It accepts only the checked-in hosted package identities, rejects
+extra/missing or redirected bundle entries, and supplies every pinned file to native
+verification with handles retained through worker teardown. It runs the same ten fixed
+version/help/argument probes through the ordinary required headless supervisor, without
+model artifacts or runtime overrides. The owner X2 identity, supervisor digest, source,
+hosted artifact, exact probes and bounded supervision receipts are retained separately.
+
+```powershell
+./scripts/Invoke-HeadlessPublisherStartup.ps1 `
+  -CandidateDirectory 'C:/external/archived-candidate/candidate' `
+  -ToolPath 'C:/external/prebuilt/bonsai-tools.exe' `
+  -OutputDirectory 'C:/external/fresh-startup-evidence' -WorkBudgetSeconds 60
+```
+
+The aggregate allowance includes setup, file verification, probes and owned teardown,
+reserving ten seconds for reporting. Each worker has a ten-second deadline, a
+one-process 512 MiB Job and 64 KiB per-stream output bounds. Budget exhaustion or a
+failed probe stops the remaining probes and retains their pending status. No downloads,
+local builds, production bundle replacement, model inference or benchmark runs occur.
+Charge this capture together with all other owner-device work against the same
+five-minute total. A pass establishes only these exact model-free startup invocations;
+model loading, Unicode model paths, numerics, adapters, cancellation, release integration
+and the settled-main thread screen remain separate gates.

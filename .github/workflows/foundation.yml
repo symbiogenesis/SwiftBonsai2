@@ -276,6 +276,11 @@ jobs:
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: '& (Join-Path $env:GITHUB_WORKSPACE "tests/Test-RuntimePromotion.ps1")'
+      - name: Exact headless candidate owner-startup planning
+        if: matrix.lane == 'foundation'
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: '& (Join-Path $env:GITHUB_WORKSPACE "tests/Test-HeadlessPublisherStartup.ps1")'
       - name: Released GGUF command integration
         if: matrix.lane == 'foundation'
         shell: pwsh
