@@ -48,7 +48,7 @@ function Get-BonsaiHexagonPackage {
         if ($attributes -band [IO.FileAttributes]::Directory) { continue }
         $name = [IO.Path]::GetFileName($path)
         $extension = [IO.Path]::GetExtension($path).ToLowerInvariant()
-        if ($extension -notin @('.dll', '.exe', '.so', '.cat') -and $name -notmatch '^(LICENSE|NOTICE)(\.[A-Za-z0-9_-]+)?$') { continue }
+        if ($extension -notin @('.dll', '.exe', '.so', '.cat', '.inf') -and $name -notmatch '^(LICENSE|NOTICE)(\.[A-Za-z0-9_-]+)?$') { continue }
         if ($files.Count -ge 64) { throw 'Package inventory exceeds 64 selected files.' }
         $stream = [IO.File]::Open($path, 'Open', 'Read', 'Read')
         try {

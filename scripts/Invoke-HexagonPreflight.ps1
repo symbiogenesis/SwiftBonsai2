@@ -44,7 +44,7 @@ foreach ($argument in @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCom
 $process = [Diagnostics.Process]::new()
 $process.StartInfo = $start
 $inventory = $null
-$status = 'failed'
+$status = 'collection-failed'
 $started = $false
 try {
     if (-not $process.Start()) { throw 'Hexagon inventory worker failed to start.' }

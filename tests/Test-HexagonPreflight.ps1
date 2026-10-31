@@ -30,6 +30,11 @@ try {
     $package = Get-BonsaiHexagonPackage -PackagePath $scratch
     Assert ($package.Files.Count -eq 1 -and $package.TotalBytes -eq 3) 'Package inventory traversed nested entries or read model bytes.'
     Assert ($package.Files[0].Signature -eq $null -and $package.Files[0].Sha256 -ceq '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81') 'DSP hash or unknown catalog binding changed.'
+    [IO.File]::WriteAllBytes((Join-Path $scratch 'libggml-htp.inf'), [byte[]]@(1, 2, 3))
+    $package = Get-BonsaiHexagonPackage -PackagePath $scratch
+    $manifest = @($package.Files | Where-Object { $_.Name -ceq 'libggml-htp.inf' })
+    Assert ($package.Files.Count -eq 2 -and $package.TotalBytes -eq 6 -and $manifest.Count -eq 1) 'Deployment manifest identity was omitted.'
+    Assert ($manifest[0].Signature -eq $null -and $manifest[0].Sha256 -ceq '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81') 'Manifest hashing was confused with signature verification.'
     Assert-Failure { Get-BonsaiHexagonLocalPath -Path 'relative' } 'Relative package path admitted.'
     Assert-Failure { Get-BonsaiHexagonLocalPath -Path ($scratch + ':stream') } 'Alternate stream path admitted.'
     $large = [IO.File]::Open((Join-Path $scratch 'oversized.so'), 'CreateNew', 'Write', 'None')
