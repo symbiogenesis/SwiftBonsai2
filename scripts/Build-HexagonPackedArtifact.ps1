@@ -24,7 +24,7 @@ if (Test-Path -LiteralPath $output) { throw 'OutputDirectory must be new externa
 [void][IO.Directory]::CreateDirectory($output)
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $pin = '7aca2251f09acb345d4afb53d5ce411f81017745'
-$git = (Get-Command git.exe -CommandType Application -ErrorAction Stop).Source
+$git = (Get-Command git.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $root = Invoke-BonsaiNativeProcess -Executable $git -ArgumentList @('-C',$GgufSourceDirectory,'rev-parse','--show-toplevel') -WorkingDirectory $output -TimeoutSeconds 10 -OwnDescendants
 if ($root.ExitCode -ne 0 -or
     -not [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($root.StandardOutput.Trim())).Equals([IO.Path]::TrimEndingDirectorySeparator($GgufSourceDirectory), [StringComparison]::OrdinalIgnoreCase)) {
@@ -33,7 +33,7 @@ if ($root.ExitCode -ne 0 -or
 $revision = Invoke-BonsaiNativeProcess -Executable $git -ArgumentList @('-C',$GgufSourceDirectory,'rev-parse','HEAD') -WorkingDirectory $output -TimeoutSeconds 10 -OwnDescendants
 $status = Invoke-BonsaiNativeProcess -Executable $git -ArgumentList @('-C',$GgufSourceDirectory,'status','--porcelain') -WorkingDirectory $output -TimeoutSeconds 10 -OwnDescendants
 if ($revision.ExitCode -ne 0 -or $revision.StandardOutput.Trim() -cne $pin -or $status.ExitCode -ne 0 -or $status.StandardOutput.Trim()) { throw 'Prism dependency checkout differs from the exact clean reviewed revision.' }
-$rustup = (Get-Command rustup.exe -CommandType Application -ErrorAction Stop).Source
+$rustup = (Get-Command rustup.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $toolchain = 'nightly-2026-10-22-aarch64-pc-windows-msvc'
 $compiler = Invoke-BonsaiNativeProcess -Executable $rustup -ArgumentList @('run',$toolchain,'rustc','-vV') -WorkingDirectory $output -TimeoutSeconds 20 -OwnDescendants
 if ($compiler.ExitCode -ne 0 -or $compiler.StandardOutput -cnotmatch '(?m)^host: aarch64-pc-windows-msvc\r?$') { throw 'Compiler identity differs from the pinned ARM64 target.' }
