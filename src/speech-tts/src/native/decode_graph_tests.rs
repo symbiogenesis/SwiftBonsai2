@@ -19,6 +19,7 @@ struct State {
 
 struct Graph {
     id: usize,
+    width: i32,
     state: Rc<RefCell<State>>,
 }
 
@@ -32,6 +33,7 @@ impl Drop for Graph {
 }
 
 struct Builder {
+    width: i32,
     state: Rc<RefCell<State>>,
     fail: bool,
     partial_failure: bool,
@@ -52,6 +54,7 @@ unsafe extern "C" fn build(data: *mut c_void) -> *mut c_void {
     state.live += 1;
     let graph = Box::new(Graph {
         id: state.allocations,
+        width: builder.width,
         state: Rc::clone(&builder.state),
     });
     drop(state);
@@ -79,6 +82,7 @@ impl Owner {
     }
 
     fn begin(&self, tokens: i32, width: i32, builder: &mut Builder) -> *mut c_void {
+        builder.width = width;
         bonsai_qt_decode_cache_begin(
             self.0,
             tokens,
@@ -107,8 +111,15 @@ fn id(graph: *mut c_void) -> usize {
     unsafe { (*graph.cast::<Graph>()).id }
 }
 
+fn graph_width(graph: *mut c_void) -> i32 {
+    assert!(!graph.is_null());
+    // SAFETY: This initialized graph is borrowed only during its active lease.
+    unsafe { (*graph.cast::<Graph>()).width }
+}
+
 fn builder() -> Builder {
     Builder {
+        width: 0,
         state: Rc::default(),
         fail: false,
         partial_failure: false,
@@ -136,7 +147,8 @@ fn rust_owned_decode_cache_preserves_every_native_lifetime_assertion() {
     assert_ne!(id(cache.begin(256, 1, &mut builder)), first);
     cache.complete();
     let before_width_change = builder.state.borrow().allocations;
-    assert!(!cache.begin(256, 2, &mut builder).is_null());
+    let wider = cache.begin(256, 2, &mut builder);
+    assert_eq!(graph_width(wider), 2);
     cache.complete();
     assert_eq!(builder.state.borrow().allocations, before_width_change + 1);
     builder.fail = true;
