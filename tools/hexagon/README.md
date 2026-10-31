@@ -19,6 +19,10 @@ not an entire model. JSON inventory inputs are individually capped at 1 MiB;
 all reads enforce the limit even if the file grows. The tool prints JSON to
 stdout and writes no converted weights.
 
+Inventory JSON has a 64-container nesting limit and rejects duplicate names and
+nonfinite JSON constants. Counts and derived storage extents must fit unsigned
+64-bit values; tensor counts are positive and type IDs are exact integers.
+
 The layout is pinned to the unchanged native oracle
 [73bfe6cc](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-common.h)
 and its [dequantizers](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/ggml/src/ggml-quants.c).

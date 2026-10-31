@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import random
 import struct
+import tempfile
 import unittest
 
 
@@ -111,6 +112,43 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate JSON"):
             json.loads('{"ArtifactSha256":"a","ArtifactSha256":"b"}',
                        object_pairs_hook=BRIDGE.unique_object)
+
+    def test_inventory_validation_rejects_ambiguous_types_and_unbounded_extents(self):
+        metadata = json.loads((ROOT / "config/swift.metadata.json").read_bytes())
+        census = json.loads((ROOT / "config/swift.pq2-census.json").read_bytes())
+        for name, identity in (("ModelRepository", ["ukisai", "model"]),
+                               ("ModelRevision", ["revision"]), ("ModelRepository", "")):
+            changed_metadata = dict(metadata, **{name: identity})
+            changed_census = dict(census, **{name: identity})
+            with self.assertRaisesRegex(ValueError, "string identity"):
+                BRIDGE.storage_plan(changed_metadata, changed_census)
+        for type_id in (142.0, "142", True):
+            changed = copy.deepcopy(metadata)
+            changed["TensorTypeHistogram"][2]["TypeId"] = type_id
+            with self.assertRaisesRegex(ValueError, "tensor type"):
+                BRIDGE.storage_plan(changed, census)
+        changed = copy.deepcopy(metadata)
+        changed["TensorTypeHistogram"][2]["Count"] = 0
+        with self.assertRaisesRegex(ValueError, "positive PQ2 tensor count"):
+            BRIDGE.storage_plan(changed, dict(census, TensorCount=0))
+        for name in ("Blocks", "Elements", "TensorCount", "SerializedBytesRead"):
+            with self.assertRaisesRegex(ValueError, "integer field"):
+                BRIDGE.storage_plan(metadata, dict(census, **{name: 1 << 64}))
+        changed = dict(metadata, FileBytes=BRIDGE.MAX_U64)
+        with self.assertRaisesRegex(ValueError, "bridged storage"):
+            BRIDGE.storage_plan(changed, dict(census, ArtifactBytes=BRIDGE.MAX_U64))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "inventory.json"
+            quoted_brackets = {"text": "[]{}" * 256 + '"\\'}
+            path.write_text(json.dumps(quoted_brackets), encoding="utf-8")
+            self.assertEqual(BRIDGE.load_json(path)[0], quoted_brackets)
+            for constant in ("NaN", "Infinity", "-Infinity"):
+                path.write_text('{"unused":' + constant + '}', encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "nonfinite JSON"):
+                    BRIDGE.load_json(path)
+            path.write_text('{"nested":' + "[" * 5000 + "0" + "]" * 5000 + "}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "JSON nesting"):
+                BRIDGE.load_json(path)
 
 
 if __name__ == "__main__":

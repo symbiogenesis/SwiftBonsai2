@@ -12,7 +12,9 @@ PQ2_BYTES = 34
 Q2_WEIGHTS = 64
 Q2_BYTES = 18
 MAX_JSON_BYTES = 1024 * 1024
+MAX_JSON_DEPTH = 64
 MAX_PAYLOAD_BYTES = 1024 * 1024
+MAX_U64 = (1 << 64) - 1
 NATIVE_COMMIT = "73bfe6cc485554822f80c473a3c0c4f25e80f41b"
 SOURCE_BASE = "https://github.com/PrismML-Eng/llama.cpp/blob/" + NATIVE_COMMIT
 LIMITATIONS = [
@@ -129,9 +131,9 @@ def audit_payload(data, columns, rows=1):
 
 
 def integer_field(record, name):
-    """Reject bool/float/negative counts rather than coercing JSON values."""
+    """Reject non-u64 counts rather than coercing JSON values."""
     value = record.get(name)
-    require(type(value) is int and value >= 0, "invalid integer field: " + name)
+    require(type(value) is int and 0 <= value <= MAX_U64, "invalid integer field: " + name)
     return value
 
 
@@ -146,6 +148,12 @@ def storage_plan(metadata, census):
     artifact = metadata.get("ArtifactSha256", "")
     require(type(artifact) is str and len(artifact) == 64
             and all(char in "0123456789abcdef" for char in artifact), "invalid artifact digest")
+    for record in (metadata, census):
+        for name in ("ModelRepository", "ModelRevision"):
+            identity = record.get(name)
+            require(type(identity) is str and 0 < len(identity) <= 512
+                    and all(ord(char) >= 32 and ord(char) != 127 for char in identity),
+                    "invalid string identity: " + name)
     for name in ("ArtifactSha256", "ModelRepository", "ModelRevision"):
         require(metadata.get(name) == census.get(name) and metadata.get(name),
                 "inventory identity mismatch: " + name)
@@ -168,12 +176,16 @@ def storage_plan(metadata, census):
     histogram = metadata.get("TensorTypeHistogram", [])
     require(type(histogram) is list and all(type(entry) is dict for entry in histogram),
             "missing or malformed tensor histogram")
-    matches = [entry for entry in histogram if entry.get("TypeId") == 142]
+    require(all(type(entry.get("TypeId")) is int and 0 <= entry["TypeId"] <= MAX_U64
+                for entry in histogram), "invalid tensor type identity")
+    matches = [entry for entry in histogram if entry["TypeId"] == 142]
     require(len(matches) == 1, "expected one PQ2 tensor histogram entry")
     pq2 = matches[0]
+    tensor_count = integer_field(census, "TensorCount")
+    require(0 < tensor_count <= blocks, "positive PQ2 tensor count required")
     require(pq2.get("Name") == "PQ2_0" and integer_field(pq2, "Bytes") == source_bytes
             and integer_field(pq2, "Elements") == elements
-            and integer_field(pq2, "Count") == integer_field(census, "TensorCount"),
+            and integer_field(pq2, "Count") == tensor_count,
             "tensor histogram and census disagree")
     scalars = metadata.get("Scalars", {})
     require(type(scalars) is dict, "missing transform metadata")
@@ -191,11 +203,14 @@ def storage_plan(metadata, census):
             "missing explicit sign inventory")
     bridged_bytes = blocks * Q2_BYTES * 2
     require(file_bytes >= source_bytes, "payload exceeds artifact")
+    estimated_file_bytes = file_bytes + bridged_bytes - source_bytes
+    require(blocks * 2 <= MAX_U64 and bridged_bytes <= MAX_U64
+            and estimated_file_bytes <= MAX_U64, "bridged storage exceeds u64 extent")
     return {"ArtifactSha256": artifact, "InventoryOnly": True, "Pq2Blocks": blocks,
             "Q2Blocks": blocks * 2, "Elements": elements, "SourcePackedBytes": source_bytes,
             "BridgedPackedBytes": bridged_bytes, "AdditionalPackedBytes": bridged_bytes - source_bytes,
             "PackedExpansionNumerator": 18, "PackedExpansionDenominator": 17,
-            "ArtifactBytesBeforeAlignmentChanges": file_bytes + bridged_bytes - source_bytes,
+            "ArtifactBytesBeforeAlignmentChanges": estimated_file_bytes,
             "RawCodeCounts": code_counts, "FourthSymbolSupported": True,
             "TransformContract": required_transform,
             "SignIdentityCoverage": "inventory summaries only; actual sign bytes remain to be bound"}
@@ -212,7 +227,32 @@ def unique_object(pairs):
 
 def load_json(path):
     raw = bounded_read(path, MAX_JSON_BYTES)
-    record = json.loads(raw, object_pairs_hook=unique_object)
+    # Python versions differ in JSON recursion limits; enforce our own bounded
+    # structural depth, ignoring brackets and escaped quotes inside strings.
+    depth = 0
+    in_string = False
+    escaped = False
+    for byte in raw:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 92:
+                escaped = True
+            elif byte == 34:
+                in_string = False
+        elif byte == 34:
+            in_string = True
+        elif byte in (91, 123):
+            depth += 1
+            require(depth <= MAX_JSON_DEPTH, "inventory exceeds JSON nesting limit")
+        elif byte in (93, 125):
+            depth -= 1
+    def invalid_constant(value):
+        raise ValueError("nonfinite JSON constant: " + value)
+    try:
+        record = json.loads(raw, object_pairs_hook=unique_object, parse_constant=invalid_constant)
+    except RecursionError:
+        raise ValueError("inventory exceeds JSON nesting limit") from None
     require(type(record) is dict, "inventory must be a JSON object")
     return record, hashlib.sha256(raw).hexdigest()
 
