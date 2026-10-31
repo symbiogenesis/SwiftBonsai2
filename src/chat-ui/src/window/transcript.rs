@@ -136,16 +136,12 @@ impl Transcript {
 
     pub(super) fn remove_empty_response(&mut self) {
         self.search.invalidate();
-        if let Some(message) = self.messages.last_mut() {
+        self.messages.pop_if(|message| {
             message.pending = false;
-        }
-        if self.messages.last().is_some_and(|message| {
             message.role == Role::Assistant
                 && message.body.is_empty()
                 && message.reasoning.is_empty()
-        }) {
-            self.messages.pop();
-        }
+        });
     }
 
     pub(super) fn push(&mut self, role: Role, body: String) {
