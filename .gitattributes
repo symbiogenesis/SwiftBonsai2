@@ -1,0 +1,4 @@
+# Keep retained observation selection bytes stable for their recorded SHA-256.
+docs/evidence/hexagon-advance-controls.json text eol=lf
+docs/evidence/hexagon-x2-dispatch.json text eol=lf
+docs/evidence/hexagon-x2-session-metadata.json text eol=lf
