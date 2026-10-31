@@ -349,12 +349,12 @@ function Invoke-BonsaiHexagonBoundedCapture {
             if ($ObserveLoadedDriver -and $driverObservation -ceq 'not-observed' -and -not $child.HasExited) {
                 try {
                     $child.Refresh()
-                    $matches = @($child.Modules | Where-Object { $_.ModuleName -ieq 'libcdsprpc.dll' })
-                    if ($matches.Count -gt 1) { throw 'Ambiguous loaded FastRPC driver.' }
-                    if ($matches.Count -eq 1) {
+                    $loadedDriverMatches = @($child.Modules | Where-Object { $_.ModuleName -ieq 'libcdsprpc.dll' })
+                    if ($loadedDriverMatches.Count -gt 1) { throw 'Ambiguous loaded FastRPC driver.' }
+                    if ($loadedDriverMatches.Count -eq 1) {
                         # This path comes from the live child's actual module list,
                         # independently of the installed-driver inventory or its JSON.
-                        $driverGuard = Get-BonsaiHexagonDriverGuard -Path $matches[0].FileName
+                        $driverGuard = Get-BonsaiHexagonDriverGuard -Path $loadedDriverMatches[0].FileName
                         $driverObservation = 'observed-verified'
                     }
                 } catch {
