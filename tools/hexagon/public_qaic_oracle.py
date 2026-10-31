@@ -19,6 +19,7 @@ import urllib.request
 from pathlib import Path
 
 from public_qaic_wire import capture_wire, record_ghc_runtime
+from public_idl_rust import compare_rust_wire
 
 
 def digest(path):
@@ -284,6 +285,7 @@ def run(args):
         report["stage"] = "independent-public-generation-complete"
         report["outcome"] = "generated-independent-oracle-only"
         capture_wire(pin, report, control, args.output, generated, review, receive, identity)
+        compare_rust_wire(pin, report, control, args.output, review, args.rustc, identity)
     except Exception as error:
         report["outcome"] = "failed"
         report["failureClass"] = type(error).__name__
@@ -299,6 +301,7 @@ def main():
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--pin", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--rustc", required=True, type=Path)
     run(parser.parse_args())
 
 

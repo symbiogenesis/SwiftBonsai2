@@ -129,6 +129,16 @@
     "pkg-src-sha256": "ddcaca983f67a170c0cfdbd037a268779880e2f9b57f93135eaccb6ae4c5da3f",
     "id": "syb-0.7.4-cc7cdcfd9c4a632d5494d4b83b22e9186ad56e02dd5c4a8c0fa59a4021d3c9c9"
   },
+  "rustWireControl": {
+    "toolchain": "nightly-2026-10-22-x86_64-unknown-linux-gnu",
+    "target": "x86_64-unknown-linux-gnu",
+    "source": {
+      "name": "public_idl_control.rs",
+      "bytes": 6049,
+      "sha256": "49cf427afc5e145c0f32aeb79a8bd2636fca8f5665c0f089a26b021ed7d119a4"
+    },
+    "deviceInvocationAuthorized": false
+  },
   "wireCapture": {
     "enabled": true,
     "scope": "public-generated-C-and-public-headers-hosted-Linux-mocks-only",
