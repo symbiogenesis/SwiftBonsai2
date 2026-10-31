@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "purpose": "hosted-only-SDK-generator-recipe-and-license-inventory-no-SDK-execution",
+  "sdkVersion": "6.7.0.0",
+  "hexagonToolsVersionAtReferenceBuild": "21.0.04",
+  "repository": "https://github.com/snapdragon-toolchain/hexagon-sdk",
+  "tagCommit": "167d1465556718b9cea521ec0a19277f91e94eb7",
+  "asset": {
+    "id": 657669213,
+    "filename": "hexagon-sdk-v6.7.0.0-arm64-wos.tar.xz",
+    "bytes": 900461020,
+    "sha256": "9eb256cc7b102f721365151a470a33980069a18b9209e1d56a6d2fa430369759",
+    "url": "https://github.com/snapdragon-toolchain/hexagon-sdk/releases/download/v6.7.0.0/hexagon-sdk-v6.7.0.0-arm64-wos.tar.xz"
+  },
+  "reviewedInputs": [
+    {
+      "name": "setup-snapdragon-sdks.action.yml",
+      "url": "https://raw.githubusercontent.com/qualcomm/GenieX/071f609995470bdb0e0769ab964754adfaab7e47/.github/actions/setup-snapdragon-sdks/action.yml",
+      "bytes": 9081,
+      "sha256": "6b2bce57917917afaacbb00abee6f739f7c6f827aaa299adc8f02c7dd257f97a"
+    },
+    {
+      "name": "sdk-repackage.sh",
+      "url": "https://raw.githubusercontent.com/snapdragon-toolchain/hexagon-sdk/167d1465556718b9cea521ec0a19277f91e94eb7/repackage.sh",
+      "bytes": 3009,
+      "sha256": "42bdc3c200c80fef96f06ce3b6fc047c5d77259fde204d9ecd9217fa30a258fa"
+    },
+    {
+      "name": "htp_iface.idl",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp/htp_iface.idl",
+      "bytes": 718,
+      "sha256": "196448f5166f300c572172b83a51e128e71e4471f13e30d0c5f88d6ce0cfe8bc"
+    }
+  ],
+  "intendedQaicPath": "6.7.0.0/ipc/fastrpc/qaic/bin/qaic.exe",
+  "requiredRecipePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+  "limits": {
+    "downloadSeconds": 240,
+    "inventorySeconds": 360,
+    "archiveEntries": 200000,
+    "declaredUncompressedBytes": 17179869184,
+    "selectedFiles": 2048,
+    "selectedBytes": 134217728,
+    "selectedFileBytes": 67108864,
+    "receiptBytes": 1048576,
+    "reviewWordsPerFile": 25
+  },
+  "generatedSourceRedistribution": "pending-license-review; metadata-and-bounded-review-excerpts-only",
+  "generatorExecutionAllowed": false,
+  "deviceExecutionAllowed": false,
+  "profileEligible": false
+}
