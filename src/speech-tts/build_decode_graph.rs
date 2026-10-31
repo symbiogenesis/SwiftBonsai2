@@ -95,7 +95,7 @@ struct BonsaiDecodeLease {
 };
 "#;
 
-const BUILD_CALLBACK: &str = r#"// No C++ exception may cross the Rust cache's callback boundary.
+const BUILD_CALLBACK: &str = r"// No C++ exception may cross the Rust cache's callback boundary.
 struct BonsaiDecodeBuildArgs {
     const TalkerWeights * tw;
     KVCache * kv;
@@ -130,9 +130,9 @@ static void * bonsai_decode_graph_build(void * raw) noexcept {
     return nullptr;
 }
 
-"#;
+";
 
-const OLD_SELECTION: &str = r#"    TalkerDecodeGraph * tg = &graphs[(size_t) ((n_kv_pad + 255) / 256 - 1)];
+const OLD_SELECTION: &str = r"    TalkerDecodeGraph * tg = &graphs[(size_t) ((n_kv_pad + 255) / 256 - 1)];
     if (tg->ctx && tg->N != N) {
         talker_decode_graph_free(tg);
     }
@@ -140,29 +140,29 @@ const OLD_SELECTION: &str = r#"    TalkerDecodeGraph * tg = &graphs[(size_t) ((n
                                                use_flash_attn, clamp_fp16, tg)) {
         return false;
     }
-"#;
+";
 
-const RUST_SELECTION: &str = r#"    BonsaiDecodeBuildArgs build{tw, kv, backend, hidden_bridge, acoustic_embd,
+const RUST_SELECTION: &str = r"    BonsaiDecodeBuildArgs build{tw, kv, backend, hidden_bridge, acoustic_embd,
         n_acoustic, n_kv_pad, N, use_flash_attn, clamp_fp16};
     auto * tg = static_cast<TalkerDecodeGraph *>(bonsai_qt_decode_cache_begin(
         graphs.value, n_kv_pad, N, &build, bonsai_decode_graph_build, bonsai_decode_graph_destroy));
     if (!tg) { return false; }
     BonsaiDecodeLease lease(graphs.value, backend);
-"#;
+";
 
-const OLD_FIELD: &str = r#"    std::vector<TalkerDecodeGraph> talker_decode_graphs;  // one per 256 step window class, lazy"#;
+const OLD_FIELD: &str = r"    std::vector<TalkerDecodeGraph> talker_decode_graphs;  // one per 256 step window class, lazy";
 
-const RUST_FIELD: &str = r#"    BonsaiDecodeCache             talker_decode_graphs;  // one Rust-owned completed workspace"#;
+const RUST_FIELD: &str = r"    BonsaiDecodeCache             talker_decode_graphs;  // one Rust-owned completed workspace";
 
 const OLD_INIT: &str =
     r#"    pt->talker_decode_graphs.resize(((size_t) pt->talker_kv.max_seq_len + 255) / 256);"#;
 
-const RUST_INIT: &str = r#"    const bool decode_cache_ok = pt->talker_decode_graphs.init(((size_t) pt->talker_kv.max_seq_len + 255) / 256);"#;
+const RUST_INIT: &str = r"    const bool decode_cache_ok = pt->talker_decode_graphs.init(((size_t) pt->talker_kv.max_seq_len + 255) / 256);";
 
-const OLD_FREE: &str = r#"    for (size_t g = 0; g < pt->talker_decode_graphs.size(); g++) {
+const OLD_FREE: &str = r"    for (size_t g = 0; g < pt->talker_decode_graphs.size(); g++) {
         talker_decode_graph_free(&pt->talker_decode_graphs[g]);
     }
-    pt->talker_decode_graphs.clear();"#;
+    pt->talker_decode_graphs.clear();";
 
 const OLD_SIGNATURE: &str =
     r#"                                  std::vector<TalkerDecodeGraph> & graphs,"#;

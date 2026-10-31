@@ -225,6 +225,12 @@ mod tests {
 
     // Published SHA-256 known-answer vector; contains no native source code.
     const FIXTURE_SOURCE: &str = "abc";
+    const GRAPH_FILES: [&str; 4] = [
+        "src/talker-forward.h",
+        "src/talker-decode-graph.h",
+        "src/pipeline-tts.h",
+        "src/pipeline-tts.cpp",
+    ];
     const FIXTURE_SHA256: [u8; 32] = [
         0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22,
         0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00,
@@ -305,12 +311,7 @@ static int sample_top_k_p(float * logits, int V, float temperature,
         let header = format!("#include <thread>\n{THREAD_COUNT}\n");
         fs::write(source.join("src/backend.h"), &header)?;
         fs::write(source.join("src/qwen.cpp"), "extern \"C\" {\n}")?;
-        for relative in [
-            "src/talker-forward.h",
-            "src/talker-decode-graph.h",
-            "src/pipeline-tts.h",
-            "src/pipeline-tts.cpp",
-        ] {
+        for relative in GRAPH_FILES {
             fs::write(source.join(relative), FIXTURE_SOURCE)?;
         }
         fs::write(source.join("src/philox.h"), FIXTURE_SOURCE)?;
@@ -331,14 +332,7 @@ static int sample_top_k_p(float * logits, int V, float temperature,
                 *transform = fixture_tokenizer;
             } else if *relative == "src/sampling.h" {
                 *transform = fixture_semantic_sampling;
-            } else if [
-                "src/talker-forward.h",
-                "src/talker-decode-graph.h",
-                "src/pipeline-tts.h",
-                "src/pipeline-tts.cpp",
-            ]
-            .contains(relative)
-            {
+            } else if GRAPH_FILES.contains(relative) {
                 *transform = fixture_graph;
             }
         }
@@ -357,12 +351,7 @@ static int sample_top_k_p(float * logits, int V, float temperature,
             fs::read_to_string(copy.join("ggml/src/ggml-cpu/vec.cpp"))?
                 .contains("!defined(GGML_SIMD)")
         );
-        for relative in [
-            "src/talker-forward.h",
-            "src/talker-decode-graph.h",
-            "src/pipeline-tts.h",
-            "src/pipeline-tts.cpp",
-        ] {
+        for relative in GRAPH_FILES {
             assert_eq!(fs::read_to_string(source.join(relative))?, FIXTURE_SOURCE);
             assert_eq!(
                 fs::read_to_string(copy.join(relative))?,
