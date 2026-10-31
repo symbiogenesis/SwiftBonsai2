@@ -181,9 +181,40 @@ fn corpus() -> Vec<(Vec<u8>, bool)> {
     }
     // Pinned scanner category boundaries differ from Rust Unicode properties.
     for scalar in [
-        0xbf, 0xc0, 0xd6, 0xd7, 0xd8, 0xf6, 0xf7, 0xf8, 0x24f, 0x250, 0x36f, 0x370, 0x1fff, 0x2000,
-        0x2003, 0x2bff, 0x2c00, 0x2dff, 0x2e00, 0x303f, 0x3040, 0x9fff, 0xa000, 0xabff, 0xac00,
-        0xd7af, 0xd7b0, 0xf8ff, 0xf900, 0xfaff, 0xfb00, 0xffff, 0x10000, 0x10ffff,
+        0xbf,
+        0xc0,
+        0xd6,
+        0xd7,
+        0xd8,
+        0xf6,
+        0xf7,
+        0xf8,
+        0x24f,
+        0x250,
+        0x36f,
+        0x370,
+        0x1fff,
+        0x2000,
+        0x2003,
+        0x2bff,
+        0x2c00,
+        0x2dff,
+        0x2e00,
+        0x303f,
+        0x3040,
+        0x9fff,
+        0xa000,
+        0xabff,
+        0xac00,
+        0xd7af,
+        0xd7b0,
+        0xf8ff,
+        0xf900,
+        0xfaff,
+        0xfb00,
+        0xffff,
+        0x0001_0000,
+        0x0010_ffff,
     ] {
         if let Some(character) = char::from_u32(scalar) {
             requests.push((format!("A{character}b {character}3\n").into_bytes(), false));
@@ -498,7 +529,7 @@ fn rust_tokenizer_core_and_abi_match_original_cpp() -> Result<()> {
             );
         }
     }
-    assert!(reader.0.is_empty());
+    assert_eq!(reader.0, []);
     fs::remove_dir_all(working)?;
     Ok(())
 }

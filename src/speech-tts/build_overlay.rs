@@ -49,6 +49,10 @@ fn tokenizer(text: &str) -> io::Result<String> {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "Expose the generated header only to sibling model-free tokenizer tests."
+)]
 pub(super) fn tokenizer_header_for_test() -> io::Result<String> {
     tokenizer(BPE_REFERENCE)
 }

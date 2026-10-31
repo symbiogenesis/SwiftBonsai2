@@ -45,9 +45,9 @@ int main(int argc, char ** argv) {
         const auto models = count(input, 32);
         for (std::uint32_t model = 0; model < models; ++model) {
             tokenizer_fixture = {};
-            auto size = count(input, 4096);
+            auto size = count(input, 1000000);
             for (std::uint32_t index = 0; index < size; ++index) tokenizer_fixture.tokens.push_back(text(input));
-            size = count(input, 4096);
+            size = count(input, 1000000);
             for (std::uint32_t index = 0; index < size; ++index) tokenizer_fixture.merges.push_back(text(input));
             size = count(input, 64);
             for (std::uint32_t index = 0; index < size; ++index) {

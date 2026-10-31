@@ -14,7 +14,7 @@ fn guard<T>(call: impl FnOnce() -> T) -> Option<T> {
 // SAFETY: Byte spans borrow initialized native storage for one synchronous
 // call. The caller supplies no alias to a mutable Rust owner/result. Empty
 // spans may use null; all nonempty extents must fit isize and remain live.
-fn bytes<'a>(data: *const u8, length: usize) -> Option<&'a [u8]> {
+const fn bytes<'a>(data: *const u8, length: usize) -> Option<&'a [u8]> {
     if length == 0 {
         return Some(&[]);
     }

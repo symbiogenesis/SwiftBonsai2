@@ -74,12 +74,13 @@ pub(super) fn pretokenize(text: &[u8]) -> io::Result<Vec<&[u8]>> {
     while index < text.len() {
         let start = index;
         let (current, width) = codepoint(text, index)?;
-        if matches!(current, 0x27 | 0x2019) && index + width < text.len() {
-            if let Some(end) = contraction(text, index + width)? {
-                chunks.push(&text[index..end]);
-                index = end;
-                continue;
-            }
+        if matches!(current, 0x27 | 0x2019)
+            && index + width < text.len()
+            && let Some(end) = contraction(text, index + width)?
+        {
+            chunks.push(&text[index..end]);
+            index = end;
+            continue;
         }
         if letter(current) {
             index = letters_end(text, index + width)?;
@@ -99,7 +100,7 @@ pub(super) fn pretokenize(text: &[u8]) -> io::Result<Vec<&[u8]>> {
         }
         if digit(current) {
             while index < text.len() && digit(u32::from(text[index])) {
-                chunks.push(&text[index..index + 1]);
+                chunks.push(&text[index..=index]);
                 index += 1;
             }
             continue;

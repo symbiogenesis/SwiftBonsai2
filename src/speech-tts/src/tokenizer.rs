@@ -11,6 +11,7 @@
 
 use std::{collections::HashMap, io, ops::Range};
 
+#[path = "tokenizer/scanner.rs"]
 mod scanner;
 
 const MAX_INPUT_BYTES: usize = 64 * 1024;
@@ -274,11 +275,11 @@ impl Tokenizer {
                 key.extend_from_slice(&encoded[pair[0].clone()]);
                 key.push(b' ');
                 key.extend_from_slice(&encoded[pair[1].clone()]);
-                if let Some(&rank) = self.merges.get(key.as_slice()) {
-                    if rank < best_rank {
-                        best_rank = rank;
-                        best = Some(index);
-                    }
+                if let Some(&rank) = self.merges.get(key.as_slice())
+                    && rank < best_rank
+                {
+                    best_rank = rank;
+                    best = Some(index);
                 }
             }
             let Some(index) = best else { break };
