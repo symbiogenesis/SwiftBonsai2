@@ -2,13 +2,14 @@
   "schemaVersion": 1,
   "kind": "unreleased-prism-native-parity-source-candidates",
   "recordedDate": "2026-10-31",
-  "status": "source-implemented-hosted-and-model-qualification-pending",
+  "status": "prism-hosted-candidate-passed-runner-and-model-qualification-pending",
   "scope": "Source implementation and focused model-free controls only; no released-byte integration, model parity, performance or default-runtime qualification.",
   "prism": {
     "repository": "symbiogenesis/prism-inference",
     "baseRevision": "527d1432170ee78b258d489805b11f798121267f",
     "candidateBranch": "codex/prism-runtime-integrate-1031",
-    "candidateRevision": "7dfcf2de132a1ab0243f6f719c7186bbc2c6f291",
+    "candidateRevision": "fffcd05b6ea9a618465317bed0abfff951299c53",
+    "pullRequest": "https://github.com/symbiogenesis/prism-inference/pull/7",
     "changes": [
       {
         "commit": "159952b994661b9faa3185b64c23a8ddcf1895ac",
@@ -20,8 +21,7 @@
           "Strict Release native-hash all-targets Clippy"
         ],
         "pending": [
-          "Default-report GGUF consumer execution",
-          "Complete stream regression execution on Windows ARM64/x64 and portable Linux",
+          "Settled-main owning Foundation/conformance and packaging",
           "New hash crate registry delivery before future GGUF publication",
           "Reviewed release bytes and actual-model startup measurement"
         ]
@@ -31,8 +31,7 @@
         "reviewFollowupCommit": "adfeb035c285b7533cda4df93d8ffa406e244f2d",
         "behavior": "Explicit latest-live-prefix private-service reuse at bit-identical adapter scale. Scale changes reset provenance; mismatched histories recompute; default remains reset-every-request without extra prefix snapshots.",
         "pending": [
-          "Hosted graph tests comparing complete sampled logits, complete state and fresh recomputation",
-          "Hosted cancellation/failure replay, signed-zero and change-back, parser/readiness controls",
+          "Settled-main owning Foundation/conformance and packaging",
           "Actual SwiftSession and private-service model lifecycle parity",
           "Released worker/service and Runner integration before application selection",
           "Paired target-device latency, memory and quality qualification"
@@ -40,10 +39,19 @@
       }
     ],
     "hostedWorkflow": ".github/workflows/swift-parity-candidate.yml",
-    "hostedResults": "pending"
+    "hostedResults": "passed-candidate-source-checks",
+    "hostedRun": {
+      "runId": "41176550777",
+      "url": "https://github.com/symbiogenesis/prism-inference/actions/runs/41176550777",
+      "sourceRevision": "fffcd05b6ea9a618465317bed0abfff951299c53",
+      "conclusion": "success",
+      "targets": ["aarch64-pc-windows-msvc", "x86_64-pc-windows-msvc", "aarch64-unknown-linux-gnu"],
+      "scope": "GGUF/hash regressions, graph complete sampled logits/state and rollback versus fresh replay, worker/client/session/server controls, Clippy and docs. Actual-model cases remain ignored; this is not main-only promotion evidence."
+    }
   },
   "runner": {
     "candidateBranch": "codex/prism-default-integrate-1031",
+    "pullRequest": "https://github.com/symbiogenesis/SwiftBonsai2Runner/pull/6",
     "promotionPolicyCommit": "d41db8b5c44c7a439b559ab4dc17f2b87ac85b70",
     "adapterLifecycleCommit": "49e56036a8f1ac591f9a1d633184eb69d8e84df0",
     "hostedWorkflow": ".github/workflows/runtime-parity-candidate.yml",

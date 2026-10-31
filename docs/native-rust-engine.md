@@ -286,7 +286,7 @@ Runner revision. PTQ1 is evaluated separately.
 ### Unreleased parity candidates
 
 The [source candidate record](evidence/prism-native-gap-candidate.json) binds two
-upstream changes awaiting hosted consumer checks and released-byte integration:
+upstream changes awaiting settled-main owning checks and released-byte integration:
 Windows CNG GGUF verification and explicit private-service `--prompt-reuse latest`.
 The hash path still verifies every selected byte through the existing handle.
 The reuse candidate retains only latest committed live state at identical adapter
@@ -295,10 +295,12 @@ It adds no saved-prefix cache. Omitted reuse selection retains per-request reset
 opt-in service readiness advertises `prompt_reuse: "latest"` separately.
 
 Focused native hash vectors, cancellation/read failures and final-byte corruption
-controls pass locally. Owning runtime/session/server and default-report GGUF
-execution remain pending after bounded local compilation. Hosted candidate jobs
-exercise the graph, full sampled logits, state, worker protocol and platform hash
-paths without weights. These are source checks; Runner still pins 0.1.9 and does
+controls pass locally. Bounded local owning compilation stopped during dependency
+work. The subsequent [hosted candidate run](https://github.com/symbiogenesis/prism-inference/actions/runs/41176550777)
+passes on Windows ARM64, Windows x64 and Linux ARM64, exercising GGUF/default-report
+and hash controls, the graph, full sampled logits/state, worker/server protocols,
+strict analyzers and documentation without weights. These are candidate source
+checks; Runner still pins 0.1.9 and does
 not expose the unreleased reuse option. No load-time or generation-speed gain is
 established. The explicit adapter lifecycle workload in
 [validation](validation.md#actual-model-application-acceptance) also remains pending
