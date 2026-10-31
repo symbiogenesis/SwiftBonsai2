@@ -32,7 +32,7 @@ Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
 $plan = Get-BonsaiHexagonSessionPlan -MaximumSeconds $MaximumSeconds
 if ($PlanOnly) { return $plan }
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64' -or
-    [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') { throw 'Dispatch requires native Windows ARM64.' }
+    [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') { throw 'The session probe requires native Windows ARM64.' }
 $PackageDirectory = Resolve-ExternalPath $PackageDirectory
 $FixtureDirectory = Resolve-ExternalPath $FixtureDirectory
 $SigntoolPath = Resolve-ExternalPath $SigntoolPath
@@ -88,7 +88,7 @@ try {
     $report.Outcome = 'pending'
     $report.Failure = 'owned-session-probe-incomplete'
     # A killed worker may already have verified signatures or even completed
-    # numeric execution. Keep those observations separate from owned teardown.
+    # the mapping cycle. Keep those observations separate from owned teardown.
     $partialPath = Join-Path $OutputDirectory 'worker.json'
     if ([IO.File]::Exists($partialPath)) {
         $partial = [IO.FileStream]::new($partialPath, 'Open', 'Read', 'Read')
