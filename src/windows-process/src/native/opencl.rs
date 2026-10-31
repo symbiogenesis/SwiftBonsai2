@@ -201,11 +201,7 @@ impl Api {
     }
 
     fn boolean(&self, id: Id, field: u32) -> io::Result<bool> {
-        match self.u32(id, field)? {
-            0 => Ok(false),
-            1 => Ok(true),
-            _ => Err(invalid()),
-        }
+        bool::try_from(self.u32(id, field)?).map_err(|_| invalid())
     }
 
     fn device(&self, id: Id) -> io::Result<OpenClDevice> {
