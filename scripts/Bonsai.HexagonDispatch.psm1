@@ -314,7 +314,7 @@ function Invoke-BonsaiHexagonBoundedCapture {
                         if ($null -ne $ProgressReceipt -and [object]::ReferenceEquals($channel, $channels[1])) {
                             # Retain only fixed executable markers, never arbitrary
                             # vendor stderr, local paths or credential text. A later
-                            # abort/hang must not erase the last completed host stage.
+                            # abort/hang must not erase the last entered fixture stage.
                             $progress = [Text.Encoding]::UTF8.GetString($channel.Store.ToArray())
                             $markers = [regex]::Matches($progress, '(?m)^hexagon-fixture:stage=(load|registry|backend-init|allocation|transfer|dispatch|readback)\r?\n')
                             if ($markers.Count) {
