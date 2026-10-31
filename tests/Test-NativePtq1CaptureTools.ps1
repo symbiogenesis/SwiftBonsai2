@@ -40,7 +40,7 @@ if ($Case -ceq 'CollectorControls') {
         [IO.File]::WriteAllText($receiptPath, $reviewedJson)
         $accepted = Read-BonsaiPtq1CaptureReceipt -BundleDirectory $working -RepositoryDirectory $working -Revision ('a' * 40) -Pins $pins
         Assert ($accepted.CollectorLanguage -ceq 'rust') 'The reviewed Rust collector receipt was rejected.'
-        Assert-BonsaiPtq1AbiObservations -ActualPath $actual -ExpectedPath $expected -ExpectedSha256 $receipt.AbiControlSha256
+        Assert-BonsaiPtq1AbiObservationSet -ActualPath $actual -ExpectedPath $expected -ExpectedSha256 $receipt.AbiControlSha256
         foreach ($mutation in @(
             @{ SchemaVersion = 1 }, @{ CollectorLanguage = 'cpp' }, @{ RunnerRevision = ('b' * 40) },
             @{ CollectorSourceSha256 = ('0' * 64) }, @{ AbiControlSha256 = ('0' * 64) }, @{ AbiProvenanceSha256 = ('0' * 64) }
@@ -63,11 +63,11 @@ if ($Case -ceq 'CollectorControls') {
             ('x' * 65537)
         )) {
             [IO.File]::WriteAllText($actual, $text)
-            Assert-Failure { Assert-BonsaiPtq1AbiObservations -ActualPath $actual -ExpectedPath $expected -ExpectedSha256 $receipt.AbiControlSha256 }
+            Assert-Failure { Assert-BonsaiPtq1AbiObservationSet -ActualPath $actual -ExpectedPath $expected -ExpectedSha256 $receipt.AbiControlSha256 }
         }
         [IO.File]::WriteAllText($actual, "model.size=81`nbatch.size=56`nsigned=18446744073709551615`n")
         [IO.File]::Copy($actual, $expected, $true)
-        $failure = Assert-Failure -PassThru { Assert-BonsaiPtq1AbiObservations -ActualPath $actual -ExpectedPath $expected -ExpectedSha256 $receipt.AbiControlSha256 }
+        $failure = Assert-Failure -PassThru { Assert-BonsaiPtq1AbiObservationSet -ActualPath $actual -ExpectedPath $expected -ExpectedSha256 $receipt.AbiControlSha256 }
         Assert ($failure -like '*control bytes differ*') 'Changed control bytes were accepted after receipt validation.'
     } finally {
         $prefix = $tempRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar

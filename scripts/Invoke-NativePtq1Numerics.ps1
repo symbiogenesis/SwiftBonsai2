@@ -120,7 +120,7 @@ try {
         memoryLimitBytes = 536870912; requiredAvailableBytes = $plan.AdmissionBytes; physicalReserveBytes = $plan.PhysicalReserveBytes
         timeoutSeconds = [int][Math]::Min(10, $remaining); stdoutLimitBytes = 65536; stderrLimitBytes = 65536; requireNonemptyStdout = $true; ciOnly = $false
     }
-    Assert-BonsaiPtq1AbiObservations -ActualPath (Join-Path $abiLane 'stdout.txt') -ExpectedPath (Join-Path $repo 'tools/native-reference/fixtures/collector-abi-v1.txt') -ExpectedSha256 $receipt.AbiControlSha256
+    Assert-BonsaiPtq1AbiObservationSet -ActualPath (Join-Path $abiLane 'stdout.txt') -ExpectedPath (Join-Path $repo 'tools/native-reference/fixtures/collector-abi-v1.txt') -ExpectedSha256 $receipt.AbiControlSha256
     $checked = Invoke-BonsaiTool -Command cpu-check-report -ToolPath $ToolPath -TimeoutSeconds (Get-Ptq1WorkAllowance $workClock) -Request @{
         operation = 'plan'; dataDirectory = $data; profile = 'swift-pq2-assessment'; useAbliterateLora = $true; useRepackedPtq1 = $true
     }

@@ -38,6 +38,7 @@ function Read-Ptq1AbiObservationSet {
     Reads a bounded, unique-key unsigned ABI observation set without coercions.
     #>
     [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseOutputTypeCorrectly', '', Justification = 'The unary comma prevents pipeline enumeration; the caller receives one typed dictionary, not the array wrapper inferred by the analyzer.')]
     [OutputType([Collections.Generic.Dictionary[string, uint64]])]
     param([Parameter(Mandatory)][string]$Path,
           [string]$ExpectedSha256)
@@ -70,7 +71,7 @@ function Read-Ptq1AbiObservationSet {
     return ,$records
 }
 
-function Assert-BonsaiPtq1AbiObservations {
+function Assert-BonsaiPtq1AbiObservationSet {
     <# .SYNOPSIS
     Requires every live Rust/DLL ABI observation to match the frozen native control.
     #>
@@ -90,4 +91,4 @@ function Assert-BonsaiPtq1AbiObservations {
     }
 }
 
-Export-ModuleMember -Function Read-BonsaiPtq1CaptureReceipt, Assert-BonsaiPtq1AbiObservations
+Export-ModuleMember -Function Read-BonsaiPtq1CaptureReceipt, Assert-BonsaiPtq1AbiObservationSet
