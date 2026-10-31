@@ -21,7 +21,11 @@
     },
     "retired_collector_source": {
       "path": "tools/native-reference/swift_ptq1_reference.cpp",
-      "sha256_normalized_lf": "87d2b2b3b0c7b77b0b6293e138ed7ba0ca9dbc76f203003f0d5efea5e05164d0"
+      "sha256_normalized_lf": "87d2b2b3b0c7b77b0b6293e138ed7ba0ca9dbc76f203003f0d5efea5e05164d0",
+      "repository": "https://github.com/symbiogenesis/SwiftBonsai2Runner",
+      "revision": "6a126b2a0b30cbf5e0771626b03a32c05c579d21",
+      "bytes_normalized_lf": 10811,
+      "license": "Apache-2.0 (Runner LICENSE)"
     },
     "license_file": {
       "file": "LICENSE.llama-reference",

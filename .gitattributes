@@ -7,3 +7,4 @@ docs/evidence/hexagon-x2-session-metadata.json text eol=lf
 tools/native-reference/fixtures/collector-abi-v1.txt text eol=lf
 tools/native-reference/fixtures/collector-abi-v1.provenance.json text eol=lf
 tools/native-reference/fixtures/LICENSE.llama-reference text eol=lf
+tools/native-reference/swift_ptq1_reference.rs text eol=lf

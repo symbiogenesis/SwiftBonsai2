@@ -18,6 +18,7 @@ $workClock = [Diagnostics.Stopwatch]::StartNew()
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Tools.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Ptq1Capture.psm1')
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $pins = Get-Content -LiteralPath (Join-Path $repo 'tools/native-reference/pins.json') -Raw | ConvertFrom-Json -DateKind String
 $pending = @('no-adapter', 'loaded-zero-identity', 'nonzero-change', 'scalar', 'explicit-neon',
@@ -58,17 +59,7 @@ if (-not $ToolPath) { throw 'Provide the hosted-prepared maintenance ToolPath; o
 $data = Resolve-ExternalPath $DataDirectory
 $bundle = Resolve-ExternalPath $CaptureToolsDirectory
 $receiptPath = Join-Path $bundle 'capture-tools.json'
-if ((Get-Item -LiteralPath $receiptPath).Length -gt 65536) { throw 'Capture tool receipt exceeds its pre-read byte bound.' }
-$receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json -DateKind String
-if ($receipt.SchemaVersion -ne 1 -or $receipt.RunnerRevision -cne $env:GITHUB_SHA -or
-    $receipt.RustToolchain -cne 'nightly-2026-10-22-aarch64-pc-windows-msvc' -or
-    $receipt.NativeSource.commit -cne $pins.nativeSource.commit -or $receipt.NativeSource.url -cne $pins.nativeSource.url -or $receipt.NativeSource.sha256 -cne $pins.nativeSource.sha256 -or
-    $receipt.NativeSource.bytes -ne $pins.nativeSource.bytes -or $receipt.NativeSource.headerSha256 -cne $pins.nativeSource.headerSha256 -or
-    $receipt.RustSource.commit -cne $pins.rustSource.commit -or $receipt.RustSource.url -cne $pins.rustSource.url -or $receipt.RustSource.sha256 -cne $pins.rustSource.sha256 -or
-    $receipt.RustSource.bytes -ne $pins.rustSource.bytes -or $receipt.Files.Count -ne 2 -or
-    $receipt.CollectorSourceSha256 -cne (Get-FileHash -LiteralPath (Join-Path $repo 'tools/native-reference/swift_ptq1_reference.cpp') -Algorithm SHA256).Hash.ToLowerInvariant()) {
-    throw 'Hosted capture tools differ from reviewed source/revision pins.'
-}
+$receipt = Read-BonsaiPtq1CaptureReceipt -BundleDirectory $bundle -RepositoryDirectory $repo -Revision $env:GITHUB_SHA -Pins $pins
 $toolGuards = @()
 foreach ($name in @('swift-ptq1-reference.exe', 'swift_model_check.exe')) {
     $entry = @($receipt.Files | Where-Object Name -CEQ $name)
@@ -121,6 +112,15 @@ try {
     $probe = Get-Content -LiteralPath (Join-Path $preflightLane 'stdout.txt') -Raw | ConvertFrom-Json -DateKind String
     if ($probe.status -cne 'native-default-parameter-abi-probe-passed' -or $probe.modelLoaded -or
         $probe.modelParamsBytes -ne 80 -or $probe.contextParamsBytes -ne 168 -or $probe.batchBytes -ne 56) { throw 'Exact native public-header ABI preflight failed.' }
+    $abiLane = Join-Path $evidence 'abi-observations'; [void][IO.Directory]::CreateDirectory($abiLane)
+    $remaining = Get-Ptq1WorkAllowance $workClock
+    $report['AbiObservations'] = Invoke-BonsaiTool -Command completion -ToolPath $ToolPath -TimeoutSeconds $remaining -Request @{
+        schemaVersion = 1; executable = $collector; arguments = @('--abi-observations', $runtime.Runtime.runtimeDirectory)
+        workingDirectory = $abiLane; evidenceDirectory = $abiLane; artifacts = $artifacts
+        memoryLimitBytes = 536870912; requiredAvailableBytes = $plan.AdmissionBytes; physicalReserveBytes = $plan.PhysicalReserveBytes
+        timeoutSeconds = [int][Math]::Min(10, $remaining); stdoutLimitBytes = 65536; stderrLimitBytes = 65536; requireNonemptyStdout = $true; ciOnly = $false
+    }
+    Assert-BonsaiPtq1AbiObservations -ActualPath (Join-Path $abiLane 'stdout.txt') -ExpectedPath (Join-Path $repo 'tools/native-reference/fixtures/collector-abi-v1.txt') -ExpectedSha256 $receipt.AbiControlSha256
     $checked = Invoke-BonsaiTool -Command cpu-check-report -ToolPath $ToolPath -TimeoutSeconds (Get-Ptq1WorkAllowance $workClock) -Request @{
         operation = 'plan'; dataDirectory = $data; profile = 'swift-pq2-assessment'; useAbliterateLora = $true; useRepackedPtq1 = $true
     }

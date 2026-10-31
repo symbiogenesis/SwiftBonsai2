@@ -22,6 +22,9 @@ jobs:
       - name: Check the hosted-only build boundary
         shell: pwsh
         run: ./tests/Test-NativePtq1CaptureTools.ps1 -Case HostedGuard
+      - name: Check collector receipt and complete ABI observation rejection
+        shell: pwsh
+        run: ./tests/Test-NativePtq1CaptureTools.ps1 -Case CollectorControls
       - name: Validate fixed native-state decoding and control binding
         shell: pwsh
         run: >-
@@ -137,6 +140,8 @@ jobs:
             ${{ env.BONSAI_PTQ1_NUMERICS_EVIDENCE }}/capture-tools.json
             ${{ env.BONSAI_PTQ1_NUMERICS_EVIDENCE }}/abi-preflight/*.json
             ${{ env.BONSAI_PTQ1_NUMERICS_EVIDENCE }}/abi-preflight/*.txt
+            ${{ env.BONSAI_PTQ1_NUMERICS_EVIDENCE }}/abi-observations/*.json
+            ${{ env.BONSAI_PTQ1_NUMERICS_EVIDENCE }}/abi-observations/*.txt
             ${{ env.BONSAI_PTQ1_NUMERICS_EVIDENCE }}/native/*.json
             ${{ env.BONSAI_PTQ1_NUMERICS_EVIDENCE }}/native/*.txt
             ${{ env.BONSAI_PTQ1_NUMERICS_EVIDENCE }}/native/*.f32le
