@@ -77,7 +77,7 @@ mod tests {
             decode(&wave, &mut samples).err(),
             Some(Error::bad("invalid_audio"))
         );
-        assert!(samples.is_empty());
+        assert_eq!(samples.len(), 0);
         assert_eq!(samples.as_ptr(), storage);
         wave[40..44].copy_from_slice(&8_u32.to_le_bytes());
         assert_eq!(decode(&wave, &mut samples)?.len(), 4);

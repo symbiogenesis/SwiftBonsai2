@@ -533,16 +533,16 @@ mod intake_tests {
         let storage = scratch.wire.as_ptr();
         let sample_storage = scratch.samples.as_ptr();
         scratch.recycle();
-        assert!(scratch.wire.is_empty());
-        assert!(scratch.samples.is_empty());
+        assert_eq!(scratch.wire.len(), 0);
+        assert_eq!(scratch.samples.len(), 0);
         assert_eq!(scratch.wire.as_ptr(), storage);
         assert_eq!(scratch.samples.as_ptr(), sample_storage);
         scratch.wire.resize(RETAINED_WIRE_BYTES + 1, b'x');
         scratch.samples.resize(RETAINED_INPUT_SAMPLES + 1, 0.5);
         scratch.recycle();
-        assert!(scratch.wire.is_empty());
+        assert_eq!(scratch.wire.len(), 0);
         assert_eq!(scratch.wire.capacity(), 0);
-        assert!(scratch.samples.is_empty());
+        assert_eq!(scratch.samples.len(), 0);
         assert_eq!(scratch.samples.capacity(), 0);
     }
 

@@ -264,7 +264,7 @@ mod tests {
             transcribe("multipart/form-data; boundary=a", b"invalid", &mut samples).err(),
             Some(Error::bad("invalid_multipart"))
         );
-        assert!(samples.is_empty());
+        assert_eq!(samples.len(), 0);
     }
 
     #[test]
