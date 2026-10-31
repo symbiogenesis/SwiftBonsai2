@@ -229,7 +229,9 @@
       "-std=gnu11",
       "-O0",
       "-fno-lto",
-      "-fno-strict-aliasing"
+      "-fno-strict-aliasing",
+      "-include",
+      "{checked-public-AEEStdDef.h}"
     ],
     "sdkLinked": false,
     "deviceInvocationAuthorized": false,

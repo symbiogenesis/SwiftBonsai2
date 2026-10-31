@@ -116,8 +116,11 @@ def capture_wire(pin, report, control, output, generated, review, receive, ident
                         "components": components, "identityPinScope": "observed-and-rechecked-within-this-hosted-run",
                         "closure": "driver/cc1/as/ld identities; not-complete-OS-closure"}
     flags = ["-std=gnu11", "-O0", "-fno-lto", "-fno-strict-aliasing"]
-    if wire_pin["compilerFlags"] != flags:
+    if wire_pin["compilerFlags"] != [*flags, "-include", "{checked-public-AEEStdDef.h}"]:
         raise ValueError("the fixed mock-only compiler flags changed")
+    # Standard-width mode still preserves the named AEEResult IDL alias.
+    # Supply its pinned public declaration explicitly in both translation units.
+    flags += ["-include", str(inputs / "AEEStdDef.h")]
     executable = output / "public-qaic-wire-mock"
     link_map = review / "wire-link.map"
     arguments = [str(compiler), *flags, "-I" + str(inputs), "-I" + str(generated),
