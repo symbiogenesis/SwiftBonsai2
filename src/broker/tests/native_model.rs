@@ -37,6 +37,7 @@ const BOUNDED_HISTORY_REPETITIONS: usize = 128;
 const SHORT_COMPLETION_CAP: u32 = 4;
 const STALLED_CONSUMER_PAUSE: Duration = Duration::from_secs(1);
 const STOP_WAIT: Duration = Duration::from_secs(30);
+const EMPTY_RESPONSE: [u8; 0] = [];
 // This one-owner workload needs no fresh startup. Keep thirty seconds for
 // teardown and require at least fifteen seconds before each further request.
 const ADAPTER_LIFECYCLE_RESERVE: Duration = Duration::from_secs(45);
@@ -1321,7 +1322,7 @@ async fn required_adapter_scale_history(
             body["abliteration_scale"] = json!(2.000_000_01);
             // Generic schema failures close the authenticated connection;
             // framed HTTP 400 is reserved for model-control token rejection.
-            assert_eq!(exchange(port, credential, &body).await, [] as [u8; 0]);
+            assert_eq!(exchange(port, credential, &body).await, EMPTY_RESPONSE);
             report["scaleHistoryWorkload"]["invalidScaleRejected"] = json!(true);
             report["scaleHistoryWorkload"]["invalidScaleDisposition"] =
                 json!("connection-closed-without-response");
@@ -1460,7 +1461,7 @@ async fn adapter_requests(
             let mut body =
                 adapter_request(json!([{"role":"user","content":"Name a tree."}]), 1.3, 2);
             body["abliteration_scale"] = json!(2.000_000_01);
-            assert_eq!(exchange(port, credential, &body).await, [] as [u8; 0]);
+            assert_eq!(exchange(port, credential, &body).await, EMPTY_RESPONSE);
             report["invalidScaleRejected"] = json!(true);
             report["invalidScaleDisposition"] = json!("connection-closed-without-response");
             save_acceptance_report(evidence, report);

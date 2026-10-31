@@ -127,6 +127,7 @@ mod transport {
 
     const FRONT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const BACK: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const EMPTY_RESPONSE: [u8; 0] = [];
 
     async fn request(port: u16, scale: f64) -> TcpStream {
         let body = serde_json::to_vec(&json!({
@@ -203,7 +204,7 @@ mod transport {
                 let mut client = request(service.port(), 2.000_000_01).await;
                 let mut bytes = Vec::new();
                 client.read_to_end(&mut bytes).await.unwrap();
-                assert_eq!(bytes, [] as [u8; 0]);
+                assert_eq!(bytes, EMPTY_RESPONSE);
                 assert_eq!(
                     rejected.await.unwrap(),
                     Err(ServiceError::Request(ServeError::Receive(
