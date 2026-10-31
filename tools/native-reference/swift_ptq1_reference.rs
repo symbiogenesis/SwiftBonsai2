@@ -235,10 +235,88 @@ mod native {
         logits: *mut i8,
     }
 
+    // Independent native layout answers are retained in collector-abi-v1.txt.
+    // Check every field before any returned-by-value native structure can be read.
     const _: () = {
+        macro_rules! offsets {
+            ($kind:ty, [$($field:ident => $expected:literal),* $(,)?]) => {
+                $(assert!(offset_of!($kind, $field) == $expected);)*
+            };
+        }
         assert!(size_of::<ModelParams>() == 80);
+        assert!(align_of::<ModelParams>() == 8);
+        offsets!(ModelParams, [
+            dspark_head_source => 0,
+            devices => 8,
+            tensor_buft_overrides => 16,
+            n_gpu_layers => 24,
+            split_mode => 28,
+            load_mode => 32,
+            main_gpu => 36,
+            tensor_split => 40,
+            progress_callback => 48,
+            progress_callback_user_data => 56,
+            kv_overrides => 64,
+            vocab_only => 72,
+            check_tensors => 73,
+            use_extra_bufts => 74,
+            no_host => 75,
+            no_alloc => 76,
+            load_mtp => 77,
+        ]);
         assert!(size_of::<ContextParams>() == 168);
+        assert!(align_of::<ContextParams>() == 8);
+        offsets!(ContextParams, [
+            n_ctx => 0,
+            n_batch => 4,
+            n_ubatch => 8,
+            n_seq_max => 12,
+            n_rs_seq => 16,
+            n_outputs_max => 20,
+            n_outputs_max_per_seq => 24,
+            n_threads => 28,
+            n_threads_batch => 32,
+            ctx_type => 36,
+            rope_scaling_type => 40,
+            pooling_type => 44,
+            attention_type => 48,
+            flash_attn_type => 52,
+            rope_freq_base => 56,
+            rope_freq_scale => 60,
+            yarn_ext_factor => 64,
+            yarn_attn_factor => 68,
+            yarn_beta_fast => 72,
+            yarn_beta_slow => 76,
+            yarn_orig_ctx => 80,
+            defrag_thold => 84,
+            cb_eval => 88,
+            cb_eval_user_data => 96,
+            type_k => 104,
+            type_v => 108,
+            path_kv_mean_center => 112,
+            abort_callback => 120,
+            abort_callback_data => 128,
+            embeddings => 136,
+            offload_kqv => 137,
+            no_perf => 138,
+            op_offload => 139,
+            swa_full => 140,
+            kv_unified => 141,
+            samplers => 144,
+            n_samplers => 152,
+            ctx_other => 160,
+        ]);
         assert!(size_of::<Batch>() == 56);
+        assert!(align_of::<Batch>() == 8);
+        offsets!(Batch, [
+            n_tokens => 0,
+            token => 8,
+            embd => 16,
+            pos => 24,
+            n_seq_id => 32,
+            seq_id => 40,
+            logits => 48,
+        ]);
     };
 
     type ModelDefaults = unsafe extern "C-unwind" fn() -> ModelParams;
