@@ -95,11 +95,7 @@ fn parse<T: serde::de::DeserializeOwned>(input: &str) -> Result<T, String> {
 }
 
 fn require(condition: bool) -> Result<(), String> {
-    if condition {
-        Ok(())
-    } else {
-        Err("Unsupported or incomplete hardware contract.".into())
-    }
+    condition.ok_or_else(|| "Unsupported or incomplete hardware contract.".into())
 }
 
 fn identifier(value: &str) -> bool {

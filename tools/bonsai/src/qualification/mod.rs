@@ -76,11 +76,7 @@ fn decode<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T> {
 }
 
 fn require(condition: bool, message: &str) -> Result<()> {
-    if condition {
-        Ok(())
-    } else {
-        Err(message.into())
-    }
+    condition.ok_or_else(|| message.into())
 }
 
 fn string(value: &str, maximum: usize) -> Result<()> {
