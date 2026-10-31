@@ -2,18 +2,10 @@
 //!
 //! The complete original input schedule and native metadata/chunk/ID bytes are
 //! retained in `tests/fixtures/tokenizer-v1.*`; provenance binds source and target.
-//! The generated GGUF shim still has its separate native lifecycle regression.
+//! Rust loading and result lifetime regressions exercise the production GGUF adapter.
 #![forbid(unsafe_code)]
 
-use std::{
-    env,
-    error::Error,
-    ffi::c_void,
-    fs, io,
-    path::{Path, PathBuf},
-    process::Command,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{error::Error, ffi::c_void, io};
 
 use sha2::{Digest, Sha256};
 
@@ -21,7 +13,7 @@ use super::tokenizer::{
     bonsai_qt_bpe_add_merge, bonsai_qt_bpe_add_special, bonsai_qt_bpe_add_special_id,
     bonsai_qt_bpe_add_token, bonsai_qt_bpe_encode, bonsai_qt_bpe_finish, bonsai_qt_bpe_free,
     bonsai_qt_bpe_new, bonsai_qt_bpe_result_data, bonsai_qt_bpe_result_free,
-    bonsai_qt_bpe_result_len, copy_result_for_test,
+    bonsai_qt_bpe_result_len, copy_result_for_test, encode_copy_for_test,
 };
 use crate::tokenizer::{Tokenizer, pretokenize};
 
@@ -90,8 +82,7 @@ impl NativeTokenizer {
     }
 
     fn encode(&self, text: &[u8], eos: bool) -> Result<Vec<i32>> {
-        let result = NativeResult(bonsai_qt_bpe_encode(self.0, text.as_ptr(), text.len(), eos));
-        copy_result_for_test(result.0).ok_or_else(|| {
+        encode_copy_for_test(self.0, text, eos).ok_or_else(|| {
             io::Error::other("Native Rust tokenizer rejected a reference case.").into()
         })
     }
@@ -405,7 +396,7 @@ impl<'a> Reader<'a> {
         let (word, remaining) = self
             .0
             .split_first_chunk::<4>()
-            .ok_or("truncated oracle word")?;
+            .ok_or("truncated captured tokenizer word")?;
         self.0 = remaining;
         Ok(u32::from_le_bytes(*word))
     }
@@ -415,7 +406,7 @@ impl<'a> Reader<'a> {
         let (value, remaining) = self
             .0
             .split_at_checked(size)
-            .ok_or("truncated oracle text")?;
+            .ok_or("truncated captured tokenizer text")?;
         self.0 = remaining;
         Ok(value)
     }
@@ -429,55 +420,6 @@ impl<'a> Reader<'a> {
             })
             .collect()
     }
-}
-
-fn compile_lifecycle_fixture(working: &Path, header: &[u8], source: &[u8]) -> Result<PathBuf> {
-    let compiler = PathBuf::from(
-        env::var_os("BONSAI_TTS_COMPILER")
-            .or_else(|| option_env!("BONSAI_TTS_COMPILER").map(Into::into))
-            .ok_or(
-                "Set the provisioned BONSAI_TTS_COMPILER for the native tokenizer shim lifecycle.",
-            )?,
-    );
-    assert!(compiler.is_absolute() && compiler.is_file());
-    for (name, bytes) in [
-        ("bpe.h", header),
-        (
-            "gguf.h",
-            include_bytes!("../../tests/tokenizer-gguf.h").as_slice(),
-        ),
-        (
-            "qt-error.h",
-            include_bytes!("../../tests/tokenizer-error.h").as_slice(),
-        ),
-        ("lifecycle.cpp", source),
-    ] {
-        fs::write(working.join(name), bytes)?;
-    }
-    let executable = working.join("lifecycle.exe");
-    let compile = Command::new(compiler)
-        .args([
-            "/nologo",
-            "/std:c++17",
-            "/EHsc",
-            "/W4",
-            "/WX",
-            "/O2",
-            "/fp:precise",
-            "/UNDEBUG",
-        ])
-        .arg(working.join("lifecycle.cpp"))
-        .arg(format!("/Fe{}", executable.display()))
-        .current_dir(working)
-        .output()?;
-    fs::write(working.join("compiler.stdout"), &compile.stdout)?;
-    fs::write(working.join("compiler.stderr"), &compile.stderr)?;
-    assert!(
-        compile.status.success(),
-        "Tokenizer shim lifecycle compilation failed; retained {}",
-        working.display()
-    );
-    Ok(executable)
 }
 
 #[test]
@@ -589,32 +531,5 @@ fn tokenizer_setup_and_result_owners_preserve_their_lifetimes() -> Result<()> {
     assert_eq!(copy_result_for_test(empty.0), Some(Vec::new()));
     bonsai_qt_bpe_free(std::ptr::null_mut());
     bonsai_qt_bpe_result_free(std::ptr::null_mut());
-    Ok(())
-}
-
-#[test]
-fn generated_native_tokenizer_header_preserves_metadata_and_raii() -> Result<()> {
-    let working = env::temp_dir().join(format!(
-        "Bonsai-Tokenizer-Shim-{}-{}",
-        std::process::id(),
-        SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
-    ));
-    assert!(working.is_absolute() && !working.to_string_lossy().contains('%'));
-    fs::create_dir(&working)?;
-    let header = crate::build_overlay::tokenizer_header_for_test();
-    let executable = compile_lifecycle_fixture(
-        &working,
-        header.as_bytes(),
-        include_bytes!("../../tests/tokenizer_lifecycle.cpp"),
-    )?;
-    let execution = Command::new(executable).current_dir(&working).output()?;
-    fs::write(working.join("fixture.stdout"), &execution.stdout)?;
-    fs::write(working.join("fixture.stderr"), &execution.stderr)?;
-    assert!(
-        execution.status.success(),
-        "Native tokenizer fixture failed; retained {}",
-        working.display()
-    );
-    fs::remove_dir_all(working)?;
     Ok(())
 }

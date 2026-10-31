@@ -406,10 +406,15 @@ static int sample_top_k_p(float * logits, int V, float temperature,
     #[test]
     fn tokenizer_overlay_removes_native_policy_and_rejects_source_drift() -> std::io::Result<()> {
         let patched = fixture_tokenizer(FIXTURE_SOURCE)?;
-        assert!(patched.contains("gguf_get_arr_str"));
+        assert!(patched.contains("bonsai_qt_bpe_load_gguf(&tok->owner, path)"));
+        assert!(!patched.contains("gguf_get_arr_str"));
+        assert!(!patched.contains("gguf_init_from_file"));
         assert!(patched.contains("~BPETokenizer() { bonsai_qt_bpe_free(owner); }"));
         assert!(patched.contains("BPETokenizer(const BPETokenizer &) = delete;"));
-        assert!(patched.contains("bonsai_qt_bpe_encode(tok->owner,"));
+        assert!(patched.contains("bonsai_qt_bpe_encode_to(tok->owner,"));
+        assert!(patched.contains("bonsai_copy_token_ids"));
+        assert!(patched.contains("noexcept"));
+        assert!(!patched.contains("result_owner"));
         for policy in [
             "std::unordered_map",
             "gpt2_pre_tokenize",
