@@ -18,19 +18,29 @@ const MAX_HEAD: usize = 16 * 1024;
 const INTAKE: Duration = Duration::from_secs(10);
 const WRITE: Duration = Duration::from_secs(5);
 const RETAINED_WIRE_BYTES: usize = 64 * 1024;
+// Retain at most four seconds of recognition storage between requests.
+const RETAINED_INPUT_SAMPLES: usize = 16_000 * 4;
 
 /// One bounded intake allocation reused between synchronous requests.
 #[derive(Default)]
 pub(super) struct Scratch {
     wire: Vec<u8>,
+    samples: Vec<f32>,
+}
+
+fn recycle_wire(wire: &mut Vec<u8>) {
+    wire.clear();
+    if wire.capacity() > RETAINED_WIRE_BYTES {
+        *wire = Vec::new();
+    }
 }
 
 impl Scratch {
     fn recycle(&mut self) {
-        self.wire.clear();
-        // Large transcription uploads need no idle retained wire allocation.
-        if self.wire.capacity() > RETAINED_WIRE_BYTES {
-            self.wire = Vec::new();
+        recycle_wire(&mut self.wire);
+        self.samples.clear();
+        if self.samples.capacity() > RETAINED_INPUT_SAMPLES {
+            self.samples = Vec::new();
         }
     }
 }
@@ -227,7 +237,7 @@ fn receive<'a>(
     scratch: &'a mut Scratch,
 ) -> Result<Prepared<'a>, Error> {
     let until = Instant::now() + INTAKE;
-    let wire = &mut scratch.wire;
+    let Scratch { wire, samples } = scratch;
     wire.clear();
     wire.try_reserve_exact(MAX_HEAD)
         .map_err(|_| Error::new(503, "allocation_failed"))?;
@@ -260,7 +270,16 @@ fn receive<'a>(
     while filled < head.length {
         filled += read(peer, &mut wire[filled..], until)?;
     }
-    request::body(kind, &head.media, wire)
+    match kind {
+        Kind::Canary => {
+            let samples = request::transcribe(&head.media, wire, samples)?;
+            // PCM has been converted into separate reusable storage. The input
+            // bytes are no longer needed during potentially long inference.
+            recycle_wire(wire);
+            Ok(Prepared::Transcribe(samples))
+        }
+        Kind::QwenTts => request::synthesize(&head.media, wire).map(Prepared::Synthesize),
+    }
 }
 
 fn body_buffer(wire: &mut Vec<u8>, end: usize, length: usize) -> Result<(), Error> {
@@ -501,22 +520,30 @@ fn write_before(peer: &mut TcpStream, mut remaining: &[u8], until: Instant) -> i
 #[cfg(test)]
 mod intake_tests {
     use super::{
-        Error, HeaderEnd, Kind, MAX_HEAD, RETAINED_WIRE_BYTES, Scratch, body_buffer, parse_head,
+        Error, HeaderEnd, Kind, MAX_HEAD, RETAINED_INPUT_SAMPLES, RETAINED_WIRE_BYTES, Scratch,
+        body_buffer, parse_head,
     };
 
     #[test]
     fn intake_scratch_reuses_small_requests_and_releases_large_uploads() {
         let mut scratch = Scratch {
             wire: vec![b'x'; MAX_HEAD],
+            samples: vec![0.5; RETAINED_INPUT_SAMPLES],
         };
         let storage = scratch.wire.as_ptr();
+        let sample_storage = scratch.samples.as_ptr();
         scratch.recycle();
         assert!(scratch.wire.is_empty());
+        assert!(scratch.samples.is_empty());
         assert_eq!(scratch.wire.as_ptr(), storage);
+        assert_eq!(scratch.samples.as_ptr(), sample_storage);
         scratch.wire.resize(RETAINED_WIRE_BYTES + 1, b'x');
+        scratch.samples.resize(RETAINED_INPUT_SAMPLES + 1, 0.5);
         scratch.recycle();
         assert!(scratch.wire.is_empty());
         assert_eq!(scratch.wire.capacity(), 0);
+        assert!(scratch.samples.is_empty());
+        assert_eq!(scratch.samples.capacity(), 0);
     }
 
     #[test]

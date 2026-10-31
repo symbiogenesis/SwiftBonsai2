@@ -401,14 +401,14 @@ fn strict_json_and_wave_validation_rejects_untrusted_payloads() {
         br#"{"input":"\ud800"}"#,
         &[0xff],
     ] {
-        assert!(request::body(Kind::QwenTts, "application/json", bytes).is_err());
+        assert!(request::synthesize("application/json", bytes).is_err());
     }
     let valid = input_wav();
-    assert!(wave::decode(&valid).is_ok());
+    assert!(wave::decode(&valid, &mut Vec::new()).is_ok());
     for offset in [4, 16, 20, 22, 24, 28, 32, 34, 40] {
         let mut bytes = valid.clone();
         bytes[offset] ^= 1;
-        assert!(wave::decode(&bytes).is_err());
+        assert!(wave::decode(&bytes, &mut Vec::new()).is_err());
     }
     assert!(wave::header(&[f32::NAN], 24_000).is_err());
     assert!(wave::header(&[0.0], 16_000).is_err());
@@ -420,7 +420,7 @@ fn native_voice_design_rejects_language_overrides_before_inference() -> io::Resu
     value["language"] = "English".into();
     let body = serde_json::to_vec(&value)?;
     assert_eq!(
-        request::body(Kind::QwenTts, "application/json", &body).err(),
+        request::synthesize("application/json", &body).err(),
         Some(http::Error::bad("unsupported_language"))
     );
     Ok(())
@@ -576,15 +576,10 @@ fn completed_response_child() -> io::Result<()> {
     std::fs::write(&pending, port.to_string())?;
     std::fs::rename(pending, ready)?;
     let mut engine = CompletionFake(false);
+    let mut scratch = http::Scratch::default();
     for _ in 0..COMPLETED_REQUESTS {
         let (mut peer, _) = listener.accept()?;
-        http::handle(
-            &mut peer,
-            port,
-            &KEY,
-            &mut engine,
-            &mut http::Scratch::default(),
-        );
+        http::handle(&mut peer, port, &KEY, &mut engine, &mut scratch);
     }
     Ok(())
 }

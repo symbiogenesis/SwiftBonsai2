@@ -1,12 +1,12 @@
 //! Strict JSON and multipart supported subsets; all payloads stay in memory.
 
-use crate::{CANARY_MODEL, Kind, Request, TTS_MODEL, http::Error, wave};
+use crate::{CANARY_MODEL, Request, TTS_MODEL, http::Error, wave};
 use serde::Deserialize;
 use std::{borrow::Cow, collections::HashMap};
 
 pub(super) enum Prepared<'a> {
     Health,
-    Transcribe(Vec<f32>),
+    Transcribe(&'a [f32]),
     Synthesize(Speech<'a>),
 }
 
@@ -46,35 +46,40 @@ pub(super) struct Speech<'a> {
     response_format: Cow<'a, str>,
 }
 
-pub(super) fn body<'a>(kind: Kind, media: &str, bytes: &'a [u8]) -> Result<Prepared<'a>, Error> {
-    match kind {
-        Kind::Canary => multipart(media, bytes).map(Prepared::Transcribe),
-        Kind::QwenTts => {
-            if !media.eq_ignore_ascii_case("application/json")
-                && !media.eq_ignore_ascii_case("application/json; charset=utf-8")
-            {
-                return Err(Error::new(415, "unsupported_media_type"));
-            }
-            let speech: Speech<'_> =
-                serde_json::from_slice(bytes).map_err(|_| Error::bad("invalid_json"))?;
-            if speech.model != TTS_MODEL {
-                return Err(Error::bad("unsupported_model"));
-            }
-            if !matches!(speech.response_format.as_ref(), "wav" | "pcm") {
-                return Err(Error::bad("unsupported_audio_format"));
-            }
-            if speech.language != "Auto" {
-                return Err(Error::bad("unsupported_language"));
-            }
-            if !text(&speech.input, 2048) {
-                return Err(Error::bad("text_limit"));
-            }
-            if !text(&speech.voice_description, 1024) {
-                return Err(Error::bad("voice_description_limit"));
-            }
-            Ok(Prepared::Synthesize(speech))
-        }
+pub(super) fn synthesize<'a>(media: &str, bytes: &'a [u8]) -> Result<Speech<'a>, Error> {
+    if !media.eq_ignore_ascii_case("application/json")
+        && !media.eq_ignore_ascii_case("application/json; charset=utf-8")
+    {
+        return Err(Error::new(415, "unsupported_media_type"));
     }
+    let speech: Speech<'_> =
+        serde_json::from_slice(bytes).map_err(|_| Error::bad("invalid_json"))?;
+    if speech.model != TTS_MODEL {
+        return Err(Error::bad("unsupported_model"));
+    }
+    if !matches!(speech.response_format.as_ref(), "wav" | "pcm") {
+        return Err(Error::bad("unsupported_audio_format"));
+    }
+    if speech.language != "Auto" {
+        return Err(Error::bad("unsupported_language"));
+    }
+    if !text(&speech.input, 2048) {
+        return Err(Error::bad("text_limit"));
+    }
+    if !text(&speech.voice_description, 1024) {
+        return Err(Error::bad("voice_description_limit"));
+    }
+    Ok(speech)
+}
+
+pub(super) fn transcribe<'a>(
+    media: &str,
+    bytes: &[u8],
+    samples: &'a mut Vec<f32>,
+) -> Result<&'a [f32], Error> {
+    // Multipart errors must not leave samples from an earlier request visible.
+    samples.clear();
+    wave::decode(multipart(media, bytes)?, samples)
 }
 
 fn text(value: &str, limit: usize) -> bool {
@@ -145,7 +150,7 @@ fn multipart_parts<'a>(bytes: &'a [u8], separator: &[u8]) -> Result<[Option<&'a 
     Ok(parts)
 }
 
-fn multipart(media: &str, body: &[u8]) -> Result<Vec<f32>, Error> {
+fn multipart<'a>(media: &str, body: &'a [u8]) -> Result<&'a [u8], Error> {
     let boundary = boundary(media)?;
     let start = format!("--{boundary}\r\n");
     let end = format!("\r\n--{boundary}--\r\n");
@@ -211,7 +216,7 @@ fn multipart(media: &str, body: &[u8]) -> Result<Vec<f32>, Error> {
         return Err(Error::bad("unsupported_language"));
     }
     let audio = fields.get("file").ok_or(Error::bad("invalid_audio"))?;
-    wave::decode(audio)
+    Ok(audio)
 }
 
 fn disposition_field(bytes: &[u8]) -> Result<(&str, bool), Error> {
@@ -249,19 +254,25 @@ fn disposition_field(bytes: &[u8]) -> Result<(&str, bool), Error> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Cow, Error, Kind, Prepared, TTS_MODEL, body, multipart, multipart_parts, split_bytes,
+        Cow, Error, TTS_MODEL, multipart, multipart_parts, split_bytes, synthesize, transcribe,
     };
+
+    #[test]
+    fn failed_multipart_clears_previous_recognition_samples() {
+        let mut samples = vec![0.5; 16];
+        assert_eq!(
+            transcribe("multipart/form-data; boundary=a", b"invalid", &mut samples).err(),
+            Some(Error::bad("invalid_multipart"))
+        );
+        assert!(samples.is_empty());
+    }
 
     #[test]
     fn synthesis_fields_borrow_plain_json_and_own_escaped_unicode() -> Result<(), Error> {
         let bytes = format!(
             r#"{{"model":"{TTS_MODEL}","input":"Hello 🌱","voice_description":"Warm and clear.","language":"Auto","response_format":"wav"}}"#
         );
-        let Prepared::Synthesize(speech) =
-            body(Kind::QwenTts, "application/json", bytes.as_bytes())?
-        else {
-            return Err(Error::bad("unexpected_request"));
-        };
+        let speech = synthesize("application/json", bytes.as_bytes())?;
         assert!(matches!(speech.model, Cow::Borrowed(_)));
         assert!(matches!(speech.input, Cow::Borrowed(_)));
         assert!(matches!(speech.voice_description, Cow::Borrowed(_)));
@@ -269,11 +280,7 @@ mod tests {
         assert!(matches!(speech.response_format, Cow::Borrowed(_)));
         assert_eq!(speech.input, "Hello 🌱");
         let escaped = bytes.replace("Hello 🌱", r"Hello \ud83c\udf31\n");
-        let Prepared::Synthesize(speech) =
-            body(Kind::QwenTts, "application/json", escaped.as_bytes())?
-        else {
-            return Err(Error::bad("unexpected_request"));
-        };
+        let speech = synthesize("application/json", escaped.as_bytes())?;
         assert!(matches!(speech.input, Cow::Owned(_)));
         assert_eq!(speech.input, "Hello 🌱\n");
         Ok(())
