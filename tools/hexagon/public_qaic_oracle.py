@@ -255,7 +255,7 @@ def run(args):
         report["generatorExecuted"] = True
         report["versionQueryCompleted"] = True
         report["stage"] = "independent-IDL-generation"
-        arguments = [str(executable), "--map-dll", "--include-path=" + str(inputs),
+        arguments = [str(executable), "--map-dll", "--standard-types", "--include-path=" + str(inputs),
                      "--output-path=" + str(generated), str(inputs / "htp_iface.idl")]
         report["idlGenerationAttempted"] = True
         control.run("independent-generation", arguments, args.output, seconds=15)
@@ -284,8 +284,16 @@ def run(args):
         (review / "NOTICES.txt").write_text(notices, encoding="utf-8")
         report["stage"] = "independent-public-generation-complete"
         report["outcome"] = "generated-independent-oracle-only"
-        capture_wire(pin, report, control, args.output, generated, review, receive, identity)
-        compare_rust_wire(pin, report, control, args.output, review, args.rustc, identity)
+        if pin["generationReviewOnly"] is True:
+            report["stage"] = "public-standard-type-generation-review"
+            report["outcome"] = "public-standard-generated-source-awaiting-review"
+            report["wireCapture"] = {"passed": False, "executionSelected": False,
+                                     "reason": "new-standard-type-output-requires-independent-review"}
+        elif pin["generationReviewOnly"] is False:
+            capture_wire(pin, report, control, args.output, generated, review, receive, identity)
+            compare_rust_wire(pin, report, control, args.output, review, args.rustc, identity)
+        else:
+            raise ValueError("the public generation review mode must be an explicit boolean")
     except Exception as error:
         report["outcome"] = "failed"
         report["failureClass"] = type(error).__name__

@@ -1,6 +1,8 @@
 {
   "schemaVersion": 1,
   "purpose": "hosted-independent-public-source-QAIC-marshalling-oracle-only",
+  "generationReviewOnly": true,
+  "generationMode": "documented-standard-types; review-new-output-before-mock-compilation",
   "qaicRepository": "https://github.com/qualcomm/QAIC",
   "qaicCommit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
   "setupAction": "haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d",
@@ -99,6 +101,7 @@
   ],
   "generatorArguments": [
     "--map-dll",
+    "--standard-types",
     "--include-path={public-input-directory}",
     "--output-path={new-output-directory}",
     "{checked-htp_iface.idl}"
@@ -184,7 +187,8 @@
         "url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/HAP_debug.h"
       }
     ],
-    "reviewedGeneratedFiles": [
+    "reviewedGeneratedFiles": [],
+    "priorLegacyGeneratedFiles": [
       {
         "name": "htp_iface.h",
         "bytes": 7889,
