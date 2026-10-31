@@ -59,7 +59,7 @@ fn fixture<'a>(context: *const c_void) -> &'a Fixture {
     unsafe { &*context.cast::<Fixture>() }
 }
 
-unsafe extern "C" fn open(path: *const c_char, params: InitParams) -> *mut c_void {
+unsafe extern "C-unwind" fn open(path: *const c_char, params: InitParams) -> *mut c_void {
     PARAMS_CORRECT.with(|correct| correct.set(params.no_alloc && params.context.is_null()));
     // SAFETY: The production adapter supplies a live NUL-terminated CStr path.
     if unsafe { CStr::from_ptr(path) } != c"fixture" {
@@ -72,7 +72,7 @@ unsafe extern "C" fn open(path: *const c_char, params: InitParams) -> *mut c_voi
     FIXTURE.with(|value| Box::into_raw(Box::new(value.borrow().clone())).cast())
 }
 
-unsafe extern "C" fn close(context: *mut c_void) {
+unsafe extern "C-unwind" fn close(context: *mut c_void) {
     // SAFETY: The production guard returns its one original Box pointer once,
     // after all string borrows and before the API function table goes away.
     drop(unsafe { Box::from_raw(context.cast::<Fixture>()) });
@@ -82,7 +82,7 @@ unsafe extern "C" fn close(context: *mut c_void) {
     });
 }
 
-unsafe extern "C" fn find(context: *const c_void, name: *const c_char) -> i64 {
+unsafe extern "C-unwind" fn find(context: *const c_void, name: *const c_char) -> i64 {
     let fixture = fixture(context);
     // SAFETY: The adapter supplies a live borrowed CStr for each lookup.
     let name = unsafe { CStr::from_ptr(name) };
@@ -99,7 +99,7 @@ unsafe extern "C" fn find(context: *const c_void, name: *const c_char) -> i64 {
     }
 }
 
-unsafe extern "C" fn kind(context: *const c_void, key: i64) -> c_int {
+unsafe extern "C-unwind" fn kind(context: *const c_void, key: i64) -> c_int {
     let fixture = fixture(context);
     if key < 2 {
         fixture.array_type
@@ -108,11 +108,11 @@ unsafe extern "C" fn kind(context: *const c_void, key: i64) -> c_int {
     }
 }
 
-unsafe extern "C" fn array_kind(context: *const c_void, _: i64) -> c_int {
+unsafe extern "C-unwind" fn array_kind(context: *const c_void, _: i64) -> c_int {
     fixture(context).element_type
 }
 
-unsafe extern "C" fn count(context: *const c_void, key: i64) -> usize {
+unsafe extern "C-unwind" fn count(context: *const c_void, key: i64) -> usize {
     let fixture = fixture(context);
     if fixture.oversized {
         return usize::try_from(1_u64 << 32).unwrap_or(usize::MAX);
@@ -124,7 +124,11 @@ unsafe extern "C" fn count(context: *const c_void, key: i64) -> usize {
     }
 }
 
-unsafe extern "C" fn string(context: *const c_void, key: i64, index: usize) -> *const c_char {
+unsafe extern "C-unwind" fn string(
+    context: *const c_void,
+    key: i64,
+    index: usize,
+) -> *const c_char {
     READS.with(|reads| reads.borrow_mut().push((key, index)));
     let fixture = fixture(context);
     let values = if key == 0 {
@@ -138,7 +142,7 @@ unsafe extern "C" fn string(context: *const c_void, key: i64, index: usize) -> *
         .map_or(std::ptr::null(), |value| value.as_ptr())
 }
 
-unsafe extern "C" fn u32_value(_: *const c_void, key: i64) -> u32 {
+unsafe extern "C-unwind" fn u32_value(_: *const c_void, key: i64) -> u32 {
     if key == 2 { 1 } else { u32::MAX }
 }
 

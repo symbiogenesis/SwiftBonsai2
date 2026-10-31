@@ -6,6 +6,7 @@
 use std::{
     ffi::{CStr, c_char, c_int, c_void},
     io,
+    panic::{AssertUnwindSafe, catch_unwind},
     ptr::NonNull,
 };
 
@@ -25,7 +26,7 @@ struct InitParams {
     context: *mut *mut c_void,
 }
 
-unsafe extern "C" {
+unsafe extern "C-unwind" {
     fn gguf_init_from_file(path: *const c_char, params: InitParams) -> *mut c_void;
     fn gguf_free(context: *mut c_void);
     fn gguf_find_key(context: *const c_void, name: *const c_char) -> i64;
@@ -37,14 +38,14 @@ unsafe extern "C" {
 }
 
 struct Api {
-    open: unsafe extern "C" fn(*const c_char, InitParams) -> *mut c_void,
-    close: unsafe extern "C" fn(*mut c_void),
-    find: unsafe extern "C" fn(*const c_void, *const c_char) -> i64,
-    kind: unsafe extern "C" fn(*const c_void, i64) -> c_int,
-    array_kind: unsafe extern "C" fn(*const c_void, i64) -> c_int,
-    count: unsafe extern "C" fn(*const c_void, i64) -> usize,
-    string: unsafe extern "C" fn(*const c_void, i64, usize) -> *const c_char,
-    u32_value: unsafe extern "C" fn(*const c_void, i64) -> u32,
+    open: unsafe extern "C-unwind" fn(*const c_char, InitParams) -> *mut c_void,
+    close: unsafe extern "C-unwind" fn(*mut c_void),
+    find: unsafe extern "C-unwind" fn(*const c_void, *const c_char) -> i64,
+    kind: unsafe extern "C-unwind" fn(*const c_void, i64) -> c_int,
+    array_kind: unsafe extern "C-unwind" fn(*const c_void, i64) -> c_int,
+    count: unsafe extern "C-unwind" fn(*const c_void, i64) -> usize,
+    string: unsafe extern "C-unwind" fn(*const c_void, i64, usize) -> *const c_char,
+    u32_value: unsafe extern "C-unwind" fn(*const c_void, i64) -> u32,
 }
 
 const NATIVE_API: Api = Api {
@@ -65,6 +66,15 @@ fn invalid() -> io::Error {
     )
 }
 
+// C++ allocation/string operations may throw through the primitive C API.
+// Permit that ABI unwind only as far as this guard, then abort the owned worker
+// without examining or dropping an opaque foreign exception or reusing state.
+// Some Rust runtimes abort directly when catch_unwind encounters a foreign
+// exception; the Err path must have the same outcome if it is returned instead.
+fn native_call<T>(call: impl FnOnce() -> T) -> T {
+    catch_unwind(AssertUnwindSafe(call)).unwrap_or_else(|_| std::process::abort())
+}
+
 trait Metadata {
     fn find(&self, name: &CStr) -> Option<i64>;
     fn string_count(&self, key: i64) -> io::Result<usize>;
@@ -82,7 +92,7 @@ impl<'a> Gguf<'a> {
         // SAFETY: The pinned C reader synchronously borrows a NUL-terminated
         // path. no_alloc=true and a null context request metadata only. A
         // successful return transfers one context to this Rust Drop guard.
-        let raw = unsafe {
+        let raw = native_call(|| unsafe {
             (api.open)(
                 path.as_ptr(),
                 InitParams {
@@ -90,7 +100,7 @@ impl<'a> Gguf<'a> {
                     context: std::ptr::null_mut(),
                 },
             )
-        };
+        });
         Ok(Self {
             context: NonNull::new(raw).ok_or_else(invalid)?,
             api,
@@ -102,7 +112,7 @@ impl Drop for Gguf<'_> {
     fn drop(&mut self) {
         // SAFETY: This guard uniquely owns the nonnull context from api.open;
         // all metadata borrows end before its one matching release.
-        unsafe { (self.api.close)(self.context.as_ptr()) };
+        native_call(|| unsafe { (self.api.close)(self.context.as_ptr()) });
     }
 }
 
@@ -110,30 +120,33 @@ impl Metadata for Gguf<'_> {
     fn find(&self, name: &CStr) -> Option<i64> {
         // SAFETY: The immutable context and NUL-terminated key remain live for
         // this synchronous call. GGML returns a valid index or -1.
-        let key = unsafe { (self.api.find)(self.context.as_ptr(), name.as_ptr()) };
+        let key = native_call(|| unsafe { (self.api.find)(self.context.as_ptr(), name.as_ptr()) });
         (key >= 0).then_some(key)
     }
 
     fn string_count(&self, key: i64) -> io::Result<usize> {
         // SAFETY: key was returned by find on this live immutable context.
-        let kind = unsafe { (self.api.kind)(self.context.as_ptr(), key) };
+        let kind = native_call(|| unsafe { (self.api.kind)(self.context.as_ptr(), key) });
         if kind != ARRAY {
             return Err(invalid());
         }
         // SAFETY: The key is an existing ARRAY; query its element type before
         // calling GGML getters, which abort on a mismatched type.
-        let element = unsafe { (self.api.array_kind)(self.context.as_ptr(), key) };
+        let element = native_call(|| unsafe { (self.api.array_kind)(self.context.as_ptr(), key) });
         if element != STRING {
             return Err(invalid());
         }
         // SAFETY: Both array and string element types were checked above.
-        Ok(unsafe { (self.api.count)(self.context.as_ptr(), key) })
+        Ok(native_call(|| unsafe {
+            (self.api.count)(self.context.as_ptr(), key)
+        }))
     }
 
     fn string(&self, key: i64, index: usize) -> io::Result<&[u8]> {
         // SAFETY: The loader queries string_count before iterating exactly that
         // extent; the immutable array's type and index are already checked.
-        let pointer = unsafe { (self.api.string)(self.context.as_ptr(), key, index) };
+        let pointer =
+            native_call(|| unsafe { (self.api.string)(self.context.as_ptr(), key, index) });
         if pointer.is_null() {
             return Err(invalid());
         }
@@ -145,12 +158,14 @@ impl Metadata for Gguf<'_> {
 
     fn u32_value(&self, key: i64) -> io::Result<u32> {
         // SAFETY: key was returned by find on this context.
-        let kind = unsafe { (self.api.kind)(self.context.as_ptr(), key) };
+        let kind = native_call(|| unsafe { (self.api.kind)(self.context.as_ptr(), key) });
         if kind != UINT32 {
             return Err(invalid());
         }
         // SAFETY: The key's UINT32 type was checked before the typed getter.
-        Ok(unsafe { (self.api.u32_value)(self.context.as_ptr(), key) })
+        Ok(native_call(|| unsafe {
+            (self.api.u32_value)(self.context.as_ptr(), key)
+        }))
     }
 }
 
