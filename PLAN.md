@@ -506,8 +506,9 @@ Follow [Hexagon contracts](docs/hexagon.md).
   installed signature identities, actual mapping/execution and a small supported-type
   dispatch fixture built on hosted CI. Use the [pinned access source decision and
   operation ledger](docs/hexagon-source-audit.md) and bounded inventory workflow;
-  extend the [local X2 driver/catalog observation](docs/evidence/hexagon-x2-inventory.json)
-  to actual mapping/dispatch and retain independent X1 evidence. Resolve a supported
+  bind the [successful tiny X2 numeric dispatch](docs/evidence/hexagon-x2-dispatch.json)
+  to independently captured loaded-driver/DSP identities and actual mapping modes,
+  and retain independent X1 evidence. Resolve a supported
   signing/distribution route for
   custom packed kernels: GenieX's catalog covers only its bundled generic kernels.
   Verify DMA64, effective VTCM and low-bit Hadamard/HTP leads against matching signed
@@ -520,7 +521,10 @@ Follow [Hexagon contracts](docs/hexagon.md).
   4 KiB STATIC mapping probe returned generic FastRPC error 512 after allocation,
   descriptor and host read/write success; it does not rule out the signed runtime's
   established-session FD flow. Preserve that scoped failure and prove the next
-  supported mapping before computation. Start with `blk.0.ffn_up.weight`,
+  supported native mapping before native computation. Bind the successful fixed
+  default-session domain/URI preparation to actual signed module loading and FD
+  mapping in that established session; metadata alone proves neither.
+  Start with `blk.0.ffn_up.weight`,
   K=5120/M=17408/N=1, keeping transforms,
   adapter corrections and all committed state on CPU. Implement lossless PQ2
   tiling/fused matvec against exact Q8_K preparation/reduction, then separately qualify
@@ -528,6 +532,11 @@ Follow [Hexagon contracts](docs/hexagon.md).
   bytes. The model-free PQ2/Q2 layout control preserves weights only and adds
   419,840,000 bytes for a whole packed copy; bind actual transform/sign arrays and
   prove activation/logit/state parity before timing or expanding placement.
+  Transfer the [CPU-only tiled operation control](tools/hexagon/packed-projection.md)
+  into Prism's signed device path using its hosted Q8_K/FMA, tile traversal,
+  transform and cancellation controls. Bind actual artifact/sign
+  arrays and effective VTCM; its proposed 18,752-byte double-buffer reserve excludes
+  session, queue, DMA-descriptor and mapping costs and grants no device admission.
 - Evaluate HVX packed work and HMX batched prefill with bounded VTCM, DMA and repacking
   scratch, exact fusion/recurrent basis and independent adapters. Cover ring saturation,
   partial tiles, double buffering, requested and effective VTCM, allocation refusal and

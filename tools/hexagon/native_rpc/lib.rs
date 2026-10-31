@@ -13,6 +13,11 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+mod session;
+pub use session::{
+    GET_EFFECTIVE_DOMAIN_ID, GET_URI, MAP_FD, MAP_FD_DELAYED, SessionPreparationReport,
+};
+
 #[cfg(all(windows, target_arch = "aarch64"))]
 #[allow(
     unsafe_code,
@@ -238,6 +243,7 @@ pub fn self_check() -> Result<(), Error> {
         || decode_architecture(0).is_some()
         || decode_architecture(0x8a).is_some()
         || MappingProbeReport::new().completed_mapping_cycle()
+        || !session::self_check()
     {
         return Err(Error::Contract);
     }
@@ -320,6 +326,28 @@ impl Driver {
         #[cfg(not(all(windows, target_arch = "aarch64")))]
         {
             let _ = (self, capability);
+            Err(Error::UnsupportedPlatform)
+        }
+    }
+
+    /// Prepare fixed default-CDSP session metadata without opening a DSP module.
+    ///
+    /// The architecture must be exactly v73 or v81 from the pinned signed bundle.
+    /// Both vendor requests are fixed and validated; a refusal never falls back
+    /// to a family-derived domain or hand-constructed URI. This does not establish
+    /// signed deployment or a session and grants no buffer-mapping authority.
+    ///
+    /// # Errors
+    /// Rejects unsupported platforms and capability/export failures. Other native
+    /// refusals remain separate stages and exact codes in the returned report.
+    pub fn prepare_session_metadata(&mut self) -> Result<SessionPreparationReport, Error> {
+        #[cfg(all(windows, target_arch = "aarch64"))]
+        {
+            self.inner.prepare_session_metadata()
+        }
+        #[cfg(not(all(windows, target_arch = "aarch64")))]
+        {
+            let _ = self;
             Err(Error::UnsupportedPlatform)
         }
     }

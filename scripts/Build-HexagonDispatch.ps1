@@ -80,9 +80,9 @@ $nativeCheck = Invoke-BonsaiNativeProcess -Executable $nativeExe -ArgumentList @
 if ($nativeCheck.ExitCode -ne 0) { throw 'Direct Rust model-free capability self check failed.' }
 [IO.File]::WriteAllText((Join-Path $nativeOutput 'self-test.json'),$nativeCheck.StandardOutput)
 $contractCheck = Invoke-BonsaiNativeProcess -Executable $nativeTest -WorkingDirectory $output -TimeoutSeconds 15 -OwnDescendants
-if ($contractCheck.ExitCode -ne 0) { throw 'Direct Rust capability contract regressions failed.' }
 [IO.File]::WriteAllText((Join-Path $nativeOutput 'contract-tests.txt'),$contractCheck.StandardOutput + $contractCheck.StandardError)
-$nativeInputs = @(foreach ($name in @('lib.rs','windows.rs','mapping.rs','query.rs','sources.json')) {
+if ($contractCheck.ExitCode -ne 0) { throw 'Direct Rust capability contract regressions failed.' }
+$nativeInputs = @(foreach ($name in @('lib.rs','windows.rs','mapping.rs','session.rs','session_native.rs','query.rs','sources.json')) {
     $inputPath = Join-Path $nativeSource $name
     [ordered]@{ Name = $name; Sha256 = (Get-FileHash -LiteralPath $inputPath -Algorithm SHA256).Hash.ToLowerInvariant() }
 })
@@ -93,4 +93,24 @@ $nativeInputs = @(foreach ($name in @('lib.rs','windows.rs','mapping.rs','query.
     ExecutableSha256 = (Get-FileHash -LiteralPath $nativeExe -Algorithm SHA256).Hash.ToLowerInvariant()
     DeviceCodeLoaded = $false; DspCodeLoaded = $false; ProfileEligible = $false
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $nativeOutput 'native-build.json') -Encoding utf8NoBOM
+$packedOutput = Join-Path $output 'packed-projection'
+[void][IO.Directory]::CreateDirectory($packedOutput)
+$packedSource = Join-Path $repo 'tools/hexagon/packed_projection.rs'
+$packedTest = Join-Path $packedOutput 'packed-projection-contract.exe'
+$packedBuild = Invoke-BonsaiNativeProcess -Executable $rustup -ArgumentList @('run',$toolchain,'rustc','--edition=2024','--target','aarch64-pc-windows-msvc','--test','-C','opt-level=2','-C','overflow-checks=yes','-D','warnings',$packedSource,'-o',$packedTest) -WorkingDirectory $output -TimeoutSeconds 120 -OwnDescendants -LogPath (Join-Path $packedOutput 'build.txt')
+if ($packedBuild.ExitCode -ne 0) { throw 'The CPU packed-projection control failed to compile.' }
+$packedCheck = Invoke-BonsaiNativeProcess -Executable $packedTest -WorkingDirectory $output -TimeoutSeconds 30 -OwnDescendants
+[IO.File]::WriteAllText((Join-Path $packedOutput 'contract-tests.txt'),$packedCheck.StandardOutput + $packedCheck.StandardError)
+if ($packedCheck.ExitCode -ne 0) { throw 'The CPU packed-projection contract regressions failed.' }
+$packedInputs = @(foreach ($name in @('packed_projection.rs','packed-sources.json','verify_packed_fixture.py','fixtures/swift-q8k-parity.bin','fixtures/swift-q8k-parity.json')) {
+    [ordered]@{ Name = $name; Sha256 = (Get-FileHash -LiteralPath (Join-Path $repo ('tools/hexagon/' + $name)) -Algorithm SHA256).Hash.ToLowerInvariant() }
+})
+[ordered]@{
+    SchemaVersion = 1; RunnerRevision = $env:GITHUB_SHA; RunId = $env:GITHUB_RUN_ID
+    CompilerIdentitySha256 = $compilerDigest; Target = 'aarch64-pc-windows-msvc'
+    SourceSha256 = (Get-FileHash -LiteralPath $packedSource -Algorithm SHA256).Hash.ToLowerInvariant()
+    SourceFiles = $packedInputs
+    ExecutableSha256 = (Get-FileHash -LiteralPath $packedTest -Algorithm SHA256).Hash.ToLowerInvariant()
+    ExecutionBackend = 'CPU-control-only'; DspCodeLoaded = $false; ProfileEligible = $false
+} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $packedOutput 'build.json') -Encoding utf8NoBOM
 Write-Output $receipt

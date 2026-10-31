@@ -1,7 +1,7 @@
 name: Hexagon native controls and bounded signed dispatch
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/hexagon-**']
     paths:
       - .github/workflows/hexagon-qualification.yml
       - tools/hexagon/**
@@ -33,7 +33,6 @@ permissions:
   contents: read
 jobs:
   controls:
-    if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
     timeout-minutes: 15
     steps:
@@ -55,6 +54,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           python -B tools/hexagon/test_pq2_bridge.py
           python -B tools/hexagon/pq2_bridge.py
+          python -B tools/hexagon/verify_packed_fixture.py
           ./tests/Test-HexagonPreflight.ps1
           foreach ($case in @('Plan','Build','Result','Environment','Capture')) {
             ./tests/Test-HexagonDispatch.ps1 -Case $case
@@ -98,6 +98,7 @@ jobs:
             ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/dispatch-build.txt
             ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/dispatch-self-test.json
             ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/native-rpc
+            ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/packed-projection
           if-no-files-found: warn
           retention-days: 90
   inventory:

@@ -79,10 +79,7 @@ try {
     if ($owned.ExitCode -ne 0 -or $owned.StandardOutput.Length -gt 131072 -or $owned.StandardError.Length -gt 65536) {
         throw 'The owned worker failed its bounded output contract.'
     }
-    $worker = ConvertFrom-Json -InputObject $owned.StandardOutput -AsHashtable -NoEnumerate -DateKind String -Depth 32
-    if ($worker -isnot [Collections.IDictionary] -or $worker.Kind -cne 'runner-hexagon-dispatch-worker' -or
-        $worker.Outcome -cnotin @('passed', 'pending', 'failed') -or $worker.ProfileEligible -ne $false -or
-        $worker.SwiftQualified -ne $false -or $worker.ModelLoaded -ne $false) { throw 'Invalid owned dispatch worker receipt.' }
+    $worker = Get-BonsaiHexagonDispatchWorkerResult -Json $owned.StandardOutput -ExpectedRunnerRevision $ExpectedRunnerRevision
     $report.Worker = $worker
     $report.Outcome = $worker.Outcome
     $report.Failure = $worker.Failure
@@ -96,10 +93,10 @@ try {
     if ([IO.File]::Exists($partialPath)) {
         $partial = [IO.FileStream]::new($partialPath, 'Open', 'Read', 'Read')
         try {
-            if ($partial.Length -le 131072) {
+            if ($partial.Length -le 65536) {
                 $buffer = [byte[]]::new([int]$partial.Length)
                 $partial.ReadExactly($buffer)
-                $report.Worker = ConvertFrom-Json -InputObject ([Text.UTF8Encoding]::new($false, $true).GetString($buffer)) -AsHashtable -NoEnumerate -DateKind String -Depth 32
+                $report.Worker = Get-BonsaiHexagonDispatchWorkerResult -Json ([Text.UTF8Encoding]::new($false, $true).GetString($buffer)) -ExpectedRunnerRevision $ExpectedRunnerRevision
             }
         } catch { $report.Worker = $null } finally { $partial.Dispose() }
     }
