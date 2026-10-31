@@ -87,6 +87,10 @@ struct Gguf<'a> {
     api: &'a Api,
 }
 
+#[allow(
+    ffi_unwind_calls,
+    reason = "Each potentially throwing native metadata call is contained by native_call and aborts on unwind."
+)]
 impl<'a> Gguf<'a> {
     fn open(path: &CStr, api: &'a Api) -> io::Result<Self> {
         // SAFETY: The pinned C reader synchronously borrows a NUL-terminated
@@ -108,6 +112,10 @@ impl<'a> Gguf<'a> {
     }
 }
 
+#[allow(
+    ffi_unwind_calls,
+    reason = "The native release is contained by native_call and aborts on unwind."
+)]
 impl Drop for Gguf<'_> {
     fn drop(&mut self) {
         // SAFETY: This guard uniquely owns the nonnull context from api.open;
@@ -116,6 +124,10 @@ impl Drop for Gguf<'_> {
     }
 }
 
+#[allow(
+    ffi_unwind_calls,
+    reason = "Every primitive metadata getter is contained by native_call and aborts on unwind."
+)]
 impl Metadata for Gguf<'_> {
     fn find(&self, name: &CStr) -> Option<i64> {
         // SAFETY: The immutable context and NUL-terminated key remain live for
