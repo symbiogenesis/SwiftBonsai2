@@ -116,6 +116,41 @@ jobs:
           path: ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/native-rpc-bundle
           if-no-files-found: error
           retention-days: 90
+      - name: Check out the exact Rust GGUF reader for the narrow artifact binder
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: symbiogenesis/prism-inference
+          ref: 7aca2251f09acb345d4afb53d5ce411f81017745
+          path: .hexagon-gguf-source
+          persist-credentials: false
+      - name: Prepare the verified projection and sign-array binder without a model
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Build-HexagonPackedArtifact.ps1') -GgufSourceDirectory (Join-Path $env:GITHUB_WORKSPACE '.hexagon-gguf-source') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Hexagon-Artifact') | ConvertTo-Json -Depth 5
+      - name: Retain the source-bound artifact binder bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hexagon-packed-artifact-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/SwiftBonsai-Hexagon-Artifact/bundle
+          if-no-files-found: error
+          retention-days: 90
+      - name: Retain hosted artifact-binder controls
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hexagon-packed-artifact-controls-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/SwiftBonsai-Hexagon-Artifact/*-build.txt
+            ${{ runner.temp }}/SwiftBonsai-Hexagon-Artifact/self-test.txt
+            ${{ runner.temp }}/SwiftBonsai-Hexagon-Artifact/contract-tests.txt
+          if-no-files-found: warn
+          retention-days: 90
   session-probe:
     needs: controls
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.run_session_probe && !inputs.run_device && !inputs.run_dispatch
