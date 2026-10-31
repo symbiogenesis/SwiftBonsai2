@@ -228,7 +228,44 @@ where
     drop(body);
 
     let mut reader = BufReader::with_capacity(8192, stream);
+    let (metadata, framing) = read_head(&mut reader, streaming, deadline).await?;
+    ensure_time(deadline)?;
+    Ok(metadata.map(|()| BackendBody {
+        reader: Some(reader),
+        framing,
+        remaining_budget: MAX_RESPONSE_BYTES,
+        metadata_bytes: 0,
+        deadline,
+        timer: Box::pin(sleep_until(deadline)),
+    }))
+}
+
+async fn read_head<S: AsyncRead + Unpin>(
+    reader: &mut BufReader<S>,
+    streaming: bool,
+    deadline: Instant,
+) -> Result<(Response<()>, Framing), BackendError> {
+    ensure_time(deadline)?;
+    let available = timeout_at(deadline, reader.fill_buf())
+        .await
+        .map_err(|_| BackendError::Deadline)?
+        .map_err(|_| BackendError::Io)?;
+    ensure_time(deadline)?;
+    if available.is_empty() {
+        return Err(BackendError::WireSyntax);
+    }
+    let available = &available[..available.len().min(MAX_HEADER_BYTES)];
+    if let Some(end) = wire::head_end(available, 0) {
+        // Complete ordinary heads borrow the reader allocation. Only fragmented
+        // heads need a second buffer; coalesced body bytes stay in the reader.
+        let parsed = parse_head(&available[..end], streaming)?;
+        reader.consume(end);
+        return Ok(parsed);
+    }
     let mut raw = Vec::with_capacity(MAX_HEADER_BYTES);
+    raw.extend_from_slice(available);
+    let count = available.len();
+    reader.consume(count);
     loop {
         ensure_time(deadline)?;
         if raw.len() == MAX_HEADER_BYTES {
@@ -253,16 +290,7 @@ where
         }
         reader.consume(count);
     }
-    let (metadata, framing) = parse_head(&raw, streaming)?;
-    ensure_time(deadline)?;
-    Ok(metadata.map(|()| BackendBody {
-        reader: Some(reader),
-        framing,
-        remaining_budget: MAX_RESPONSE_BYTES,
-        metadata_bytes: 0,
-        deadline,
-        timer: Box::pin(sleep_until(deadline)),
-    }))
+    parse_head(&raw, streaming)
 }
 
 fn parse_head(raw: &[u8], streaming: bool) -> Result<(Response<()>, Framing), BackendError> {

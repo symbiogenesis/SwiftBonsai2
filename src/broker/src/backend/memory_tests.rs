@@ -111,3 +111,29 @@ fn owned_request_drops_prompt_before_any_response_read_and_preserves_wire_bytes(
         Ok(())
     })
 }
+
+#[test]
+fn header_fast_path_and_fragmented_fallback_preserve_coalesced_payload() -> io::Result<()> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()?;
+    runtime.block_on(async {
+        const PAYLOAD: &[u8] = b"{}coalesced surplus";
+        const HEAD: &[u8] =
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n";
+        for capacity in [1, 2, 3, 7, HEAD.len() - 1, HEAD.len(), 8192] {
+            let wire = [HEAD, PAYLOAD].concat();
+            let mut reader = BufReader::with_capacity(capacity, io::Cursor::new(wire));
+            let (metadata, framing) =
+                read_head(&mut reader, false, Instant::now() + Duration::from_secs(60))
+                    .await
+                    .map_err(|_| io::Error::other("Fixture head was rejected."))?;
+            assert_eq!(metadata.status(), 200);
+            assert!(matches!(framing, Framing::Length(2)));
+            let mut payload = Vec::new();
+            reader.read_to_end(&mut payload).await?;
+            assert_eq!(payload, PAYLOAD);
+        }
+        Ok(())
+    })
+}
