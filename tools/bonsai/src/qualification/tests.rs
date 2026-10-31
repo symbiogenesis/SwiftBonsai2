@@ -243,7 +243,7 @@ fn rejection_precedes_missing_reviews_and_proofs() -> Result<()> {
 
 #[test]
 fn legacy_bom_decoders_and_strict_unmarked_utf8() -> Result<()> {
-    let text = "{\"response\":\"snowman \u{2603}\"}";
+    let text = "{\"response\":\"snowman \u{2603} seedling \u{1f331}\"}";
     let mut utf8 = vec![0xef, 0xbb, 0xbf];
     utf8.extend_from_slice(text.as_bytes());
     assert_eq!(decode_text(&utf8)?, text);
@@ -261,6 +261,26 @@ fn legacy_bom_decoders_and_strict_unmarked_utf8() -> Result<()> {
             });
         }
         assert_eq!(decode_text(&utf16)?, text);
+        // A lone surrogate and a trailing byte each contribute a replacement
+        // character. Their exact order is part of the evidence text identity.
+        for (units, expected) in [
+            (&[0x0041_u16, 0xd800][..], "A\u{fffd}"),
+            (&[0x0041, 0xdc00, 0x0042][..], "A\u{fffd}B"),
+            (&[0x0041, 0xd800, 0xd801, 0xdc00][..], "A\u{fffd}\u{10400}"),
+            (&[0x0041, 0xdc00, 0xd800][..], "A\u{fffd}\u{fffd}"),
+        ] {
+            let mut encoded = utf16[..2].to_vec();
+            for unit in units {
+                encoded.extend_from_slice(&if little {
+                    unit.to_le_bytes()
+                } else {
+                    unit.to_be_bytes()
+                });
+            }
+            assert_eq!(decode_text(&encoded)?, expected);
+            encoded.push(0xff);
+            assert_eq!(decode_text(&encoded)?, format!("{expected}\u{fffd}"));
+        }
         let mut utf32 = if little {
             vec![0xff, 0xfe, 0, 0]
         } else {

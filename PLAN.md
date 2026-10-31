@@ -47,11 +47,22 @@ allowance before those cases could execute; formatting and the focused PowerShel
 speech-policy check do not replace them.
 
 The Rust speech tokenizer and GGUF loading/ownership path, greedy sampler and
-decode-workspace policy, together with captured Philox/sampling/tokenizer controls
-and source identity guards, need
-the hosted full Qwen build/link and owning-crate checks. Local model-free token/bit
+decode-workspace ownership and compute leases, together with captured
+Philox/sampling/tokenizer controls and source identity guards, need the hosted
+full Qwen build/link and owning-crate checks. Local model-free token/bit
 parity does not close those integration gates. Preserve the captured Windows
 ARM64 MSVC exceptional-float behavior when qualifying other compiler versions.
+
+Run the hosted owning-crate Release analyzer, documentation and integration checks
+after the standard-library decoding, Philox, typed-block and HTTP-framing changes.
+Focused local decoding, captured Philox/tokenizer, projection and header-fragment
+checks pass; the source-bound speech/UI checks do not replace full native linking
+or the application acceptance gates above.
+
+The Rust PTQ1 DLL collector also needs the hosted source-bound build/test bundle
+and main-only numerical workflow. Its pinned-DLL probe and complete 369-record
+ABI/default/configuration comparison pass locally without weights; this does not
+close actual-model logits/state comparison, writer-basis or promotion gates.
 
 - Qualify startup, supplied-history streaming, full 8K context and 4K output, long
   conversations, speech, offline restart and recovery. Cover Stop, abandonment,
@@ -225,11 +236,11 @@ not close pending hosted integration or full-model acceptance.
   top-p tie ordering, sequential `expf` arithmetic and accumulation, Philox draws,
   exceptional floats and the captured masking/penalty/greedy controls. Qualify actual
   pinned tokenizer vocabularies as well as the complete model-free scanner/ID captures.
-  Move graph-cache resource ownership onto the Rust execution path before removing
-  its last native allocation/lifetime control; Rust selection policy alone is
-  insufficient. Qualify the Rust tokenizer loading/ownership boundary in the full
-  hosted consumer and actual-model speech lifecycle; model-free metadata and
-  callback checks do not close those integration gates.
+  Qualify Rust graph-cache resource ownership and synchronized compute leases in
+  the full hosted Qwen consumer, including native graph-build failure, cancellation
+  and model lifecycle recovery. Qualify the Rust tokenizer loading/ownership
+  boundary in that consumer and actual-model speech lifecycle; model-free metadata,
+  callback and lifetime checks do not close those integration gates.
 - Retire Prism's native reference families file by file after matching hosted replay
   of their source-level assertions. Preserve all approved green IDs, full geometry
   schedules, corrections, unsupported outcomes and numerical/target boundaries.
@@ -238,9 +249,13 @@ not close pending hosted integration or full-model acceptance.
 - Replace Qwen/GGML TTS and Canary ASR's `transcribe-cpp` inference dependency with
   native Rust model/audio execution, qualifying exact artifacts, token/PCM/state,
   cancellation, lifecycle, quality and resource contracts. Then remove compiler,
-  CMake, static/native library and source provisioning paths. Retire publisher/DLL
-  capture tools after immutable controls, Rust acceptance and fallback/promotion
-  gates cover their consumers; moving C++ behind FFI does not complete retirement.
+  CMake, static/native library and source provisioning paths. Retire publisher and
+  native DLL reference execution after immutable controls, Rust acceptance and
+  fallback/promotion gates cover their consumers; moving C++ behind FFI does not
+  complete retirement.
+  The checked-in C++ collector is retired, but its Rust replacement still invokes
+  the pinned native DLL engine. Preserve the complete source-bound ABI preflight
+  and independent full-state numerical comparison until that engine is retired.
 
 ## Creative quality, adapters and memory
 

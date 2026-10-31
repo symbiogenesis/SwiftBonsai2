@@ -48,7 +48,7 @@ struct HeaderEnd {
 
 impl HeaderEnd {
     fn find(&mut self, bytes: &[u8]) -> Option<usize> {
-        for (offset, window) in bytes[self.next..].windows(4).enumerate() {
+        for (offset, window) in bytes[self.next..].array_windows().enumerate() {
             #[cfg(test)]
             {
                 self.comparisons += 1;
@@ -329,7 +329,7 @@ fn parse_head(bytes: &[u8], port: u16, key: &[u8; 64], kind: Kind) -> Result<Hea
         return Err(Error::bad("unsupported_connection"));
     }
     let first_end = bytes
-        .windows(2)
+        .array_windows()
         .position(|window| window == b"\r\n")
         .ok_or(Error::bad("invalid_headers"))?;
     let first_line = &bytes[..first_end];

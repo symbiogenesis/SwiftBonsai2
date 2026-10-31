@@ -177,11 +177,10 @@ pub fn prepare_q8k(input: &[f32]) -> Result<Vec<u8>, Error> {
     if input.is_empty() || input.len() > MAX_COLUMNS || !input.len().is_multiple_of(256) {
         return Err(Error::Extent);
     }
-    let mut output = zeroed(input.len() / 256 * Q8K_BYTES)?;
-    for (values, block) in input
-        .chunks_exact(256)
-        .zip(output.chunks_exact_mut(Q8K_BYTES))
-    {
+    let (input_blocks, _) = input.as_chunks::<256>();
+    let mut output = zeroed(input_blocks.len() * Q8K_BYTES)?;
+    let (output_blocks, _) = output.as_chunks_mut::<Q8K_BYTES>();
+    for (values, block) in input_blocks.iter().zip(output_blocks) {
         let mut maximum = 0.0_f32;
         for &value in values {
             finite(value)?;
@@ -232,7 +231,7 @@ pub fn transform_input(input: &[f32], signs: &[i8]) -> Result<Vec<f32>, Error> {
     for ((destination, &value), &sign) in output.iter_mut().zip(input).zip(signs) {
         *destination = finite(value)? * f32::from(sign);
     }
-    for block in output.chunks_exact_mut(1024) {
+    for block in output.as_chunks_mut::<1024>().0 {
         let mut width = 1;
         while width < 1024 {
             for butterfly in block.chunks_exact_mut(width * 2) {
@@ -254,7 +253,7 @@ pub fn transform_input(input: &[f32], signs: &[i8]) -> Result<Vec<f32>, Error> {
 
 fn packed_sum(packed: &[u8], activation: &[u8]) -> i32 {
     let mut sum = 0_i32;
-    for (&byte, group) in packed.iter().zip(activation.chunks_exact(4)) {
+    for (&byte, group) in packed.iter().zip(activation.as_chunks::<4>().0) {
         for (lane, &value) in group.iter().enumerate() {
             let weight = i32::from((byte >> (lane * 2)) & 3) - 1;
             sum += weight * i32::from(i8::from_ne_bytes([value]));

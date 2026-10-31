@@ -279,18 +279,18 @@ impl Tokenizer {
         while symbols.len() > 1 {
             let mut best_rank = i32::MAX;
             let mut best = None;
-            for (index, pair) in symbols.windows(2).enumerate() {
+            for (index, [left, right]) in symbols.array_windows::<2>().enumerate() {
                 *probes += 1;
                 if *probes > MAX_MERGE_PROBES {
                     return Err(invalid("Qwen tokenizer merge work exceeds its bound."));
                 }
-                if pair[1].end - pair[0].start + 1 > self.max_merge_bytes {
+                if right.end - left.start + 1 > self.max_merge_bytes {
                     continue;
                 }
                 key.clear();
-                key.extend_from_slice(&encoded[pair[0].clone()]);
+                key.extend_from_slice(&encoded[left.clone()]);
                 key.push(b' ');
-                key.extend_from_slice(&encoded[pair[1].clone()]);
+                key.extend_from_slice(&encoded[right.clone()]);
                 if let Some(&rank) = self.merges.get(key.as_slice())
                     && rank < best_rank
                 {

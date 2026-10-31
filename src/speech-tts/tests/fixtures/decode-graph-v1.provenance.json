@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "purpose": "Exact source identities and assertion disposition for production Rust ownership of the native Qwen decode workspace. No retired C++ fixture or dynamic test DLL is compiled for replay.",
+  "retired_control": {
+    "repository": "https://github.com/symbiogenesis/SwiftBonsai2Runner",
+    "revision": "6a126b2a0b30cbf5e0771626b03a32c05c579d21",
+    "path": "src/speech-tts/tests/decode_graph_cache.cpp",
+    "bytes_normalized_lf": 3493,
+    "sha256_normalized_lf": "b91cd221144be5d0afedea9c0dab9e9141b7dfd8c34b67c069c57d5f6ffe120e",
+    "license": "Apache-2.0 (Runner LICENSE)"
+  },
+  "native_sources": {
+    "repository": "https://github.com/ServeurpersoCom/qwentts.cpp",
+    "revision": "5916bf7c79dbb4e66fc059cdc507a79a23a28bb4",
+    "license_file": "../../LICENSE.qwen-core",
+    "files": {
+      "src/talker-forward.h": {
+        "bytes_normalized_lf": 40377,
+        "sha256_normalized_lf": "e4d3567d0cc13246b3cdea58491c5e35a0569e30c0796c9e0950455ad6c7c22a"
+      },
+      "src/talker-decode-graph.h": {
+        "bytes_normalized_lf": 2116,
+        "sha256_normalized_lf": "e6f6ddee6c3d8107434b8a6392638fb75ffdd1ec7fd1859aeda7508033d518a1"
+      },
+      "src/pipeline-tts.h": {
+        "bytes_normalized_lf": 10145,
+        "sha256_normalized_lf": "b8d1dded24380fccc30045c6febd0875bab7da2bb071a0c7bbc8179d7db5aa43"
+      },
+      "src/pipeline-tts.cpp": {
+        "bytes_normalized_lf": 66658,
+        "sha256_normalized_lf": "a897cca5165bc901a679819fd9594aa2617a8243cb7771572d88b8e25eb1fc85"
+      }
+    }
+  },
+  "completion_boundary": {
+    "repository": "https://github.com/ServeurpersoCom/ggml",
+    "revision": "cc5df49a6b878db2b68b9a7b45976e279594627d",
+    "path": "src/ggml-backend.cpp",
+    "bytes_normalized_lf": 102667,
+    "sha256_normalized_lf": "43dea13b13c2a15afd83f53515f3488c17072fc107a6ba4a5e0370f90b4fe7ff",
+    "behavior": "ggml_backend_graph_compute calls compute_async then ggml_backend_synchronize even on returned error. The generated native lease additionally synchronizes on every exit before calling Rust cache_complete."
+  },
+  "retained_obligations": [
+    {
+      "original": "First allocation owns exactly one graph; same-window/same-width selection reuses original ID without allocating or releasing.",
+      "replacement": "Production safe Cache<Resource> and private C ABI test first allocation and ID reuse with exact allocation/release counters."
+    },
+    {
+      "original": "All forward windows 512 through 4096 retain one workspace and release obsolete graph before replacement allocation.",
+      "replacement": "Same complete ordered schedule on production Rust ABI; every builder entry records live=0, every successful completed selection has live=1 and releases=allocations-1."
+    },
+    {
+      "original": "A fresh request can return to window256 without stale graph state; changing batch width rebuilds selected graph.",
+      "replacement": "Rust key includes exact window class and batch width; ABI tests require new graph IDs/counts on rewind and width change; all16 widths also exercise safe owner reuse."
+    },
+    {
+      "original": "Failed replacement allocation releases completed scratch, leaves no live graph, and permits new-window and same-window-width retry.",
+      "replacement": "Both original failure schedules plus partially allocated builder failure run through real Rust cache ownership and Drop; retry must rebuild from empty cache."
+    },
+    {
+      "original": "Final teardown releases every graph-local allocation independently of persistent model/KV state.",
+      "replacement": "Rust cache Resource Drop owns each noexcept native destroy callback, which runs original graph_free then deletes the graph object. Pipeline initialization failure and teardown clear Rust owner before persistent arena/bridge/KV resources; exact source overlays preserve native graph builder and output/KV work."
+    },
+    {
+      "original": "Only completed workspace can be released.",
+      "replacement": "Active Rust lease rejects every second acquisition without build/eviction. Native RAII lease synchronizes on success, error or exception before cache_complete; cache destruction while a lease remains active aborts the isolated worker instead of releasing in-use memory."
+    },
+    {
+      "original": "Native cache is exclusively owned by one pipeline.",
+      "replacement": "Generated holder deletes copy/move, owns one opaque Rust cache and clears it on destruction. Rust tests retain independent concurrent cache instances and verify no cross-release."
+    }
+  ],
+  "focused_checks": [
+    "selection_preserves_every_window_boundary_and_rejects_invalid_extents",
+    "owned_cache_reuses_exact_geometry_and_releases_before_replacement",
+    "failed_build_keeps_an_empty_cache_and_active_work_prevents_eviction",
+    "rust_owned_decode_cache_preserves_every_native_lifetime_assertion",
+    "rust_owned_decode_cache_preserves_compute_lease_partial_failure_and_isolation",
+    "rust_owned_decode_cache_rejects_invalid_calls_without_build_or_eviction",
+    "native_ownership_overlays_reject_source_drift",
+    "graph_acquisition_preserves_upload_compute_and_readback_after_lease",
+    "pipeline_init_failure_and_teardown_release_before_persistent_resources"
+  ],
+  "qualification_boundary": "Focused tests and actual pinned modified-translation-unit compilation must pass before deleting the old control. Full hosted Qwen owning-crate build/link, actual-model speech output, cancellation/lifecycle/resource/quality and distribution remain pending. Native GGML graph construction/compute and primitive destroy callbacks are still external C++ dependencies; moving ownership to Rust does not retire those inference engines.",
+  "prior_native_fixture_validation": {
+    "evidence": "../../../../docs/evidence/cpp-retirement-model-free.json",
+    "scope": "Historical passing native graph-lifetime DLL using the former Rust selection exports; this port does not relabel that record as a new native run. New ownership checks use the production Rust cache and audited resource callbacks."
+  }
+}

@@ -583,23 +583,11 @@ fn decode_text(bytes: &[u8]) -> Result<String> {
         }
         Ok(text)
     } else if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff]) {
-        let little = bytes[0] == 0xff;
-        let (units, trailing) = bytes[2..].as_chunks::<2>();
-        let words: Vec<_> = units
-            .iter()
-            .map(|chunk| {
-                if little {
-                    u16::from_le_bytes(*chunk)
-                } else {
-                    u16::from_be_bytes(*chunk)
-                }
-            })
-            .collect();
-        let mut text = String::from_utf16_lossy(&words);
-        if !trailing.is_empty() {
-            text.push(char::REPLACEMENT_CHARACTER);
-        }
-        Ok(text)
+        Ok(if bytes[0] == 0xff {
+            String::from_utf16le_lossy(&bytes[2..])
+        } else {
+            String::from_utf16be_lossy(&bytes[2..])
+        })
     } else if let Some(text) = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]) {
         Ok(String::from_utf8_lossy(text).into_owned())
     } else {

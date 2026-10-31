@@ -1,77 +1,84 @@
-//! Safe decode-workspace selection for the pinned native Qwen engine.
+//! Rust ownership of the pinned Qwen CPU decode workspace.
 //!
-//! The CPU worker finishes and synchronizes each compute before selecting its
-//! next workspace. GGML still owns graph allocation and release; this module
-//! decides which completed window can be reused and when others must be freed.
+//! The owner retains one completed native graph, releases it before replacement,
+//! and prevents eviction or teardown while a synchronous compute lease is active.
 #![forbid(unsafe_code)]
+#![allow(
+    clippy::redundant_pub_crate,
+    reason = "Keep graph ownership private to the speech crate and audited ABI."
+)]
 
 /// Select the zero-based 256-token window without signed addition overflow.
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "The policy is private to the speech crate and its native ABI module."
-)]
 pub(super) fn window_index(padded_tokens: i32, windows: usize) -> Option<usize> {
     let tokens = usize::try_from(padded_tokens).ok().filter(|&n| n != 0)?;
     let index = (tokens - 1) / 256;
     (index < windows).then_some(index)
 }
 
-/// Evict completed unselected windows before a missing or different-width build.
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "The policy is private to the speech crate and its native ABI module."
-)]
-pub(super) const fn rebuild(has_context: bool, cached_width: i32, requested_width: i32) -> bool {
-    !has_context || cached_width != requested_width
+/// One Rust-owned resource and its valid geometry, independent of persistent KV.
+pub(super) struct Cache<T> {
+    windows: usize,
+    current: Option<((usize, i32), T)>,
+    active: bool,
+}
+
+impl<T> Cache<T> {
+    /// Create an empty cache without allocating one slot per window.
+    pub(super) const fn new(windows: usize) -> Option<Self> {
+        if windows == 0 {
+            return None;
+        }
+        Some(Self {
+            windows,
+            current: None,
+            active: false,
+        })
+    }
+
+    /// Borrow one resource until completion, rebuilding only after eviction.
+    ///
+    /// The builder executes after the previous resource's destructor. Failure
+    /// leaves an empty cache, so retry cannot reuse partial or stale workspace.
+    pub(super) fn begin(
+        &mut self,
+        padded_tokens: i32,
+        width: i32,
+        build: impl FnOnce() -> Option<T>,
+    ) -> Option<&mut T> {
+        if self.active || width <= 0 {
+            return None;
+        }
+        let key = (window_index(padded_tokens, self.windows)?, width);
+        if self
+            .current
+            .as_ref()
+            .is_none_or(|(cached, _)| *cached != key)
+        {
+            self.current = None;
+            self.current = Some((key, build()?));
+        }
+        self.active = true;
+        self.current.as_mut().map(|(_, resource)| resource)
+    }
+
+    /// End a lease only after native graph work and output reads synchronize.
+    pub(super) const fn complete(&mut self) -> bool {
+        let was_active = self.active;
+        self.active = false;
+        was_active
+    }
+}
+
+impl<T> Drop for Cache<T> {
+    fn drop(&mut self) {
+        if self.active {
+            // An outstanding native borrow may still be computing. Never free
+            // its memory or recover by replaying against another workspace.
+            std::process::abort();
+        }
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{rebuild, window_index};
-
-    #[test]
-    fn selection_preserves_every_window_boundary_and_rejects_invalid_extents() {
-        for window in 0..16 {
-            let start = window * 256 + 1;
-            let end = (window + 1) * 256;
-            for tokens in start..=end {
-                assert_eq!(window_index(tokens, 16), usize::try_from(window).ok());
-            }
-        }
-        for tokens in [i32::MIN, -1, 0, 4097, i32::MAX] {
-            assert_eq!(window_index(tokens, 16), None);
-        }
-        assert_eq!(window_index(256, 0), None);
-        assert_eq!(window_index(256, 1), Some(0));
-        assert_eq!(window_index(257, 1), None);
-    }
-
-    #[test]
-    fn reuse_requires_a_live_context_with_the_requested_batch_width() {
-        for requested_width in 1..=16 {
-            assert!(!rebuild(true, requested_width, requested_width));
-            assert!(rebuild(false, requested_width, requested_width));
-            assert!(rebuild(false, 0, requested_width));
-            for cached_width in 1..=16 {
-                assert_eq!(
-                    rebuild(true, cached_width, requested_width),
-                    cached_width != requested_width,
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn fresh_requests_and_failed_replacements_have_no_stale_selection_state() {
-        for tokens in [256, 4096, 256, 1024, 1024, 256] {
-            assert_eq!(
-                window_index(tokens, 16),
-                usize::try_from(tokens / 256 - 1).ok()
-            );
-            // Allocation failure leaves no context; retry must rebuild even
-            // if a native slot still records the previous width.
-            assert!(rebuild(false, 2, 2));
-            assert!(!rebuild(true, 2, 2));
-        }
-    }
-}
+#[path = "decode_graph_tests.rs"]
+mod tests;

@@ -10,6 +10,7 @@ use std::{
     fs::{self, File},
     io::{Read as _, Write as _},
     path::{Path, PathBuf},
+    string::FromUtf8Error,
     sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -196,8 +197,8 @@ fn text(path: &Path) -> crate::Result<String> {
 fn decode_text(bytes: Vec<u8>) -> String {
     // Tool output is normally UTF-8. Transfer its allocation instead of keeping
     // the capture bytes alive while copying the complete decoded text.
-    String::from_utf8(bytes)
-        .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned())
+    // Lossy fallback resumes validation after the already validated prefix.
+    String::from_utf8(bytes).unwrap_or_else(FromUtf8Error::into_utf8_lossy)
 }
 
 fn write_log(log: &Path, output: &ProcessOutput) -> crate::Result<()> {

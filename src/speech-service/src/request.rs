@@ -146,8 +146,7 @@ fn multipart(media: &str, body: &[u8]) -> Result<Vec<f32>, Error> {
     let end = format!("\r\n--{boundary}--\r\n");
     let separator = format!("\r\n--{boundary}\r\n");
     let interior = body
-        .strip_prefix(start.as_bytes())
-        .and_then(|value| value.strip_suffix(end.as_bytes()))
+        .strip_circumfix(start.as_bytes(), end.as_bytes())
         .ok_or(Error::bad("invalid_multipart"))?;
     let parts = multipart_parts(interior, separator.as_bytes())?;
     let mut fields = HashMap::new();

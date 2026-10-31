@@ -51,8 +51,8 @@ Missing captures or unimplemented assertions remain visible pending/red outcomes
 
 ## Runner checked-in native files
 
-Paths below are relative to Runner. Two C++ source/header files remain from an
-initial eleven; removed controls retain their identities and observations as data.
+Paths below are relative to Runner. No tracked C/C++ source/header files remain
+from the initial eleven; removed controls retain their identities and observations as data.
 Generated private-source C++ and external dependencies are tracked separately.
 
 | File | Replacement and exit condition |
@@ -66,15 +66,16 @@ Generated private-source C++ and external dependencies are tracked separately.
 | `src/speech-tts/tests/tokenizer-gguf.h` | Source removed after the production Rust GGUF adapter/loader passes exact intake-index, duplicate/rank, missing/null/oversized/type, failed replacement and balanced-release checks. A tiny real GGUF file also runs through the pinned reader without weights. The external GGUF parser itself remains native. |
 | `src/speech-tts/tests/tokenizer-error.h` | Logging/exception fixture removed. Rust reports registration/encoding failure and owns result cleanup, with copy refusal and safe-Rust unwind checks. The remaining native callback catches allocation exceptions before returning failure to Rust. |
 | `src/speech-tts/tests/tokenizer_lifecycle.cpp` | Source and compile/launch path removed after its assertions move to the production Rust loader, actual Box replacement and result ownership path. Exact original identities and assertion mapping remain in `tokenizer-lifecycle-v1.provenance.json`. The thin generated holder retains no-copy/no-move static assertions; bridge compilation, full hosted linkage and actual-model acceptance remain distinct checks. |
-| `src/speech-tts/tests/decode_graph_cache.cpp` | Selection/rebuild policy is Rust; the native lifetime fixture calls the actual Rust exports and preserves allocation, batch/window changes and failed replacement recovery. Retain it until the native vector and GGML resource ownership move to Rust. |
-| `tools/native-reference/swift_ptq1_reference.cpp` | Before a Rust dynamic-ABI collector replaces it, capture exact pinned structure sizes/alignments/field offsets, enum/default values and returned-by-value controls. Preserve DLL/model/adapter identities, cleanup order, create-new/sharing semantics and bounded complete logits/state capture; require hosted build, pinned-DLL ABI probe and actual-model numerical comparison. A Rust collector would still call the native reference engine; its retirement is a separate gate. |
+| `src/speech-tts/tests/decode_graph_cache.cpp` | Source and native test DLL compiler/loader removed. The production Rust owner now holds one keyed graph resource, drops it before replacement, recovers from failed builds and prevents eviction/free during compute leases. Native lease teardown synchronizes before Rust completion; pipeline teardown drops the cache before persistent resources. Rust tests preserve every original allocation/window/batch/failure assertion. `decode-graph-v1.provenance.json` retains source identities and assertion mappings. Native graph construction/compute callbacks remain generated glue; full hosted/model acceptance remains pending. |
+| `tools/native-reference/swift_ptq1_reference.cpp` | Replaced by the single-file Rust collector. Native source-header download and C++ compilation are removed from bundle preparation. Immutable observations retain all 369 layout/default/configuration/returned-aggregate controls; compile-time guards cover all 62 offsets, three sizes and alignments. The actual pinned-DLL probe/observations and seven Rust success/failure/output/cleanup checks pass locally. Schema-two receipts bind Rust source and controls; owner preflight compares the complete observation set before admission. Hosted bundle and actual-model logits/state comparison remain pending. The DLL engine itself is still native and has a separate retirement gate. |
 
-[Scoped local evidence](evidence/cpp-retirement-model-free.json) binds the tested
-source revision and file identities to 30 passing model-free checks, strict
-production/test lint checks, bridge compilation and the real pinned GGUF reader.
-It covers the complete retained capture schedules and assertion mappings above;
-it is a standalone focused harness, not the full owning-crate build or a model
-qualification. Hosted integration and actual-model gates remain pending in
+[Initial capture evidence](evidence/cpp-retirement-model-free.json) retains the
+first 30 model-free checks. [Final control evidence](evidence/cpp-retirement-final-controls.json)
+binds the later source identities to 43 passing focused Rust checks, strict lint
+checks, the complete actual-DLL ABI comparison, receipt/observation rejection and
+syntax compilation of both affected pinned Qwen source units. These are focused
+controls, not the full owning-crate build or a model qualification. Hosted
+integration and actual-model gates remain pending in
 [PLAN.md](../PLAN.md).
 
 ## Prism checked-in native files
@@ -138,6 +139,7 @@ does not satisfy this milestone.
 
 Expand each external family to exact files from its pinned source manifest before
 porting it. Current boundaries include Qwen `src/bpe.h`'s remaining native holder/output adapter,
+decode-graph construction/compute/free callbacks and lease synchronization,
 `src/prompt-builder.h`, both sampling headers, pipeline/codec/speaker graphs and
 audio transforms. A Rust policy callback or removed test oracle does not retire
 the downloaded header, generated shim or linked engine that still contains it.
@@ -148,6 +150,11 @@ Cargo edges and package notices where no longer required. Retire operative publi
 routes in `runtime.lock.json`, `swift-assessment.lock.json`, `Build-Engine.ps1`,
 `Build-HeadlessPublisherCandidate.ps1`, native capture tooling and candidate patches
 only after their replacement/fallback and distribution gates pass.
+
+The PTQ1 Rust collector still uses the pinned native reference DLLs. Its source
+file retirement removes a C++ driver and compiler/header-download path; it does
+not replace that inference engine or qualify new numerical results. The existing
+one-token native/Rust comparison and all broader promotion gates remain intact.
 
 Prism's coupled cleanup includes its three `CMakeLists.txt` projects,
 `RustBridge.cmake`, `Apply-ReferencePatch.cmake` and production patches; native loader

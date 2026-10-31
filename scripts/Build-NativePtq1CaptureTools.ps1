@@ -33,67 +33,72 @@ if (Test-Path -LiteralPath $output) {
 $scratch = Resolve-ExternalPath (Join-Path ([IO.Path]::GetTempPath()) ('Bonsai-HostedPtq1Build-' + [guid]::NewGuid().ToString('N')))
 [void][IO.Directory]::CreateDirectory($scratch)
 $pins = Get-Content -LiteralPath (Join-Path $repo 'tools/native-reference/pins.json') -Raw | ConvertFrom-Json -DateKind String
-foreach ($source in @($pins.nativeSource, $pins.rustSource)) {
-    $archive = Join-Path $scratch ($source.commit + '.zip')
-    Receive-LockedArtifact -Uri $source.url -Path $archive -Bytes $source.bytes -Sha256 $source.sha256 -TimeoutSeconds 180 | Out-Null
-    Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $scratch $source.commit)
-}
-$native = Join-Path $scratch ($pins.nativeSource.commit + '/llama.cpp-' + $pins.nativeSource.commit)
+$source = $pins.rustSource
+$archive = Join-Path $scratch ($source.commit + '.zip')
+Receive-LockedArtifact -Uri $source.url -Path $archive -Bytes $source.bytes -Sha256 $source.sha256 -TimeoutSeconds 180 | Out-Null
+Expand-Archive -LiteralPath $archive -DestinationPath (Join-Path $scratch $source.commit)
 $rust = Join-Path $scratch ($pins.rustSource.commit + '/prism-inference-' + $pins.rustSource.commit)
-$header = Join-Path $native 'include/llama.h'
-if ((Get-FileHash -LiteralPath $header -Algorithm SHA256).Hash.ToLowerInvariant() -cne $pins.nativeSource.headerSha256) {
-    throw 'Pinned native public header identity changed.'
-}
-$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
-$vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath | Out-String).Trim()
-if (-not $vs) { throw 'Hosted preparation requires installed native ARM64 Visual C++ tools.' }
-$version = (Get-Content -LiteralPath (Join-Path $vs 'VC/Auxiliary/Build/Microsoft.VCToolsVersion.default.txt') -Raw).Trim()
-$vc = Join-Path $vs ('VC/Tools/MSVC/' + $version)
-$compilerDirectory = Join-Path $vc 'bin/Hostarm64/arm64'
-$compiler = Join-Path $compilerDirectory 'cl.exe'
-if (-not [IO.File]::Exists($compiler)) { throw 'Native Hostarm64/arm64 cl.exe is required; no emulated compiler fallback.' }
-Assert-Arm64PE $compiler
-$sdk = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10'
-$sdkVersions = @(Get-ChildItem -LiteralPath (Join-Path $sdk 'Include') -Directory | Where-Object {
-    $_.Name -match '^10\.0\.[0-9]+\.[0-9]+$' -and
-    [IO.File]::Exists((Join-Path $_.FullName 'um/Windows.h')) -and
-    [IO.File]::Exists((Join-Path $sdk ('Lib/' + $_.Name + '/ucrt/arm64/ucrt.lib'))) -and
-    [IO.File]::Exists((Join-Path $sdk ('Lib/' + $_.Name + '/um/arm64/kernel32.lib')))
-} | Sort-Object { [version]$_.Name } -Descending)
-if (-not $sdkVersions.Count) { throw 'An installed Windows SDK with ARM64 UCRT and system libraries is required.' }
-$sdkVersion = $sdkVersions[0].Name
-$collectorSource = Join-Path $repo 'tools/native-reference/swift_ptq1_reference.cpp'
+$collectorSourcePath = 'tools/native-reference/swift_ptq1_reference.rs'
+$collectorSource = Join-Path $repo $collectorSourcePath
 $collectorSourceSha256 = (Get-FileHash -LiteralPath $collectorSource -Algorithm SHA256).Hash.ToLowerInvariant()
-$collector = Join-Path $scratch 'swift-ptq1-reference.exe'
-$compilerArguments = @('/nologo', '/std:c++17', '/MD', '/W4', '/WX', '/O2', '/EHsc',
-    '/I', (Join-Path $native 'include'), '/I', (Join-Path $native 'ggml/include'),
-    $collectorSource, "/Fe:$collector", ('/Fo:' + (Join-Path $scratch 'reference.obj')), '/link', '/incremental:no')
-$savedEnvironment = @{}
-foreach ($name in @('INCLUDE', 'LIB', 'PATH')) { $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name) }
-try {
-    $env:INCLUDE = "$vc/include;$sdk/Include/$sdkVersion/ucrt;$sdk/Include/$sdkVersion/shared;$sdk/Include/$sdkVersion/um"
-    $env:LIB = "$vc/lib/arm64;$sdk/Lib/$sdkVersion/ucrt/arm64;$sdk/Lib/$sdkVersion/um/arm64"
-    $env:PATH = $compilerDirectory + ';' + $env:PATH
-    $built = Invoke-BonsaiNativeProcess -Executable $compiler -WorkingDirectory $scratch -TimeoutSeconds 120 -OwnDescendants -LogPath (Join-Path $scratch 'native-build.txt') -ArgumentList $compilerArguments
-    if ($built.ExitCode -ne 0) { throw "Hosted native collector build failed; inspect $scratch" }
-} finally {
-    foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }
+$abiControlPath = Join-Path $repo 'tools/native-reference/fixtures/collector-abi-v1.txt'
+$abiProvenancePath = Join-Path $repo 'tools/native-reference/fixtures/collector-abi-v1.provenance.json'
+if ((Get-Item -LiteralPath $abiControlPath).Length -gt 65536 -or (Get-Item -LiteralPath $abiProvenancePath).Length -gt 65536) {
+    throw 'Native ABI controls exceed their fixed pre-read bound.'
 }
-Assert-Arm64PE $collector
-if ((Get-FileHash -LiteralPath $collectorSource -Algorithm SHA256).Hash.ToLowerInvariant() -cne $collectorSourceSha256) {
-    throw 'Collector source changed during compilation.'
+$abiProvenance = Get-Content -LiteralPath $abiProvenancePath -Raw | ConvertFrom-Json -DateKind String
+$abiControlSha256 = (Get-FileHash -LiteralPath $abiControlPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$abiProvenanceSha256 = (Get-FileHash -LiteralPath $abiProvenancePath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($abiProvenance.schema_version -ne 1 -or $abiProvenance.source.revision -cne $pins.nativeSource.commit -or
+    $abiProvenance.source.headers.'include/llama.h'.sha256 -cne $pins.nativeSource.headerSha256 -or
+    $abiProvenance.fixture.file -cne 'collector-abi-v1.txt' -or
+    $abiProvenance.fixture.bytes -ne (Get-Item -LiteralPath $abiControlPath).Length -or
+    $abiProvenance.fixture.sha256 -cne $abiControlSha256) {
+    throw 'Native ABI controls differ from the reviewed source pins.'
 }
 $channel = 'nightly-2026-10-22-aarch64-pc-windows-msvc'
-$cargo = @(Get-Command cargo -CommandType Application -ErrorAction Stop)[0].Source
-$rustc = @(Get-Command rustc -CommandType Application -ErrorAction Stop)[0].Source
-$rustVersion = Invoke-BonsaiNativeProcess -Executable $rustc -WorkingDirectory $scratch -TimeoutSeconds 30 -ArgumentList @("+$channel", '-vV')
+$rustup = @(Get-Command rustup -CommandType Application -ErrorAction Stop)[0].Source
+$resolvedCargo = Invoke-BonsaiNativeProcess -Executable $rustup -WorkingDirectory $scratch -TimeoutSeconds 30 -ArgumentList @('which', '--toolchain', $channel, 'cargo')
+$resolvedRustc = Invoke-BonsaiNativeProcess -Executable $rustup -WorkingDirectory $scratch -TimeoutSeconds 30 -ArgumentList @('which', '--toolchain', $channel, 'rustc')
+if ($resolvedCargo.ExitCode -ne 0 -or $resolvedRustc.ExitCode -ne 0) { throw 'The exact pinned Rust executables are unavailable.' }
+$cargo = Resolve-ExternalPath ($resolvedCargo.StandardOutput.Trim())
+$rustc = Resolve-ExternalPath ($resolvedRustc.StandardOutput.Trim())
+$toolchainBin = [IO.Path]::GetDirectoryName($rustc)
+if ($cargo -cne (Join-Path $toolchainBin 'cargo.exe') -or [IO.Path]::GetFileName($rustc) -cne 'rustc.exe') {
+    throw 'Cargo and rustc must belong to the same exact pinned toolchain.'
+}
+$toolchainRoot = [IO.Path]::GetDirectoryName($toolchainBin)
+$linker = Join-Path $toolchainRoot 'lib/rustlib/aarch64-pc-windows-msvc/bin/rust-lld.exe'
+foreach ($path in @($cargo, $rustc, $linker)) { Assert-Arm64PE $path }
+$rustVersion = Invoke-BonsaiNativeProcess -Executable $rustc -WorkingDirectory $scratch -TimeoutSeconds 30 -ArgumentList @('-vV')
 if ($rustVersion.ExitCode -ne 0 -or $rustVersion.StandardOutput -notmatch 'host: aarch64-pc-windows-msvc') {
     throw 'The pinned native ARM64 Rust compiler is unavailable.'
 }
+$collector = Join-Path $scratch 'swift-ptq1-reference.exe'
+$compilerOptions = @('--edition=2024', '--target', 'aarch64-pc-windows-msvc', '--deny', 'warnings',
+    '-C', 'opt-level=2', '-C', 'overflow-checks=on', '-C', 'panic=unwind',
+    '-C', "linker=$linker", '-C', 'linker-flavor=lld-link')
+$compilerArguments = $compilerOptions + @($collectorSource, '-o', $collector)
+$built = Invoke-BonsaiNativeProcess -Executable $rustc -WorkingDirectory $scratch -TimeoutSeconds 120 -OwnDescendants -LogPath (Join-Path $scratch 'collector-build.txt') -ArgumentList $compilerArguments
+if ($built.ExitCode -ne 0) { throw "Hosted Rust reference collector build failed; inspect $scratch" }
+Assert-Arm64PE $collector
+$collectorTests = Join-Path $scratch 'collector-tests.exe'
+$builtTests = Invoke-BonsaiNativeProcess -Executable $rustc -WorkingDirectory $scratch -TimeoutSeconds 120 -OwnDescendants -LogPath (Join-Path $scratch 'collector-test-build.txt') -ArgumentList ($compilerOptions + @('--test', $collectorSource, '-o', $collectorTests))
+if ($builtTests.ExitCode -ne 0) { throw "Hosted Rust collector test build failed; inspect $scratch" }
+$tested = Invoke-BonsaiNativeProcess -Executable $collectorTests -WorkingDirectory $scratch -TimeoutSeconds 30 -OwnDescendants -LogPath (Join-Path $scratch 'collector-tests.txt') -ArgumentList @('--test-threads=1')
+if ($tested.ExitCode -ne 0) { throw "Hosted Rust collector controls failed; inspect $scratch" }
+if ((Get-FileHash -LiteralPath $collectorSource -Algorithm SHA256).Hash.ToLowerInvariant() -cne $collectorSourceSha256 -or
+    (Get-FileHash -LiteralPath $abiControlPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $abiControlSha256 -or
+    (Get-FileHash -LiteralPath $abiProvenancePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $abiProvenanceSha256) {
+    throw 'Collector source or ABI controls changed during compilation.'
+}
 $target = Join-Path $scratch 'rust-build'
 $built = Invoke-BonsaiNativeProcess -Executable $cargo -WorkingDirectory $scratch -TimeoutSeconds 1200 -OwnDescendants -LogPath (Join-Path $scratch 'rust-build.txt') -ArgumentList @(
-    "+$channel", 'build', '--locked', '--release', '--manifest-path', (Join-Path $rust 'Cargo.toml'),
-    '-p', 'prism-inference', '--example', 'swift_model_check', '--target-dir', $target)
+    'build', '--locked', '--release', '--manifest-path', (Join-Path $rust 'Cargo.toml'),
+    '-p', 'prism-inference', '--example', 'swift_model_check', '--target-dir', $target) -Environment @{
+        RUSTC = $rustc; RUSTC_WRAPPER = ''; RUSTC_WORKSPACE_WRAPPER = ''
+        CARGO_ENCODED_RUSTFLAGS = @('-C', "linker=$linker", '-C', 'linker-flavor=lld-link') -join [char]0x1f
+    }
 if ($built.ExitCode -ne 0) { throw "Hosted Rust numerical checker build failed; inspect $scratch" }
 $qualifier = Join-Path $target 'release/examples/swift_model_check.exe'
 Assert-Arm64PE $qualifier
@@ -105,10 +110,11 @@ $files = foreach ($path in @($collector, $qualifier)) {
         Sha256 = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() }
 }
 $receipt = [ordered]@{
-    SchemaVersion = 1; RunnerRevision = $env:GITHUB_SHA; NativeSource = $pins.nativeSource; RustSource = $pins.rustSource
-    CollectorSourceSha256 = $collectorSourceSha256; RustToolchain = $channel
-    Compiler = [ordered]@{ Path = $compiler; Sha256 = (Get-FileHash -LiteralPath $compiler -Algorithm SHA256).Hash.ToLowerInvariant()
-        VisualCppToolsVersion = $version; WindowsSdkVersion = $sdkVersion; CollectorArguments = $compilerArguments
+    SchemaVersion = 2; RunnerRevision = $env:GITHUB_SHA; NativeSource = $pins.nativeSource; RustSource = $pins.rustSource
+    CollectorLanguage = 'rust'; CollectorSourcePath = $collectorSourcePath; CollectorSourceSha256 = $collectorSourceSha256
+    AbiControlSha256 = $abiControlSha256; AbiProvenanceSha256 = $abiProvenanceSha256; RustToolchain = $channel
+    Compiler = [ordered]@{ Path = $rustc; Sha256 = (Get-FileHash -LiteralPath $rustc -Algorithm SHA256).Hash.ToLowerInvariant()
+        LinkerSha256 = (Get-FileHash -LiteralPath $linker -Algorithm SHA256).Hash.ToLowerInvariant(); CollectorArguments = $compilerArguments
         RustcVerbose = $rustVersion.StandardOutput.Trim() }
     Files = @($files)
 }
