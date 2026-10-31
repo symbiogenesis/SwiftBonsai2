@@ -106,10 +106,11 @@ $receipt = [ordered]@{
     SchemaVersion=1; Status='preparing'; Scope='x2-hosted-candidate-model-free-startup-only'
     HostedRunId=$pin.execution.runId; HostedArtifactSha256=$pin.artifact.sha256
     HostedEvidenceSha256=(Get-FileHash -LiteralPath $pinPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    StartupScriptSha256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
     Source=$pin.source; PackageFiles=$pin.results.packageFiles
     SupervisorSha256=$null
     WorkerPolicy='ordinary-required-headless'; WorkBudgetSeconds=$WorkBudgetSeconds
-    StartedAtUtc=[DateTime]::UtcNow.ToString('o'); Probes=@(); ModelLoaded=$false
+    StartedAtUtc=[DateTime]::UtcNow.ToString('o'); RequestedProbes=@($plan.Cases.Name); Probes=@(); ModelLoaded=$false
     ProductionRuntimePinChanged=$false; NumericalOrPerformanceQualified=$false
 }
 $toolGuard = $null
