@@ -185,6 +185,7 @@ impl DriverLocation {
 
 /// Single-threaded native capability session with retained file/library lifetime.
 pub struct Driver {
+    location: DriverLocation,
     #[cfg(all(windows, target_arch = "aarch64"))]
     inner: windows::Driver,
 }
@@ -201,10 +202,18 @@ impl Driver {
     /// process deadlines must cover signature validation and every native call.
     pub fn open_system() -> Result<Self, Error> {
         #[cfg(all(windows, target_arch = "aarch64"))]
-        { windows::Driver::open(DriverLocation::inspect_system()?.path()).map(|inner| Self { inner }) }
+        {
+            let location = DriverLocation::inspect_system()?;
+            let inner = windows::Driver::open(location.path())?;
+            Ok(Self { location, inner })
+        }
         #[cfg(not(all(windows, target_arch = "aarch64")))]
         { Err(Error::UnsupportedPlatform) }
     }
+
+    /// Exact service-derived path whose signed file is retained by this session.
+    #[must_use]
+    pub fn path(&self) -> &Path { self.location.path() }
 
     /// Issue only the fixed handle-free capability control request for CDSP.
     ///

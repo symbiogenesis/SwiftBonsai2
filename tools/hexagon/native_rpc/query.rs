@@ -39,6 +39,7 @@ fn run() -> Result<String, hexagon_native_rpc::Error> {
     }
     if arguments[0] != "--query" { return Err(hexagon_native_rpc::Error::Contract); }
     let mut driver = Driver::open_system()?;
+    let driver_path = driver.path().to_string_lossy().into_owned();
     let mut queries = Vec::with_capacity(CAPABILITIES.len());
     for capability in CAPABILITIES {
         let observation = match driver.capability(capability) {
@@ -53,7 +54,7 @@ fn run() -> Result<String, hexagon_native_rpc::Error> {
         queries.push(observation);
     }
     drop(driver);
-    Ok(format!("{{\"schemaVersion\":1,\"kind\":\"native-fastrpc-capabilities\",\"domain\":3,\"requestId\":2,\"queries\":[{}],\"signaturePolicy\":\"cached-authenticode-no-ui\",\"driverLoaded\":true,\"dspCodeLoaded\":false,\"mappingExecuted\":false,\"inferenceExecuted\":false,\"profileEligible\":false,\"ggmlSource\":{},\"fastrpcSource\":{}}}", queries.join(","), quote(hexagon_native_rpc::GGML_SOURCE), quote(hexagon_native_rpc::FASTRPC_SOURCE)))
+    Ok(format!("{{\"schemaVersion\":1,\"kind\":\"native-fastrpc-capabilities\",\"driverDll\":{},\"domain\":3,\"requestId\":2,\"queries\":[{}],\"signaturePolicy\":\"cached-authenticode-no-ui\",\"driverLoaded\":true,\"dspCodeLoaded\":false,\"mappingExecuted\":false,\"inferenceExecuted\":false,\"profileEligible\":false,\"ggmlSource\":{},\"fastrpcSource\":{}}}", quote(&driver_path), queries.join(","), quote(hexagon_native_rpc::GGML_SOURCE), quote(hexagon_native_rpc::FASTRPC_SOURCE)))
 }
 
 fn main() -> ExitCode {
