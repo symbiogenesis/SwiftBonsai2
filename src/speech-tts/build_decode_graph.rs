@@ -155,7 +155,7 @@ const OLD_FIELD: &str = r"    std::vector<TalkerDecodeGraph> talker_decode_graph
 const RUST_FIELD: &str = r"    BonsaiDecodeCache             talker_decode_graphs;  // one Rust-owned completed workspace";
 
 const OLD_INIT: &str =
-    r#"    pt->talker_decode_graphs.resize(((size_t) pt->talker_kv.max_seq_len + 255) / 256);"#;
+    r"    pt->talker_decode_graphs.resize(((size_t) pt->talker_kv.max_seq_len + 255) / 256);";
 
 const RUST_INIT: &str = r"    const bool decode_cache_ok = pt->talker_decode_graphs.init(((size_t) pt->talker_kv.max_seq_len + 255) / 256);";
 
@@ -165,13 +165,13 @@ const OLD_FREE: &str = r"    for (size_t g = 0; g < pt->talker_decode_graphs.siz
     pt->talker_decode_graphs.clear();";
 
 const OLD_SIGNATURE: &str =
-    r#"                                  std::vector<TalkerDecodeGraph> & graphs,"#;
+    r"                                  std::vector<TalkerDecodeGraph> & graphs,";
 
 const RUST_SIGNATURE: &str =
-    r#"                                  BonsaiDecodeCache &             graphs,"#;
+    r"                                  BonsaiDecodeCache &             graphs,";
 
 const BUILD_MARKER: &str =
-    r#"// Batched decode: append one position per KV set over the static graph"#;
+    r"// Batched decode: append one position per KV set over the static graph";
 
 #[allow(
     clippy::redundant_pub_crate,
