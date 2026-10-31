@@ -528,7 +528,7 @@ mod tests {
         assert!(!selected.contains(&0));
         assert_eq!(file_candidate_indices(None, &modules), vec![32]);
         assert_eq!(
-            file_candidate_indices(Some(&[]), &[] as &[(String, ())]),
+            file_candidate_indices::<()>(Some(&[]), &[]),
             Vec::<usize>::new()
         );
     }
