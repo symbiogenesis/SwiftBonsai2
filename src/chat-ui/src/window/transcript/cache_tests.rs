@@ -29,6 +29,40 @@ fn layout_counts(transcript: &Transcript) -> Vec<usize> {
 }
 
 #[test]
+fn unchanged_layouts_reuse_cache_and_reasoning_visibility_invalidates_it() {
+    let mut transcript = Transcript::default();
+    transcript.push(Role::Assistant, "A visible hit".to_owned());
+    transcript.append("Private reasoning", true);
+    transcript.search.query = "hit".to_owned();
+    let mut chat = harness(transcript);
+    chat.run();
+    let initial = chat.state().messages[0].cache_updates;
+    assert_eq!(initial, 1);
+    for _ in 0..3 {
+        chat.run();
+    }
+    assert_eq!(chat.state().messages[0].cache_updates, initial);
+
+    for visible in [true, false, true] {
+        chat.state_mut().messages[0].show_reasoning = visible;
+        let previous = chat.state().messages[0].cache_updates;
+        chat.run();
+        let message = &chat.state().messages[0];
+        assert_eq!(message.cache_updates, previous + 1);
+        assert_eq!(message.body_layouts, 1);
+        assert!(
+            message
+                .cache
+                .as_ref()
+                .is_some_and(|cache| cache.reasoning.is_some() == visible)
+        );
+        assert_active_underline_matches_glyphs(message);
+        chat.run();
+        assert_eq!(chat.state().messages[0].cache_updates, previous + 1);
+    }
+}
+
+#[test]
 fn find_discards_replaced_scroll_offsets_before_rendering_shorter_unicode_text() {
     let mut transcript = Transcript::default();
     transcript.push(Role::User, "retained hit".to_owned());
