@@ -7,6 +7,10 @@ use std::ffi::{c_char, c_void};
 type SessionControl = unsafe extern "C" fn(u32, *mut c_void, u32) -> i32;
 
 #[repr(C)]
+#[allow(
+    clippy::struct_field_names,
+    reason = "The pinned public C ABI names its output effective_domain_id"
+)]
 struct EffectiveDomain {
     domain_name: *mut c_char,
     domain_name_len: u32,

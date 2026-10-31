@@ -1,4 +1,8 @@
 //! Fixed default-CDSP session metadata, without opening a remote module.
+#![allow(
+    clippy::redundant_pub_crate,
+    reason = "Private URI and receipt helpers must not become public native-boundary API"
+)]
 
 /// Default-session effective-domain query in the pinned public vendor header.
 pub const GET_EFFECTIVE_DOMAIN_ID: u32 = 14;
@@ -40,7 +44,7 @@ impl SessionPreparationReport {
             _ => None,
         };
         Self {
-            stage: "architecture-not-in-signed-bundle",
+            stage: "architecture-outside-selected-targets",
             architecture_raw: raw,
             architecture,
             domain_result: None,
@@ -63,7 +67,7 @@ impl SessionPreparationReport {
     }
 }
 
-pub(crate) fn module_uri(architecture: u32) -> Option<&'static [u8]> {
+pub(crate) const fn module_uri(architecture: u32) -> Option<&'static [u8]> {
     match architecture {
         73 => Some(b"file:///libggml-htp-v73.so?htp_iface_skel_handle_invoke&_modver=1.0\0"),
         81 => Some(b"file:///libggml-htp-v81.so?htp_iface_skel_handle_invoke&_modver=1.0\0"),
