@@ -100,6 +100,13 @@ performance. Its actual-model gate remains pending until retained device CI
 evidence within the shared five-minute total budget; do not partition a longer
 matrix across repeated profiles/jobs.
 
+All adapter-profile HTTP work, including the first required stream and optional
+PTQ1 requests, shares the deadline thirty seconds before owned cleanup. Expiry
+drops the in-flight request before Stop, retains completed observations, records
+`requestBudgetExpired: true` and leaves `passed: false`; the test fails after
+confirming the owned Job is empty and the listener released. No HTTP work starts
+when only the cleanup allowance remains.
+
 Before runner temp cleanup, the workflow reads only `backend.stdout` and
 `backend.stderr` from at most eight immediate protected session directories, with
 a 64 KiB limit per log and strict UTF-8 decoding. It validates both actual keys
@@ -160,6 +167,7 @@ Model-free acceptance regressions:
 | `native_case_budget_rejects_missing_unbounded_and_malformed_allowances` | Reject missing, zero, malformed, overflowing and over-240-second allowances; optional workloads use the reduced allowance and retain the 120-second recovery reserve |
 | `native_adapter_scale_history_profile_requires_separate_explicit_selection` | Scale/history lifecycle is a distinct original-PQ2 row4 selection; the one-stream smoke and no-extra-workload restrictions remain |
 | `native_adapter_scale_history_retains_partial_steps_without_qualifying_missing_work` | Real model-free HTTP peers verify zero/rejected/changed-back scales and supplied history; cancelling after zero or rejection preserves completed receipts without qualifying later work; exhausted request reserve starts no HTTP work |
+| `native_adapter_request_budget_drops_inflight_work_before_owned_cleanup` | Paused-time cancellation drops request-owned state before Stop and preserves the complete cleanup allowance; no request starts at or below the reserve and successful work retains the remaining budget |
 
 ### Foundation and routing
 

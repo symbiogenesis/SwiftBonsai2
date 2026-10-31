@@ -67,6 +67,7 @@ jobs:
           foreach ($case in @('native_profile_selection_and_scale_receipts_preserve_bounded_scope', 'native_row4_profile_is_explicit_original_pq2_and_one_stream_only',
               'native_adapter_scale_history_profile_requires_separate_explicit_selection',
               'native_adapter_scale_history_retains_partial_steps_without_qualifying_missing_work',
+              'native_adapter_request_budget_drops_inflight_work_before_owned_cleanup',
               'native_bounded_history_and_stall_requests_preserve_distinct_output_limits',
               'native_extended_acceptance_distinguishes_output_usage_from_delta_count',
               'native_lifecycle_observations_separate_generation_usage_and_owned_cleanup',
