@@ -20,6 +20,7 @@ mod native;
 
 mod philox;
 mod sampling;
+mod tokenizer;
 
 #[cfg(test)]
 #[path = "../build_overlay.rs"]

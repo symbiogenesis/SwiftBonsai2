@@ -15,12 +15,15 @@ use std::{
 mod cpu_threads;
 mod qwen;
 mod sampling;
+mod tokenizer;
 use qwen::RawAudio;
 
 #[cfg(test)]
 mod philox_tests;
 #[cfg(test)]
 mod sampling_tests;
+#[cfg(test)]
+mod tokenizer_tests;
 
 // SAFETY: This unique private static-link symbol is declared by the reviewed
 // Qwen overlay. Its scalar arguments carry no pointer or lifetime obligations.

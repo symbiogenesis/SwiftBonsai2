@@ -2,6 +2,9 @@
 
 use std::{fs, io, path::Path};
 
+#[path = "build_tokenizer.rs"]
+mod tokenizer_overlay;
+
 const THREAD_COUNT: &str = "static int backend_cpu_n_threads(void) {\n    int n = (int) std::thread::hardware_concurrency() / 2;\n    return n > 0 ? n : 1;\n}\n";
 const THREAD_OVERRIDE: &str = "static int backend_cpu_n_threads(void) {\n    return bonsai_qt_cpu_threads(std::thread::hardware_concurrency());\n}\n";
 const DECODE_GRAPH: &str =
@@ -25,6 +28,7 @@ type Transform = fn(&str) -> io::Result<String>;
 // declaration; both sampler callers draw directly from the Rust scalar export.
 const PHILOX_REFERENCE: &str = include_str!("tests/reference/philox.h");
 const SAMPLING_REFERENCE: &str = include_str!("tests/reference/sampling.h");
+const BPE_REFERENCE: &str = include_str!("tests/reference/bpe.h");
 const PHILOX_DECLARATION: &str = "#pragma once\n#include <cstdint>\n\n// Runner's allocation-free safe Rust Philox4x32-10 implementation.\nextern \"C\" float bonsai_qt_philox_uniform(int64_t seed, int64_t subsequence, uint32_t counter);\n";
 const SEMANTIC_DRAW: &str = "    philox_uniform_fill(seed, philox_subseq, 0u, &u, 1);";
 const PREDICTOR_DRAW: &str =
@@ -35,6 +39,18 @@ fn philox(text: &str) -> io::Result<String> {
         return Err(io::Error::other("Pinned Qwen Philox source differs."));
     }
     Ok(PHILOX_DECLARATION.to_owned())
+}
+
+fn tokenizer(text: &str) -> io::Result<String> {
+    if text.replace("\r\n", "\n") != BPE_REFERENCE.replace("\r\n", "\n") {
+        return Err(io::Error::other("Pinned Qwen tokenizer source differs."));
+    }
+    Ok(tokenizer_overlay::SOURCE.to_owned())
+}
+
+#[cfg(test)]
+pub(super) fn tokenizer_header_for_test() -> io::Result<String> {
+    tokenizer(BPE_REFERENCE)
 }
 
 fn semantic_sampling(text: &str) -> io::Result<String> {
@@ -107,13 +123,14 @@ fn decode_graphs(text: &str) -> io::Result<String> {
 )]
 pub(super) fn prepare(source: &Path, destination: &Path) -> io::Result<()> {
     copy(source, destination)?;
-    let transforms: [(&str, Transform); 6] = [
+    let transforms: [(&str, Transform); 7] = [
         ("src/backend.h", backend),
         ("ggml/src/ggml-cpu/vec.cpp", vectors),
         ("src/talker-forward.h", decode_graphs),
         ("src/philox.h", philox),
         ("src/sampling.h", semantic_sampling),
         ("src/sampling-graph.h", predictor_sampling),
+        ("src/bpe.h", tokenizer),
     ];
     for (relative, transform) in transforms {
         let path = destination.join(relative);
@@ -160,9 +177,9 @@ fn redirected(metadata: &fs::Metadata) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        DECODE_GRAPH, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION, PHILOX_REFERENCE, PREDICTOR_DRAW,
-        SAMPLING_REFERENCE, SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE, backend, decode_graphs,
-        philox, predictor_sampling, prepare, semantic_sampling, vectors,
+        BPE_REFERENCE, DECODE_GRAPH, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION, PHILOX_REFERENCE,
+        PREDICTOR_DRAW, SAMPLING_REFERENCE, SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE, backend,
+        decode_graphs, philox, predictor_sampling, prepare, semantic_sampling, tokenizer, vectors,
     };
 
     #[test]
@@ -187,6 +204,7 @@ mod tests {
         fs::write(source.join("src/talker-forward.h"), DECODE_GRAPH)?;
         fs::write(source.join("src/philox.h"), PHILOX_REFERENCE)?;
         fs::write(source.join("src/sampling.h"), SAMPLING_REFERENCE)?;
+        fs::write(source.join("src/bpe.h"), BPE_REFERENCE)?;
         fs::write(source.join("src/sampling-graph.h"), PREDICTOR_DRAW)?;
         fs::create_dir_all(source.join("ggml/src/ggml-cpu"))?;
         fs::write(
@@ -228,7 +246,36 @@ mod tests {
             assert!(fs::read_to_string(source.join(relative))?.contains("philox_uniform_fill"));
             assert!(fs::read_to_string(copy.join(relative))?.contains("bonsai_qt_philox_uniform"));
         }
+        assert_eq!(fs::read_to_string(source.join("src/bpe.h"))?, BPE_REFERENCE);
+        let tokenizer = fs::read_to_string(copy.join("src/bpe.h"))?;
+        assert!(tokenizer.contains("bonsai_qt_bpe_encode"));
+        assert!(!tokenizer.contains("std::unordered_map"));
         fs::remove_dir_all(scratch)?;
+        Ok(())
+    }
+
+    #[test]
+    fn tokenizer_overlay_removes_native_policy_and_rejects_source_drift() -> std::io::Result<()> {
+        let patched = tokenizer(BPE_REFERENCE)?;
+        assert!(patched.contains("gguf_get_arr_str"));
+        assert!(patched.contains("~BPETokenizer() { bonsai_qt_bpe_free(owner); }"));
+        assert!(patched.contains("BPETokenizer(const BPETokenizer &) = delete;"));
+        assert!(patched.contains("bonsai_qt_bpe_encode(tok->owner,"));
+        for policy in [
+            "std::unordered_map",
+            "gpt2_pre_tokenize",
+            "byte_level_encode",
+            "bpe_merge(",
+            "id_to_str",
+            "specials.emplace_back",
+        ] {
+            assert!(!patched.contains(policy));
+        }
+        assert!(tokenizer(&BPE_REFERENCE.replace("best_rank = INT_MAX", "best_rank = 0")).is_err());
+        assert!(tokenizer(&BPE_REFERENCE.replace("0x024F", "0x024E")).is_err());
+        assert!(tokenizer(&patched).is_err());
+        assert!(tokenizer("changed").is_err());
+        assert!(tokenizer(&BPE_REFERENCE.repeat(2)).is_err());
         Ok(())
     }
 
