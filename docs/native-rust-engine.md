@@ -13,7 +13,7 @@ feature parity does not qualify inference.
 
 The target is native Windows ARM64, initially the 32 GB Snapdragon X Elite. Runner
 pins [**0.1.10 prerelease**](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.10),
-main revision `749a5f5b43bf77764a29682557ec91a8de8dcdef`, with owning
+main revision `749a5f5b43bf77764a29682557ec91a8de8dcdef`, with passing owning
 [Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/41178893822)
 and
 [conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/41178893812).

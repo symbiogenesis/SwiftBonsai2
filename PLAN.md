@@ -151,9 +151,9 @@ promotion](docs/native-rust-engine.md#default-runtime-promotion) retains the sta
 adapter at scale 1.3, binds independent gates to exact source, release and app
 identities and leaves missing evidence pending.
 
-Complete settled-main owning checks, release and Runner integration for the
-[merged source work](docs/evidence/prism-main-integration.json), retaining the
-earlier [candidate controls](docs/evidence/prism-native-gap-candidate.json).
+Qualify Runner's settled-main integration of the published Prism 0.1.10 bytes in
+the [main integration record](docs/evidence/prism-main-integration.json), retaining
+the earlier [candidate controls](docs/evidence/prism-native-gap-candidate.json).
 Qualify the explicit original-PQ2 `pq2-adapter-lifecycle-row4` workload under the
 single aggregate owner allowance: scale 1.3, scale zero, invalid-scale rejection,
 then scale 1.3 with supplied history and owned cleanup. Partial or skipped required
