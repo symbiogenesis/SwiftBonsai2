@@ -10,6 +10,28 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
+
+function Assert-BonsaiHexagonSdkStream {
+    <# .SYNOPSIS
+    Checks exact bytes on an already retained guard without changing its cursor.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory)][IO.FileStream]$Stream,
+          [Parameter(Mandatory)][long]$Bytes,
+          [Parameter(Mandatory)][string]$Sha256)
+    if (-not $Stream.CanRead -or -not $Stream.CanSeek -or $Bytes -le 0 -or $Sha256 -cnotmatch '^[a-f0-9]{64}$') {
+        throw 'SDK verification requires a readable retained file and an exact byte/digest pin.'
+    }
+    $position = $Stream.Position
+    try {
+        if ($Stream.Length -ne $Bytes) { throw 'SDK input byte length differs from its pin.' }
+        $Stream.Position = 0
+        $digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($Stream)).ToLowerInvariant()
+        if ($Stream.Length -ne $Bytes -or $digest -cne $Sha256) { throw 'SDK input SHA-256 differs from its pin.' }
+    } finally { $Stream.Position = $position }
+}
+
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -cne 'Arm64' -or
     $env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted') {
     throw 'SDK inventory requires hosted Windows ARM64; owner-device fallback is unsupported.'
@@ -54,14 +76,14 @@ try {
         $path = Receive-LockedArtifact -Uri $entry.url -Path (Join-Path $output $entry.name) -Bytes $entry.bytes -Sha256 $entry.sha256 -TimeoutSeconds 30
         $stream = [IO.FileStream]::new($path, 'Open', 'Read', 'Read')
         $holds.Add($stream)
-        Assert-LockedArtifactStream -Stream $stream -Path $path -Bytes $entry.bytes -Sha256 $entry.sha256
+        Assert-BonsaiHexagonSdkStream -Stream $stream -Bytes $entry.bytes -Sha256 $entry.sha256
         $report.ReviewedInputs += [ordered]@{ Name = $entry.name; Url = $entry.url; Bytes = $entry.bytes; Sha256 = $entry.sha256 }
     }
     $report.Stage = 'sdk-archive-download'
     $archive = Receive-LockedArtifact -Uri $pin.asset.url -Path (Join-Path $output $pin.asset.filename) -Bytes $pin.asset.bytes -Sha256 $pin.asset.sha256 -TimeoutSeconds $pin.limits.downloadSeconds
     $guard = [IO.FileStream]::new($archive, 'Open', 'Read', 'Read')
     $holds.Add($guard)
-    Assert-LockedArtifactStream -Stream $guard -Path $archive -Bytes $pin.asset.bytes -Sha256 $pin.asset.sha256
+    Assert-BonsaiHexagonSdkStream -Stream $guard -Bytes $pin.asset.bytes -Sha256 $pin.asset.sha256
     $python = (Get-Command -Name python.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
     $pythonGuard = [IO.FileStream]::new($python, 'Open', 'Read', 'Read')
     $holds.Add($pythonGuard)
