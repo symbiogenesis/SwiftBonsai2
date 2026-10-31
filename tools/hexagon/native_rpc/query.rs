@@ -28,7 +28,10 @@ fn quote(value: &str) -> String {
 
 fn run() -> Result<String, hexagon_native_rpc::Error> {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
-    if arguments.len() != 1 {
+    let session_probe = arguments
+        .first()
+        .is_some_and(|value| value == "--session-mapping-probe");
+    if arguments.len() != if session_probe { 2 } else { 1 } {
         return Err(hexagon_native_rpc::Error::Contract);
     }
     if arguments[0] == "--self-test" {
@@ -44,14 +47,27 @@ fn run() -> Result<String, hexagon_native_rpc::Error> {
             quote(&location.path().to_string_lossy())
         ));
     }
+    let package = session_probe.then(|| std::path::Path::new(&arguments[1]));
     let forbidden = [
         "ADSP_", "CDSP_", "FASTRPC_", "RPCMEM_", "GGML_", "GENIEX_", "QNN_", "QAIRT_", "HEXAGON_",
     ];
-    if std::env::vars_os().any(|(name, _)| {
+    if std::env::vars_os().any(|(name, value)| {
         let name = name.to_string_lossy().to_ascii_uppercase();
         forbidden.iter().any(|prefix| name.starts_with(prefix))
+            && !(name == "ADSP_LIBRARY_PATH"
+                && package.is_some_and(|path| path.as_os_str() == value))
     }) {
         return Err(hexagon_native_rpc::Error::InheritedOverride);
+    }
+    if let Some(package) = package {
+        let driver = Driver::open_system()?;
+        let driver_path = driver.path().to_string_lossy().into_owned();
+        let report = driver.session_mapping_probe(package, |snapshot| {
+            let mut output = io::stderr().lock();
+            let _ = writeln!(output, "hexagon-session:stage={}", snapshot.stage);
+            let _ = output.flush();
+        })?;
+        return Ok(session_mapping_json(&driver_path, &report));
     }
     if arguments[0] == "--session-prepare" {
         let mut driver = Driver::open_system()?;
@@ -137,6 +153,44 @@ fn run() -> Result<String, hexagon_native_rpc::Error> {
         quote(hexagon_native_rpc::GGML_SOURCE),
         quote(hexagon_native_rpc::FASTRPC_SOURCE)
     ))
+}
+
+fn session_mapping_json(path: &str, report: &hexagon_native_rpc::SessionMappingReport) -> String {
+    let raw =
+        |value: Option<i32>| value.map_or_else(|| String::from("null"), |value| value.to_string());
+    let architecture = report
+        .metadata
+        .architecture
+        .map_or_else(|| String::from("null"), |value| value.to_string());
+    format!(
+        "{{\"schemaVersion\":1,\"kind\":\"native-fastrpc-session-mapping-probe\",\"driverDll\":{},\"passed\":{},\"stage\":{},\"metadataPrepared\":{},\"metadataStage\":{},\"architectureRaw\":{},\"architecture\":{},\"sessionId\":0,\"domainRequestId\":14,\"domainResult\":{},\"effectiveDomain\":{},\"uriRequestId\":15,\"uriResult\":{},\"uriVerified\":{},\"moduleOpenResult\":{},\"handleObserved\":{},\"remoteModuleOpened\":{},\"bytes\":4096,\"heapId\":25,\"allocationFlags\":1,\"mapFlags\":2,\"allocationSucceeded\":{},\"descriptorObserved\":{},\"descriptorError\":{},\"cpuRoundtripVerified\":{},\"mappingAttempted\":{},\"mappingResult\":{},\"unmappingResult\":{},\"freeCompleted\":{},\"poisoned\":{},\"moduleCloseResult\":{},\"moduleCloseCompleted\":{},\"ownerPinnedUntilExit\":{},\"driverLoaded\":true,\"signedDeploymentVerified\":false,\"computeExecuted\":false,\"dmaExecuted\":false,\"unsignedProcessRequested\":false,\"sessionTeardownVerified\":false,\"profileEligible\":false}}",
+        quote(path),
+        report.completed_cycle(),
+        quote(report.stage),
+        report.metadata.metadata_prepared(),
+        quote(report.metadata.stage),
+        report.metadata.architecture_raw,
+        architecture,
+        raw(report.metadata.domain_result),
+        raw(report.metadata.effective_domain),
+        raw(report.metadata.uri_result),
+        report.metadata.uri_verified,
+        raw(report.module_open_result),
+        report.handle_observed,
+        report.remote_module_opened,
+        report.mapping.allocation_succeeded,
+        report.mapping.descriptor_observed,
+        raw(report.mapping.descriptor_error),
+        report.mapping.cpu_roundtrip_verified,
+        report.mapping.mapping_attempted,
+        raw(report.mapping.mapping_result),
+        raw(report.mapping.unmapping_result),
+        report.mapping.free_completed,
+        report.mapping.poisoned,
+        raw(report.module_close_result),
+        report.module_close_completed,
+        report.owner_pinned_until_exit,
+    )
 }
 
 fn main() -> ExitCode {

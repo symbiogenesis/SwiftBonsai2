@@ -4,7 +4,7 @@ This std-only Rust boundary queries the installed Qualcomm Windows driver
 directly. It has no ggml, GenieX, QNN or C/C++ inference-library dependency. Its
 ordinary vendor call is `remote_handle_control(DSPRPC_GET_DSP_INFO, ...)` for
 domain 3 and eight fixed read-only attributes. A separate terminal probe uses
-the fixed allocator/registration APIs described below. Neither path submits a
+the fixed allocator/registration APIs described below. Neither capability/STATIC path submits a
 kernel, opens a custom DSP module, enables unsigned processes or alters power.
 
 `lib.rs` provides a safe API around the isolated audited `windows.rs` boundary.
@@ -45,13 +45,25 @@ one of the following arguments:
   changed input structure, malformed or mismatched URI never becomes a fallback
   domain or synthesized URI. This metadata gate still needs a supervised device
   observation and does not qualify signed deployment.
+- `--session-mapping-probe ABSOLUTE_PACKAGE_DIRECTORY`: consumes one native owner
+  for the fixed signed bundled v73/v81 module in default CDSP session zero,
+  then a 4096-byte **FD=2** mapping, matching unmap/free and explicit remote handle
+  close. It uses the exact validated driver-returned URI and never requests an
+  unsigned process. The trusted supervisor must first verify all pinned package
+  digests/current catalog membership and independently guard the driver. Its child
+  `ADSP_LIBRARY_PATH` must equal that one directory exactly; all other inherited
+  vendor overrides remain rejected. The library retains nonreparse module,
+  catalog and INF files through the entire attempt. No DSP method or compute is
+  invoked. Selected package/URI and successful open do not independently prove
+  the exact DSP file actually loaded; that identity gate remains pending.
 - `--mapping-probe`: consumes one driver/process admission for a fixed 4096-byte
   system-heap allocation, descriptor lookup, CPU byte check, static domain-3
   registration, matching unmap and free. It never submits or reads DSP work.
 
 Before driver loading, the query/mapping CLI rejects inherited names beginning
 with `ADSP_`, `CDSP_`, `FASTRPC_`, `RPCMEM_`, `GGML_`, `GENIEX_`, `QNN_`,
-`QAIRT_` or `HEXAGON_`, regardless of case. It logs no names/values and mutates
+`QAIRT_` or `HEXAGON_`, regardless of case. Only the new session diagnostic permits its
+exact explicitly selected `ADSP_LIBRARY_PATH`. It logs no names/values and mutates
 no environment. The trusted library caller and supervisor own the corresponding
 child-environment policy; these restrictions do not change the parent process.
 
@@ -137,3 +149,26 @@ device boundary, not a Runner production engine or a backend-availability claim.
 The immutable source identities, hashes and Microsoft ABI references are in
 [`sources.json`](sources.json). The code is an independently written narrow
 binding; no vendor or ggml implementation is vendored.
+
+## Terminal signed-session FD control
+
+`session_mapping.rs` retains independent metadata, module open, handle, mapping,
+close and lifetime fields. `session_mapping_native.rs` uses only the pinned
+public vendor ABI. In particular `remote_handle64_close` takes a **u64** handle
+as declared by the authoritative public `remote.h`; the reviewed reference host
+wrapper contains an inconsistent 32-bit close-pointer typedef that is not reused.
+The same process-wide terminal admission covers both STATIC and session probes.
+After any remote-open attempt the driver, package guards and lease stay pinned
+until supervised process death, including after a successful explicit handle
+close. A refused open or missing handle cannot become a mapped session. Failed
+map/unmap retains the scratch and module handle; no free or close follows uncertain
+use. Process death is not a demonstrated vendor session teardown.
+
+The CLI flushes fixed stderr `hexagon-session:stage=...` markers before native
+open, allocation, descriptor, FD mapping/unmapping, free and close. A marker
+records **entry**, not completion; only returned receipt codes establish completed
+operations. Model-free mock controls check exact URI/map arguments, full success,
+open/handle/allocation/descriptor/map/unmap/close refusal and retained uncertain
+lifetimes. They do not load a driver. Actual signed-session access, selected DSP
+byte binding, DMA64, effective VTCM, compute and Swift arithmetic remain separate
+device gates. Build and complete controls stay hosted-CI only.
