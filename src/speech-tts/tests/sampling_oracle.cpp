@@ -1,4 +1,5 @@
-// Model-free byte oracle. sampling.h and philox.h are unmodified pinned headers.
+// Model-free byte oracle. sampling.h is the unmodified pinned header.
+// The unused RNG dependency is an abort-only stub, never a native implementation.
 #include "sampling.h"
 #include <cstdio>
 #include <fcntl.h>

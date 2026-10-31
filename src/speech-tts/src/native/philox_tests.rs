@@ -68,7 +68,7 @@ fn rust_philox_scalar_abi_matches_captured_bits() -> Result<(), Box<dyn Error>> 
     let cases = draw_cases();
     assert_eq!(cases.len(), RECORD_COUNT);
     let (records, remainder) = FIXTURE[16..].as_chunks::<24>();
-    assert!(remainder.is_empty());
+    assert_eq!(remainder, []);
     assert_eq!(records.len(), RECORD_COUNT);
     for (index, (record, expected_case)) in records.iter().zip(cases).enumerate() {
         let seed = i64::from_le_bytes(record[..8].try_into()?);
@@ -81,7 +81,7 @@ fn rust_philox_scalar_abi_matches_captured_bits() -> Result<(), Box<dyn Error>> 
             "Captured Philox input identity differs at record {index}.",
         );
         assert_eq!(
-            super::bonsai_qt_philox_uniform(seed, subsequence, counter).to_bits(),
+            super::philox::bonsai_qt_philox_uniform(seed, subsequence, counter).to_bits(),
             expected,
             "Philox bits differ at record {index}: seed={seed}, subsequence={subsequence}, counter={counter}.",
         );

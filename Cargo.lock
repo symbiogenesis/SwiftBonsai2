@@ -581,6 +581,7 @@ dependencies = [
  "bonsai-audio",
  "bonsai-speech-service",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

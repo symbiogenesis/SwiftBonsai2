@@ -13,6 +13,7 @@ use std::{
 };
 
 mod cpu_threads;
+mod philox;
 mod qwen;
 mod sampling;
 mod tokenizer;
@@ -24,14 +25,6 @@ mod philox_tests;
 mod sampling_tests;
 #[cfg(test)]
 mod tokenizer_tests;
-
-// SAFETY: This unique private static-link symbol is declared by the reviewed
-// Qwen overlay. Its scalar arguments carry no pointer or lifetime obligations.
-// The pure Rust implementation allocates nothing and cannot unwind.
-#[unsafe(no_mangle)]
-extern "C" fn bonsai_qt_philox_uniform(seed: i64, subsequence: i64, counter: u32) -> f32 {
-    super::philox::uniform(seed, subsequence, counter)
-}
 
 static CPU_THREADS: cpu_threads::CpuThreads = cpu_threads::CpuThreads::new();
 
