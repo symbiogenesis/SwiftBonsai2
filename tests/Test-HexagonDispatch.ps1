@@ -33,9 +33,15 @@ if ($Case -ceq 'Plan') {
         $changed[$field] = if ($field -ceq 'HostedBuild') { $false } else { 'changed' }
         Assert-Failure { Assert-BonsaiHexagonDispatchBuild -Receipt $changed -ExpectedRunnerRevision $revision -SourceSha256 $source -ManifestSha256 $manifest -LockSha256 $lock } 'Changed hosted/source identity admitted.'
     }
-    $changed = $receipt.Clone()
-    $changed.Executable = @{ Name = '../fixture.exe'; Bytes = 65536; Sha256 = '5' * 64 }
-    Assert-Failure { Assert-BonsaiHexagonDispatchBuild -Receipt $changed -ExpectedRunnerRevision $revision -SourceSha256 $source -ManifestSha256 $manifest -LockSha256 $lock } 'Unsafe fixture filename admitted.'
+    foreach ($extent in @([int]65536, [long]65536)) {
+        $changed = $receipt.Clone()
+        $changed.Executable = @{ Name = '../fixture.exe'; Bytes = $extent; Sha256 = '5' * 64 }
+        Assert-Failure { Assert-BonsaiHexagonDispatchBuild -Receipt $changed -ExpectedRunnerRevision $revision -SourceSha256 $source -ManifestSha256 $manifest -LockSha256 $lock } 'Unsafe fixture filename admitted with a valid integer extent.'
+    }
+    foreach ($schema in @($true, 1.0)) {
+        $changed = $receipt.Clone(); $changed.SchemaVersion = $schema
+        Assert-Failure { Assert-BonsaiHexagonDispatchBuild -Receipt $changed -ExpectedRunnerRevision $revision -SourceSha256 $source -ManifestSha256 $manifest -LockSha256 $lock } 'A boolean or floating schema identity was accepted.'
+    }
     foreach ($field in @('RustToolchain', 'SourceSha256', 'ManifestSha256', 'LockSha256', 'Target')) {
         $changed = $receipt.Clone(); $changed[$field] = @($receipt[$field])
         Assert-Failure { Assert-BonsaiHexagonDispatchBuild -Receipt $changed -ExpectedRunnerRevision $revision -SourceSha256 $source -ManifestSha256 $manifest -LockSha256 $lock } 'An array was accepted as scalar build identity.'

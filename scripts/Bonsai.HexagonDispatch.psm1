@@ -37,7 +37,7 @@ function Assert-BonsaiHexagonDispatchBuild {
         if ($digest -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid dispatch source identity.' }
     }
     if ($ExpectedRunnerRevision -cnotmatch '^[a-f0-9]{40}$' -or
-        $Receipt.SchemaVersion -isnot [long] -and $Receipt.SchemaVersion -isnot [int] -or $Receipt.SchemaVersion -ne 1 -or
+        ($Receipt.SchemaVersion -isnot [long] -and $Receipt.SchemaVersion -isnot [int]) -or $Receipt.SchemaVersion -ne 1 -or
         $Receipt.RunnerRevision -isnot [string] -or $Receipt.RunnerRevision -cne $ExpectedRunnerRevision -or
         $Receipt.RustToolchain -isnot [string] -or $Receipt.RustToolchain -cne 'nightly-2026-10-22-aarch64-pc-windows-msvc' -or
         $Receipt.SourceSha256 -isnot [string] -or $Receipt.SourceSha256 -cne $SourceSha256 -or
@@ -49,7 +49,7 @@ function Assert-BonsaiHexagonDispatchBuild {
         $Receipt.Executable -isnot [Collections.IDictionary]) { throw 'Dispatch fixture build identity differs from the trusted source selection.' }
     $entry = $Receipt.Executable
     if ($entry.Name -isnot [string] -or $entry.Name -cne 'hexagon-dispatch-fixture.exe' -or
-        $entry.Bytes -isnot [long] -and $entry.Bytes -isnot [int] -or
+        ($entry.Bytes -isnot [long] -and $entry.Bytes -isnot [int]) -or
         $entry.Bytes -le 0 -or $entry.Bytes -gt 16MB -or
         $entry.Sha256 -isnot [string] -or $entry.Sha256 -cnotmatch '^[a-f0-9]{64}$') {
         throw 'Invalid dispatch fixture executable identity.'
@@ -81,7 +81,7 @@ function Get-BonsaiHexagonDispatchFixtureResult {
     if ($Json.Length -gt 65536) { throw 'Dispatch fixture output exceeds its bound.' }
     $record = ConvertFrom-Json -InputObject $Json -AsHashtable -NoEnumerate -DateKind String
     if ($record -isnot [Collections.IDictionary] -or
-        $record.SchemaVersion -isnot [long] -and $record.SchemaVersion -isnot [int] -or $record.SchemaVersion -ne 1 -or
+        ($record.SchemaVersion -isnot [long] -and $record.SchemaVersion -isnot [int]) -or $record.SchemaVersion -ne 1 -or
         $record.Kind -isnot [string] -or $record.Kind -cne 'runner-hexagon-dispatch-fixture' -or
         $record.SourceRevision -isnot [string] -or $record.SourceRevision -cne '94256114c229674ef96e76eb2dea596e65b43818' -or
         $record.Outcome -isnot [string] -or $record.Outcome -cnotin @('passed', 'pending', 'failed') -or
@@ -129,7 +129,7 @@ function Get-BonsaiHexagonDispatchFile {
     [CmdletBinding()]
     [OutputType([IO.FileStream])]
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][Collections.IDictionary]$Pin)
-    if ($Pin.bytes -isnot [long] -and $Pin.bytes -isnot [int] -or $Pin.bytes -le 0 -or $Pin.bytes -gt 128MB -or
+    if (($Pin.bytes -isnot [long] -and $Pin.bytes -isnot [int]) -or $Pin.bytes -le 0 -or $Pin.bytes -gt 128MB -or
         $Pin.sha256 -isnot [string] -or $Pin.sha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid dispatch file pin.' }
     $full = Resolve-ExternalPath $Path
     $stream = [IO.FileStream]::new($full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
