@@ -15,9 +15,37 @@ fn unknown() -> Value {
         "status": "unknown", "source": "system-vulkan-loader",
         "architecture": std::env::consts::ARCH, "loader_api_version": null,
         "application_api_version": null,
+        "instance_modules": null,
         "required_execution_policy": "headless-worker", "failure": null,
         "adapters": null, "qualification": "unqualified",
         "backend_ready": false, "error": "native-vulkan-query-unavailable"})
+}
+
+#[cfg(windows)]
+fn instance_modules(modules: &bonsai_windows_process::VulkanInstanceModules) -> Value {
+    let newly_observed =
+        modules
+            .before
+            .as_ref()
+            .zip(modules.after.as_ref())
+            .map(|(before, after)| {
+                after
+                    .iter()
+                    .filter(|name| before.binary_search(name).is_err())
+                    .collect::<Vec<_>>()
+            });
+    let status = match (&modules.before, &modules.after) {
+        (Some(_), Some(_)) => "observed",
+        (None, None) => "unknown",
+        _ => "partial",
+    };
+    json!({
+        "scope": "current-process-instance-creation",
+        "status": status,
+        "before": modules.before, "after": modules.after,
+        "newly_observed": newly_observed,
+        "file_identity_verified": false, "dependencies_verified": false,
+    })
 }
 
 #[cfg(windows)]
@@ -34,6 +62,9 @@ fn failed_query(error: &std::io::Error) -> Value {
     report["loader_api_version"] = json!(failure.and_then(|failure| failure.loader_api_version));
     report["application_api_version"] =
         json!(failure.and_then(|failure| failure.application_api_version));
+    report["instance_modules"] = failure
+        .and_then(|failure| failure.instance_modules.as_ref())
+        .map_or(Value::Null, instance_modules);
     report
 }
 
@@ -93,6 +124,7 @@ pub fn query(request: &Value) -> crate::Result<Value> {
             "required_execution_policy": "headless-worker", "failure": null,
             "loader_api_version": inventory.loader_api_version, "adapters": adapters,
             "application_api_version": inventory.application_api_version,
+            "instance_modules": instance_modules(&inventory.instance_modules),
             "qualification": "unqualified", "backend_ready": false, "error": null}),
         )
     }
@@ -208,6 +240,10 @@ mod tests {
             vulkan_result: Some(-9),
             loader_api_version: Some(4_206_893),
             application_api_version: Some(4_206_592),
+            instance_modules: Some(bonsai_windows_process::VulkanInstanceModules {
+                before: Some(vec!["vulkan-1.dll".into()]),
+                after: Some(vec!["driver.dll".into(), "vulkan-1.dll".into()]),
+            }),
         });
         let report = failed_query(&error);
         assert_eq!(report["status"], "unknown");
@@ -216,6 +252,12 @@ mod tests {
         assert_eq!(report["failure"]["vulkan_result"], -9);
         assert_eq!(report["loader_api_version"], 4_206_893);
         assert_eq!(report["application_api_version"], 4_206_592);
+        assert_eq!(report["instance_modules"]["status"], "observed");
+        assert_eq!(
+            report["instance_modules"]["newly_observed"],
+            json!(["driver.dll"])
+        );
+        assert_eq!(report["instance_modules"]["dependencies_verified"], false);
         assert!(report["adapters"].is_null());
         assert_eq!(report["backend_ready"], false);
 
@@ -223,6 +265,23 @@ mod tests {
         assert_eq!(report["failure"]["stage"], "native-query");
         assert!(report["failure"]["vulkan_result"].is_null());
         assert!(report["loader_api_version"].is_null());
+        assert!(report["instance_modules"].is_null());
         assert!(!report.to_string().contains("sensitive"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_gpu_module_delta_requires_both_snapshots() {
+        for (before, after, status) in [
+            (None, None, "unknown"),
+            (Some(vec!["a.dll".into()]), None, "partial"),
+            (None, Some(vec!["a.dll".into()]), "partial"),
+        ] {
+            let report =
+                instance_modules(&bonsai_windows_process::VulkanInstanceModules { before, after });
+            assert_eq!(report["status"], status);
+            assert!(report["newly_observed"].is_null());
+            assert_eq!(report["file_identity_verified"], false);
+        }
     }
 }

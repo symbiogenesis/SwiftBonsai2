@@ -7,11 +7,13 @@ use std::path::PathBuf;
 
 use ash::{Entry, vk};
 
-use crate::{VulkanAdapter, VulkanInventory, VulkanQueryFailure};
+use crate::{VulkanAdapter, VulkanInstanceModules, VulkanInventory, VulkanQueryFailure};
 
 const MAX_ADAPTERS: usize = 16;
 const MAX_QUEUES: usize = 64;
 const MAX_EXTENSIONS: usize = 1024;
+const MAX_MODULES: usize = 256;
+const MAX_MODULE_NAME: usize = 260;
 
 fn invalid() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, "unsupported Vulkan inventory")
@@ -31,8 +33,66 @@ fn failure(
             vulkan_result,
             loader_api_version,
             application_api_version,
+            instance_modules: None,
         },
     )
+}
+
+fn module_name(buffer: &[u16], count: usize) -> Option<String> {
+    // A full buffer may be truncated. Reject malformed UTF-16 and names which
+    // could expose paths, embed controls, or collapse distinct observations.
+    if count == 0 || count >= buffer.len() {
+        return None;
+    }
+    let name = String::from_utf16(buffer.get(..count)?).ok()?;
+    if name
+        .chars()
+        .any(|character| character.is_control() || matches!(character, '/' | '\\' | ':'))
+    {
+        return None;
+    }
+    Some(name.to_ascii_lowercase())
+}
+
+fn module_basenames() -> Option<Vec<String>> {
+    use windows_sys::Win32::System::{
+        ProcessStatus::{K32EnumProcessModules, K32GetModuleBaseNameW},
+        Threading::GetCurrentProcess,
+    };
+
+    let mut modules = [std::ptr::null_mut(); MAX_MODULES];
+    let bytes = u32::try_from(size_of_val(&modules)).ok()?;
+    let mut needed = 0_u32;
+    // SAFETY: This pseudo-handle denotes only the current child, needs no close,
+    // and is never exposed. Both output buffers remain writable for the call.
+    let process = unsafe { GetCurrentProcess() };
+    // SAFETY: The initialized module array has exactly the advertised byte size;
+    // enumeration writes no more than that size and retains no storage pointers.
+    if unsafe { K32EnumProcessModules(process, modules.as_mut_ptr(), bytes, &raw mut needed) } == 0
+        || needed == 0
+        || needed > bytes
+        || !usize::try_from(needed)
+            .ok()?
+            .is_multiple_of(size_of_val(&modules[0]))
+    {
+        return None;
+    }
+    let count = usize::try_from(needed).ok()? / size_of_val(&modules[0]);
+    let mut names = Vec::with_capacity(count);
+    for module in modules.get(..count)? {
+        if module.is_null() {
+            return None;
+        }
+        let mut buffer = [0_u16; MAX_MODULE_NAME];
+        // SAFETY: Module handles are opaque values from this process snapshot;
+        // Win32 validates them. Unload races fail the entire optional snapshot.
+        // The writable name buffer has the advertised UTF-16 element count.
+        let length = unsafe { K32GetModuleBaseNameW(process, *module, buffer.as_mut_ptr(), 260) };
+        names.push(module_name(&buffer, usize::try_from(length).ok()?)?);
+    }
+    names.sort_unstable();
+    names.dedup();
+    Some(names)
 }
 
 fn check(result: vk::Result) -> io::Result<()> {
@@ -96,6 +156,35 @@ impl Drop for Instance {
         // and is dropped before the Entry providing its function pointers.
         unsafe { self.0.destroy_instance(None) };
     }
+}
+
+fn create_instance(
+    entry: &Entry,
+    loader_api: u32,
+    application_api: u32,
+) -> io::Result<(Instance, VulkanInstanceModules)> {
+    let application = vk::ApplicationInfo::default()
+        .application_name(c"bonsai-inventory")
+        .api_version(application_api);
+    let create = vk::InstanceCreateInfo::default().application_info(&application);
+    let before = module_basenames();
+    // SAFETY: Initialized create structures have live pointers; no layers or
+    // extensions are requested. The instance is destroyed before its Entry.
+    let created = unsafe { entry.create_instance(&create, None) };
+    let modules = VulkanInstanceModules {
+        before,
+        after: module_basenames(),
+    };
+    let instance = Instance(created.map_err(|error| {
+        io::Error::other(VulkanQueryFailure {
+            stage: "instance-creation",
+            vulkan_result: Some(error.as_raw()),
+            loader_api_version: Some(loader_api),
+            application_api_version: Some(application_api),
+            instance_modules: Some(modules.clone()),
+        })
+    })?);
+    Ok((instance, modules))
 }
 
 const fn device_type(kind: vk::PhysicalDeviceType) -> (&'static str, bool) {
@@ -318,23 +407,8 @@ pub(super) fn query() -> io::Result<VulkanInventory> {
         })?
         .unwrap_or(vk::API_VERSION_1_0);
     let application_api = loader_api_version.min(vk::API_VERSION_1_3);
-    let application = vk::ApplicationInfo::default()
-        .application_name(c"bonsai-inventory")
-        .api_version(application_api);
-    let create = vk::InstanceCreateInfo::default().application_info(&application);
-    // SAFETY: Initialized create structures have live pointers; no layers or
-    // extensions are requested. The instance is destroyed before its Entry.
-    let instance = Instance(
-        unsafe { entry.create_instance(&create, None) }.map_err(|error| {
-            failure(
-                "instance-creation",
-                Some(error.as_raw()),
-                Some(loader_api_version),
-                Some(application_api),
-                io::ErrorKind::Other,
-            )
-        })?,
-    );
+    let (instance, instance_modules) =
+        create_instance(&entry, loader_api_version, application_api)?;
     let mut devices = [vk::PhysicalDevice::null(); MAX_ADAPTERS];
     let mut count = u32::try_from(devices.len()).map_err(|_| invalid())?;
     // SAFETY: Valid instance and initialized storage for the advertised count.
@@ -379,6 +453,7 @@ pub(super) fn query() -> io::Result<VulkanInventory> {
     Ok(VulkanInventory {
         loader_api_version,
         application_api_version: application_api,
+        instance_modules,
         adapters,
     })
 }
@@ -386,6 +461,27 @@ pub(super) fn query() -> io::Result<VulkanInventory> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn module_snapshots_reject_truncation_paths_controls_and_invalid_utf16() {
+        assert_eq!(
+            module_name(&[65, 46, 68, 76, 76, 0], 5),
+            Some("a.dll".into())
+        );
+        for buffer in [
+            vec![0],
+            vec![65],
+            vec![0xD800, 0],
+            vec![10, 0],
+            vec![92, 0],
+            vec![47, 0],
+            vec![58, 0],
+        ] {
+            assert!(module_name(&buffer, buffer.len().saturating_sub(1)).is_none());
+        }
+        assert!(module_name(&[65, 66], 2).is_none());
+        assert!(module_name(&[65, 0], 3).is_none());
+    }
 
     #[test]
     fn vulkan_failure_payload_preserves_raw_results_and_unknown_versions() -> io::Result<()> {

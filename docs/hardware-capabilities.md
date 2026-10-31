@@ -94,6 +94,23 @@ after its child exits under that policy. Failed queries retain their bounded chi
 supervision or malformed-report failures retain `worker-supervision-or-report` without a
 guessed Vulkan result. No weaker-policy retry is performed.
 
+The child also observes its own loaded-module basenames immediately before and after
+the single `vkCreateInstance` call. `instance_modules` retains both snapshots and their
+`newly_observed` difference, including when instance creation fails. Each snapshot uses
+one fixed 256-handle [module enumeration][process-modules] and at most 260 UTF-16 code units
+per [basename][module-basename], with no retries or buffer growth. Failed/oversized,
+truncated, malformed UTF-16 or path/control-containing results make that whole snapshot
+unknown; the original Vulkan failure remains intact. The pair reports `observed`,
+`partial` or `unknown`; its difference is null unless both snapshots are observed.
+
+These current-process observations contain no filesystem paths and open no unrelated
+process. Basenames can guide a later exact-file audit; equal names do not establish file
+identity, signatures or dependencies. Modules loaded and unloaded between snapshots,
+failed DLL loads and data-file modules are not captured; an empty difference cannot
+exclude an attempted ICD or layer. No additional layer/extension, loader override,
+alternate policy or second instance attempt is introduced. Loader/ICD provenance and
+the X2 failure cause remain unqualified.
+
 Retained **2026-10-29 X2** observations remain distinct:
 
 | Policy | Result | Retained evidence and limit |
@@ -320,6 +337,8 @@ strict wire parsing, identity invalidation and output reservation. Full suites/b
 [application-api]: https://docs.vulkan.org/refpages/latest/refpages/source/VkApplicationInfo.html
 [ash]: https://docs.rs/ash/0.38.0+1.3.281/ash/struct.Entry.html
 [x2-specs]: https://www.qualcomm.com/content/dam/qcomm-martech/dm-assets/documents/Snapdragon-X2-Elite-Product-Brief.pdf
+[process-modules]: https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-enumprocessmodules
+[module-basename]: https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getmodulebasenamew
 [dma64]: https://github.com/ggml-org/llama.cpp/pull/29197
 [q2-hadamard]: https://github.com/ggml-org/llama.cpp/pull/30627
 [prism]: https://github.com/symbiogenesis/prism-inference

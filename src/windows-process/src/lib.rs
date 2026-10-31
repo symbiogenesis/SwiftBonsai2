@@ -25,7 +25,7 @@ use std::time::Duration;
 )]
 mod native;
 
-/// Value-free failure context retained inside a Vulkan query's `io::Error`.
+/// Structured failure context retained inside a Vulkan query's `io::Error`.
 ///
 /// Downcast `io::Error::get_ref()` to this type to distinguish failed discovery
 /// stages without parsing driver messages or inferring unsupported hardware.
@@ -39,6 +39,8 @@ pub struct VulkanQueryFailure {
     pub loader_api_version: Option<u32>,
     /// Requested application API version, if instance creation was attempted.
     pub application_api_version: Option<u32>,
+    /// Optional current-process module observations around instance creation.
+    pub instance_modules: Option<VulkanInstanceModules>,
 }
 
 impl std::fmt::Display for VulkanQueryFailure {
@@ -60,8 +62,23 @@ pub struct VulkanInventory {
     pub loader_api_version: u32,
     /// Declared application/instance API version, capped at Vulkan 1.3.
     pub application_api_version: u32,
+    /// Current-process module observations immediately around instance creation.
+    pub instance_modules: VulkanInstanceModules,
     /// Enumerated adapters, including explicitly identified software devices.
     pub adapters: Vec<VulkanAdapter>,
+}
+
+/// Bounded module-name snapshots around the single Vulkan instance-creation call.
+///
+/// These are basenames only, without paths, hashes or signature claims. A missing
+/// snapshot is unknown; a snapshot cannot identify attempted or unloaded DLLs,
+/// distinguish files with equal basenames, or establish driver dependencies.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VulkanInstanceModules {
+    /// Sorted unique basenames before instance creation, or unknown on failure.
+    pub before: Option<Vec<String>>,
+    /// Sorted unique basenames after instance creation returns, or unknown.
+    pub after: Option<Vec<String>>,
 }
 
 /// One Vulkan physical device; observations do not qualify an inference backend.
