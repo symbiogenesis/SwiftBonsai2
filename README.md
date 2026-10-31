@@ -97,6 +97,11 @@ and [local API contract](docs/broker-policy.md#public-request-contract).
 > runtime failures without rejecting the lossless packing format. See the
 > [captured result](docs/swift-memory.md#numerical-and-admission-boundaries).
 >
+> The [bounded 0.1.10 PQ2 service attempt](docs/evidence/prism-0110-service-attempt.json)
+> reached verified readiness and streamed at scales 1.3 and zero. A mismatched
+> rejection check stopped the later history/Stop checks; no memory peak was captured.
+> This partial result does not establish complete lifecycle or default acceptance.
+>
 > The [original-PQ2 row-worker diagnostic](docs/evidence/row-parallel-smoke.json)
 > matches all 39,504,384 logits/state values byte for byte. One fixed forward
 > evaluation took 1.55 s with one worker and 0.58 s with four; loading and capture

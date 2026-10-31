@@ -91,9 +91,12 @@ send unsupported fields; it does not claim full OpenAI SDK compatibility:
 | `abliteration_scale` | Optional numeric 0-2, default 1.3, only for the owned Swift Prism CPU launcher with verified pinned adapter (`--use-abliterate-lora`). Zero disables that request's correction. |
 
 Null, wrong types, duplicate/unknown fields at every schema level, empty part
-arrays and unknown part types reject. Scale rejects for reference, native-engine,
+arrays and unknown part types reject. Scale rejects for reference,
 no-adapter and independently bound services; it maps only to pinned adapter slot
 0 in identical canonical count/generation requests, without model restart.
+The verified native Rust Swift service supports the same approved adapter.
+Generic schema rejections close the connection without HTTP bytes and preserve
+broker admission; framed HTTP 400 is reserved for the control-token case below.
 
 Before counting/backend contact, caller content and assistant reasoning reject
 the exact 33 control/user-defined spellings in the pinned Swift vocabulary,
@@ -334,8 +337,8 @@ executables, models, profile JSON and overrides. The default is `reference-cpu`;
 | Launcher option | Boundary |
 | --- | --- |
 | Default weights | Original PQ2; no format substitution. |
-| `--use-repacked-ptq1` | Only the pinned current-weight export; missing/altered bytes reject. Unsupported with native Rust pending separate end-to-end qualification. |
-| `--use-abliterate-lora` | Only the pinned adapter on publisher Prism CPU; enables bounded per-request scale. Reject for reference/native Rust. The app requests it by default (`-NoAbliterateLora` opts out); direct broker launch omits it. |
+| `--use-repacked-ptq1` | Only the pinned current-weight export; missing/altered bytes reject. Publisher and native Rust Swift support are explicit; full end-to-end qualification remains separate. |
+| `--use-abliterate-lora` | Only the pinned adapter on publisher or native Rust Swift CPU; enables bounded per-request scale with verified readiness. Reject for reference. The app requests it by default (`-NoAbliterateLora` opts out); direct broker launch omits it. |
 | `--check-only` | Verify policy/artifacts and report admission without credentials or a process. |
 
 [Runtime selection](development-guide.md#runtime-selection) lists app options.
