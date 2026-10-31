@@ -7,6 +7,7 @@ Checks the fixed acceptance and inherited owner deadlines without processes or m
 param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.TestSupport.psm1')
 Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.NativeAcceptanceBudget.psm1')
 
