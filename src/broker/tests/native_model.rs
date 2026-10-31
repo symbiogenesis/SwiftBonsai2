@@ -1319,12 +1319,12 @@ async fn required_adapter_scale_history(
             let mut body =
                 adapter_request(json!([{"role":"user","content":"Name a tree."}]), 1.3, 2);
             body["abliteration_scale"] = json!(2.000_000_01);
-            let rejected = json_response(
-                &exchange(port, credential, &body).await,
-                "HTTP/1.1 400 Bad Request",
-            );
-            assert!(rejected["error"].is_object());
+            // Generic schema failures close the authenticated connection;
+            // framed HTTP 400 is reserved for model-control token rejection.
+            assert!(exchange(port, credential, &body).await.is_empty());
             report["scaleHistoryWorkload"]["invalidScaleRejected"] = json!(true);
+            report["scaleHistoryWorkload"]["invalidScaleDisposition"] =
+                json!("connection-closed-without-response");
             report["invalidScaleRejected"] = json!(true);
         } else {
             let (scale, messages) = if phase == "scale-zero" {
@@ -1460,12 +1460,9 @@ async fn adapter_requests(
             let mut body =
                 adapter_request(json!([{"role":"user","content":"Name a tree."}]), 1.3, 2);
             body["abliteration_scale"] = json!(2.000_000_01);
-            let rejected = json_response(
-                &exchange(port, credential, &body).await,
-                "HTTP/1.1 400 Bad Request",
-            );
-            assert!(rejected["error"].is_object());
+            assert!(exchange(port, credential, &body).await.is_empty());
             report["invalidScaleRejected"] = json!(true);
+            report["invalidScaleDisposition"] = json!("connection-closed-without-response");
             save_acceptance_report(evidence, report);
             streams.push(
                 adapter_stream(port, credential, 1.3, "same-owner-after-invalid-scale", 2).await,
@@ -1627,11 +1624,8 @@ async fn adapter_scale_history_fixture(
             assert_eq!(body["messages"].as_array().unwrap().len(), 1);
         }
         let response = if step == 1 {
-            let body = r#"{"error":{"code":"invalid_request"}}"#;
-            format!(
-                "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\n\r\n{body}",
-                body.len()
-            )
+            // Match the production ChatSchema transport disposition.
+            String::new()
         } else {
             let payload = concat!(
                 "data: {\"choices\":[{\"delta\":{\"content\":\"cedar\"},\"finish_reason\":null}]}\n\n",

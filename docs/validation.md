@@ -63,7 +63,7 @@ owned cleanup and fresh-owner recovery, even when `lifecyclePassed: true`.
 Explicit `profile: ptq1-adapter`
 selects a minimal required-sandbox smoke case for the exact current-weight export
 and approved adapter: one scale-1.3 streamed request with a four-token cap and
-owned cleanup. A scale-zero two-token request and invalid-scale HTTP 400/reuse
+owned cleanup. A scale-zero two-token request and invalid-scale connection-close/reuse
 may run only if the same budget retains a conservative teardown reserve. Skipped
 checks remain pending. Signed-zero/scale-two trials, supplied history, context
 rejection, restart, long output and sustained use are not qualified by this smoke.
@@ -84,7 +84,7 @@ service and TPS gates remain unrun; this smoke cannot enable a default.
 Explicit `profile: pq2-adapter-lifecycle-row4` separately requires the original
 PQ2 and approved adapter with four row workers through three short streams in
 one owner: scale 1.3 (four-token cap), scale zero (two-token cap), invalid-scale
-HTTP 400, then scale 1.3 with a supplied user/assistant/user history (two-token
+connection close, then scale 1.3 with a supplied user/assistant/user history (two-token
 cap). The assistant fixture is fixed public text, not captured model output.
 Every further request needs more than 45 seconds remaining; the complete
 sequence has a request deadline thirty seconds before the aggregate deadline

@@ -151,14 +151,18 @@ promotion](docs/native-rust-engine.md#default-runtime-promotion) retains the sta
 adapter at scale 1.3, binds independent gates to exact source, release and app
 identities and leaves missing evidence pending.
 
-Qualify Runner's settled-main integration of the published Prism 0.1.10 bytes in
-the [main integration record](docs/evidence/prism-main-integration.json), retaining
-the earlier [candidate controls](docs/evidence/prism-native-gap-candidate.json).
 Qualify the explicit original-PQ2 `pq2-adapter-lifecycle-row4` workload under the
 single aggregate owner allowance: scale 1.3, scale zero, invalid-scale rejection,
 then scale 1.3 with supplied history and owned cleanup. Partial or skipped required
 steps remain pending. Keep promotion evidence separate for one versus four workers
 and retain the reset-every-request serving policy until reuse is qualified.
+The [0.1.10 owner attempt](docs/evidence/prism-0110-service-attempt.json) retains
+verified readiness and the two successful scale-1.3/zero streams, but stopped at a
+checker expecting framed HTTP 400 for generic schema rejection. Qualify the
+corrected connection-close check, same-owner history and explicit Stop/Job/listener
+observations in a future bounded owner window; the retained failed receipt does
+not close them. Preserve the passed settled-main release integration in the
+[main record](docs/evidence/prism-main-integration.json).
 
 - Release the reviewed Windows read-consumer helper API through the registry,
   replace Prism server's exact Git dependency with that reviewed registry release,
