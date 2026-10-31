@@ -91,12 +91,29 @@ if ($Case -ceq 'Plan') {
         CatalogMemberVerified = $true; CatalogMembersVerified = 4
         CatalogMemberNames = @('libggml-htp-v73.so','libggml-htp-v75.so','libggml-htp-v79.so','libggml-htp-v81.so')
         SelectedDspArchitecture = 'unknown'; DeviceDispatchVerified = $true; FixtureResult = $record
+        LoadedDriverObservation = 'not-observed'; LoadedDriverIdentity = $null
         RuntimeFilesVerified = 16; FixtureSha256 = '2' * 64; FixtureSourceSha256 = '3' * 64
         ManifestSha256 = '4' * 64; LockSha256 = '5' * 64; SigntoolSha256 = '6' * 64
         ModelLoaded = $false; SwiftQualified = $false; ProfileEligible = $false; DriverInstalled = $false; TrustChanged = $false
     }
     $checkedWorker = Get-BonsaiHexagonDispatchWorkerResult -Json ($worker | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision
     Assert ($checkedWorker.DeviceDispatchVerified) 'Complete worker evidence rejected.'
+    $observed = $worker.Clone()
+    $observed.LoadedDriverObservation = 'observed-verified'
+    $observed.LoadedDriverIdentity = @{
+        Path = 'C:\Windows\System32\DriverStore\FileRepository\fixture\libcdsprpc.dll'
+        Bytes = 65536; Sha256 = '7' * 64; SignatureStatus = 'Valid'
+        Publisher = 'Microsoft Windows Hardware Compatibility Publisher'; SignerThumbprint = '8' * 40
+        FileHeldAgainstMutation = $true
+    }
+    $checkedWorker = Get-BonsaiHexagonDispatchWorkerResult -Json ($observed | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision
+    Assert ($checkedWorker.LoadedDriverIdentity.Sha256 -ceq ('7' * 64) -and $checkedWorker.SelectedDspArchitecture -ceq 'unknown') 'Loaded host driver was confused with the selected DSP.'
+    foreach ($field in @('Sha256', 'FileHeldAgainstMutation', 'Publisher')) {
+        $changed = $observed.Clone(); $changed.LoadedDriverIdentity = $observed.LoadedDriverIdentity.Clone(); $changed.LoadedDriverIdentity[$field] = $null
+        Assert-Failure { Get-BonsaiHexagonDispatchWorkerResult -Json ($changed | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision } 'Incomplete loaded driver evidence admitted.'
+    }
+    $changed = $observed.Clone(); $changed.LoadedDriverObservation = 'not-observed'
+    Assert-Failure { Get-BonsaiHexagonDispatchWorkerResult -Json ($changed | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision } 'An unobserved driver acquired an identity.'
     foreach ($field in @('ModelLoaded','SwiftQualified','ProfileEligible','DriverInstalled','TrustChanged')) {
         $changed = $worker.Clone(); $changed[$field] = 0
         Assert-Failure { Get-BonsaiHexagonDispatchWorkerResult -Json ($changed | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision } 'A worker boolean was accepted by coercion.'
