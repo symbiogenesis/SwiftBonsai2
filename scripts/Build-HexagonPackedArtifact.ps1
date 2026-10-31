@@ -38,11 +38,12 @@ $toolchain = 'nightly-2026-10-22-aarch64-pc-windows-msvc'
 $compiler = Invoke-BonsaiNativeProcess -Executable $rustup -ArgumentList @('run',$toolchain,'rustc','-vV') -WorkingDirectory $output -TimeoutSeconds 20 -OwnDescendants
 if ($compiler.ExitCode -ne 0 -or $compiler.StandardOutput -cnotmatch '(?m)^host: aarch64-pc-windows-msvc\r?$') { throw 'Compiler identity differs from the pinned ARM64 target.' }
 $target = Join-Path $output 'target'
-$library = Invoke-BonsaiNativeProcess -Executable $rustup -ArgumentList @('run',$toolchain,'cargo','build','--locked','--release','--manifest-path',(Join-Path $GgufSourceDirectory 'Cargo.toml'),'--target-dir',$target,'-p','bonsai-gguf','--lib') -WorkingDirectory $output -TimeoutSeconds 180 -OwnDescendants -LogPath (Join-Path $output 'gguf-build.txt')
+$library = Invoke-BonsaiNativeProcess -Executable $rustup -ArgumentList @('run',$toolchain,'cargo','build','--locked','--release','--target','aarch64-pc-windows-msvc','--manifest-path',(Join-Path $GgufSourceDirectory 'Cargo.toml'),'--target-dir',$target,'-p','bonsai-gguf','--lib') -WorkingDirectory $output -TimeoutSeconds 180 -OwnDescendants -LogPath (Join-Path $output 'gguf-build.txt')
 if ($library.ExitCode -ne 0) { throw 'The pinned GGUF library did not build.' }
-$dependencyDirectory = Join-Path $target 'release/deps'
-$gguf = Join-Path $target 'release/bonsai_gguf.rlib'
-if (-not (Test-Path -LiteralPath $gguf)) { $gguf = Join-Path $target 'release/libbonsai_gguf.rlib' }
+$release = Join-Path $target 'aarch64-pc-windows-msvc/release'
+$dependencyDirectory = Join-Path $release 'deps'
+$gguf = Join-Path $release 'bonsai_gguf.rlib'
+if (-not (Test-Path -LiteralPath $gguf)) { $gguf = Join-Path $release 'libbonsai_gguf.rlib' }
 $sha = @([IO.Directory]::EnumerateFiles($dependencyDirectory, 'libsha2-*.rlib'))
 if (-not [IO.File]::Exists($gguf) -or $sha.Count -ne 1) { throw 'Pinned GGUF dependency library selection is ambiguous.' }
 $source = Join-Path $repo 'tools/hexagon/packed_artifact.rs'
