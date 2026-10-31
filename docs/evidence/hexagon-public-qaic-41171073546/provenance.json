@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "kind": "curated-public-QAIC-standard-types-generation-review",
+  "runUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41171073546",
+  "runId": "41171073546",
+  "runnerRevision": "288db2e1fce923efb63f45500592823d06657ee5",
+  "artifact": {
+    "id": 13030534459,
+    "name": "hexagon-public-qaic-41171073546-1",
+    "bytes": 85578,
+    "digest": "sha256:b2e5eeaa4334242bc18a0316dcf2327593f76f207418d610e3c1c4e579a02526",
+    "metadataUrl": "https://api.github.com/repos/symbiogenesis/SwiftBonsai2Runner/actions/artifacts/13030534459",
+    "digestSource": "independently-read-GitHub-Actions-artifact-metadata",
+    "artifactZipDigestLocallyVerified": false
+  },
+  "retainedFiles": [
+    {
+      "path": "host.json",
+      "artifactPath": "host.json",
+      "bytes": 15801,
+      "sha256": "6dd6860f21f22c96f3e76d9628ceac4d445ebca6b4a73e239d4b4f721e180bc7",
+      "artifactBytesPreserved": true,
+      "role": "curated-observation-data"
+    },
+    {
+      "path": "NOTICES.txt",
+      "artifactPath": "NOTICES.txt",
+      "bytes": 412,
+      "sha256": "c5451cf53cc46bb051417df67b0a027821d1456adf3bf2146dbfd06270e53651",
+      "artifactBytesPreserved": true,
+      "role": "curated-observation-data"
+    },
+    {
+      "path": "generated-public-source/htp_iface.h.txt",
+      "artifactPath": "generated-public-source/htp_iface.h",
+      "bytes": 7920,
+      "sha256": "84e34d52796581fd2e6ebe236e65e4980bd3c6633325f6a81774f24924baa038",
+      "artifactBytesPreserved": true,
+      "role": "captured-source-data-no-build-consumer"
+    },
+    {
+      "path": "generated-public-source/htp_iface_stub.c.txt",
+      "artifactPath": "generated-public-source/htp_iface_stub.c",
+      "bytes": 16963,
+      "sha256": "3ea8854291ef82fa5e87e4a0d1cdec45b558941774b157995e085a6e1560fe92",
+      "artifactBytesPreserved": true,
+      "role": "captured-source-data-no-build-consumer"
+    },
+    {
+      "path": "generated-public-source/htp_iface_skel.c.txt",
+      "artifactPath": "generated-public-source/htp_iface_skel.c",
+      "bytes": 20248,
+      "sha256": "b517ef6f7b895bc42133cac2b97258bd1d0618c1b47b84c878d10d616f6e541d",
+      "artifactBytesPreserved": true,
+      "role": "captured-source-data-no-build-consumer"
+    },
+    {
+      "path": "licenses/LICENSE-QAIC.txt",
+      "copiedFrom": "docs/evidence/hexagon-public-qaic-41169481882/inputs-and-notices/LICENSE-QAIC.txt",
+      "bytes": 1689,
+      "sha256": "3a15c06f7c0f8e38e884e0a20e739fe0d92c1ac0996928af4ab119170603d1f8",
+      "originalLicenseBytesPreserved": true,
+      "matchesSameRunArtifactLicense": true
+    },
+    {
+      "path": "licenses/LICENSE-FastRPC.txt",
+      "copiedFrom": "docs/evidence/hexagon-public-qaic-41169481882/inputs-and-notices/LICENSE-FastRPC.txt",
+      "bytes": 1565,
+      "sha256": "683e80f5436e6b0761139e626d2c764870ea0ed19b14916ef4c82772b99c4d44",
+      "originalLicenseBytesPreserved": true,
+      "matchesSameRunArtifactLicense": true
+    },
+    {
+      "path": "licenses/LICENSE-llama.cpp.txt",
+      "copiedFrom": "docs/evidence/hexagon-public-qaic-41169481882/inputs-and-notices/LICENSE-llama.cpp.txt",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "originalLicenseBytesPreserved": true,
+      "matchesSameRunArtifactLicense": true
+    }
+  ],
+  "hostedSourceVerification": [
+    {
+      "path": "tools/hexagon/public_qaic_oracle.py",
+      "gitBlobSha256": "7ecd51a5962dd8dd31828a56c62e74f13047c7cd1f3413e7a23d0c8afabe1a8b",
+      "hostedSha256": "7ecd51a5962dd8dd31828a56c62e74f13047c7cd1f3413e7a23d0c8afabe1a8b",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public-qaic.lock.json",
+      "gitBlobSha256": "eca9ce59a67425a4c786201507fd56fe9fe3a0afb5ca837c51214ea4f4427d7f",
+      "hostedSha256": "eca9ce59a67425a4c786201507fd56fe9fe3a0afb5ca837c51214ea4f4427d7f",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    }
+  ],
+  "selection": "host receipt and compile refusal OR reviewed three generated-source files, licenses/notices only; other bootstrap logs omitted",
+  "sharedOriginalInputAndTemplateNotices": "docs/evidence/hexagon-public-qaic-41169481882/provenance.json",
+  "scope": "public source/control data only; no SDK equivalence, Windows ABI, device ownership or numerical admission",
+  "sdkExecutableUsed": false,
+  "sdkImportsUsed": false,
+  "deviceCodeLoaded": false,
+  "profileEligible": false,
+  "observed": {
+    "outcome": "public-standard-generated-source-awaiting-review",
+    "stage": "public-standard-type-generation-review",
+    "generatorMode": "--standard-types",
+    "generationCompleted": true,
+    "mockExecutionSelected": false,
+    "COrRustWireExecutionQualifiedByThisRun": false
+  },
+  "independentWholeFileComparison": {
+    "legacySourceMatchesFirstRetainedGeneration": true,
+    "changes": [
+      "uint32 identifier to uint32_t",
+      "uint64 identifier to uint64_t",
+      "AEEStdDef.h header include to stdint.h"
+    ],
+    "files": [
+      {
+        "name": "htp_iface.h",
+        "legacyBytes": 7889,
+        "legacySha256": "3b02ce54c600a685c0699ddf6d9384daf32d17d968507322f0560279b6ccd656",
+        "standardBytes": 7920,
+        "standardSha256": "84e34d52796581fd2e6ebe236e65e4980bd3c6633325f6a81774f24924baa038",
+        "uint32TypeReplacements": 12,
+        "uint64TypeReplacements": 5,
+        "headerIncludeReplacements": 1,
+        "onlyDocumentedTypeAndIncludeChanges": true
+      },
+      {
+        "name": "htp_iface_stub.c",
+        "legacyBytes": 16931,
+        "legacySha256": "8d5b65aec8130cf9017e4b6c98b5534ade42c37b197b21a31122d802ca1bb725",
+        "standardBytes": 16963,
+        "standardSha256": "3ea8854291ef82fa5e87e4a0d1cdec45b558941774b157995e085a6e1560fe92",
+        "uint32TypeReplacements": 11,
+        "uint64TypeReplacements": 5,
+        "headerIncludeReplacements": 0,
+        "onlyDocumentedTypeAndIncludeChanges": true
+      },
+      {
+        "name": "htp_iface_skel.c",
+        "legacyBytes": 20188,
+        "legacySha256": "56f456e821a5fe703117688fcf90c21d313438b7f66447b87e1cbfcf551dab44",
+        "standardBytes": 20248,
+        "standardSha256": "b517ef6f7b895bc42133cac2b97258bd1d0618c1b47b84c878d10d616f6e541d",
+        "uint32TypeReplacements": 20,
+        "uint64TypeReplacements": 10,
+        "headerIncludeReplacements": 0,
+        "onlyDocumentedTypeAndIncludeChanges": true
+      }
+    ],
+    "wireLayoutFixtureChanged": false,
+    "RustExpectedVectorChanged": false,
+    "runtimeValidationProvided": false
+  }
+}

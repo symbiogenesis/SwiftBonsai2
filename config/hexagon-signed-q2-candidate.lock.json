@@ -637,6 +637,97 @@
           "name": "qaic",
           "bytes": 12077520,
           "sha256": "3055e6ee3c7fce0d12dd910a3cc63768ab5c0c47bd730754b42969e2ce81c31a"
+        },
+        "legacyCCompileObservation": {
+          "runId": "41170405233",
+          "observation": "docs/evidence/hexagon-public-qaic-41170405233/provenance.json",
+          "compiled": false,
+          "mockExecuted": false,
+          "rustComparisonExecuted": false,
+          "failureScope": "legacy-type-names-with-pinned-modern-public-headers; not-driver-or-device-refusal"
+        },
+        "standardTypesGenerationObservation": {
+          "runId": "41171073546",
+          "observation": "docs/evidence/hexagon-public-qaic-41171073546/provenance.json",
+          "generationCompleted": true,
+          "wholeFilesReviewed": true,
+          "changesOnlyDocumentedTypesAndInclude": true,
+          "wireFixtureChanged": false,
+          "mockExecutionSelected": false,
+          "sdkEquivalenceQualified": false,
+          "generatedFiles": [
+            {
+              "name": "htp_iface.h",
+              "bytes": 7920,
+              "sha256": "84e34d52796581fd2e6ebe236e65e4980bd3c6633325f6a81774f24924baa038",
+              "copyrightMarkerPresent": false,
+              "bsdClearIdentifierPresent": false
+            },
+            {
+              "name": "htp_iface_skel.c",
+              "bytes": 20248,
+              "sha256": "b517ef6f7b895bc42133cac2b97258bd1d0618c1b47b84c878d10d616f6e541d",
+              "copyrightMarkerPresent": false,
+              "bsdClearIdentifierPresent": false
+            },
+            {
+              "name": "htp_iface_stub.c",
+              "bytes": 16963,
+              "sha256": "3ea8854291ef82fa5e87e4a0d1cdec45b558941774b157995e085a6e1560fe92",
+              "copyrightMarkerPresent": false,
+              "bsdClearIdentifierPresent": false
+            }
+          ]
+        },
+        "reviewedPublicWireGenerationMode": "--standard-types; public-control-only-not-exact-SDK-build-recipe",
+        "observedSelectedGhcRuntime": {
+          "reportedLibdir": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/lib",
+          "selectedToolRoot": "/usr/local/.ghcup/ghc/9.10.3",
+          "scope": "selected-installation-compiler/runtime-executable-candidates; not-complete-tool-or-OS-closure",
+          "scanTruncated": false,
+          "entriesObserved": 13143,
+          "candidates": [
+            {
+              "name": "ghc-9.10.3",
+              "bytes": 424,
+              "sha256": "d7f38f57cb9dd5586966d5935c8ea32b468d7ca66eddbc20bff41d526fb0f3f6",
+              "path": "/usr/local/.ghcup/ghc/9.10.3/bin/ghc-9.10.3",
+              "discoveredAs": "/usr/local/.ghcup/ghc/9.10.3/bin/ghc",
+              "elfExecutable": false
+            },
+            {
+              "name": "ghc-iserv-ghc-9.10.3",
+              "bytes": 31046688,
+              "sha256": "1c894bf7d2142900373fc661d2b8349e373c7f8a437fc25fefca6378bfeb7809",
+              "path": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-ghc-9.10.3",
+              "discoveredAs": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-ghc-9.10.3",
+              "elfExecutable": true
+            },
+            {
+              "name": "ghc-iserv-dyn-ghc-9.10.3",
+              "bytes": 18528,
+              "sha256": "1abcfef202051e2c765ce7fbb3c4b8fad80bcff59c431ce8417ec4d64aa1426f",
+              "path": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-dyn-ghc-9.10.3",
+              "discoveredAs": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-dyn",
+              "elfExecutable": true
+            },
+            {
+              "name": "ghc-iserv-prof-ghc-9.10.3",
+              "bytes": 52701920,
+              "sha256": "d08a52c19d7dd19fad063c4300e7baf4646e30bec152ddced8dcdd18070ed99e",
+              "path": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-prof-ghc-9.10.3",
+              "discoveredAs": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-prof-ghc-9.10.3",
+              "elfExecutable": true
+            },
+            {
+              "name": "ghc-9.10.3",
+              "bytes": 2123392,
+              "sha256": "560b354d05aa626c66f6d9ef04139c3746e4000acaf272667c393ce86336a45f",
+              "path": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-9.10.3",
+              "discoveredAs": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc",
+              "elfExecutable": true
+            }
+          ]
         }
       },
       "sdkBuildIdlRecipeIdentity": {

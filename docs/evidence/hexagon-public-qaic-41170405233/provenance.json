@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "kind": "curated-public-QAIC-legacy-C-compile-refusal",
+  "runUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41170405233",
+  "runId": "41170405233",
+  "runnerRevision": "1676c188e1305a188f63dc0a349ef55f4cdcacac",
+  "artifact": {
+    "id": 13030757854,
+    "name": "hexagon-public-qaic-41170405233-1",
+    "bytes": 120377,
+    "digest": "sha256:7ca8f4b3ede542246babdc0c0e3bd8455052a8b8a8f053ff92b0c48d34274d42",
+    "metadataUrl": "https://api.github.com/repos/symbiogenesis/SwiftBonsai2Runner/actions/artifacts/13030757854",
+    "digestSource": "independently-read-GitHub-Actions-artifact-metadata",
+    "artifactZipDigestLocallyVerified": false
+  },
+  "retainedFiles": [
+    {
+      "path": "host.json",
+      "artifactPath": "host.json",
+      "bytes": 23836,
+      "sha256": "e404519835191609aa9da5d10142c5cbf0c60db7f0c42a67e0e43085fbb1d2f9",
+      "artifactBytesPreserved": true,
+      "role": "curated-observation-data"
+    },
+    {
+      "path": "wire-compile.log",
+      "artifactPath": "wire-compile.log",
+      "bytes": 29227,
+      "sha256": "d9c5999c50714406076f6459170332119fa7e28ddac4b1815bfa220eed3c6fa1",
+      "artifactBytesPreserved": true,
+      "role": "curated-observation-data"
+    },
+    {
+      "path": "licenses/LICENSE-QAIC.txt",
+      "copiedFrom": "docs/evidence/hexagon-public-qaic-41169481882/inputs-and-notices/LICENSE-QAIC.txt",
+      "bytes": 1689,
+      "sha256": "3a15c06f7c0f8e38e884e0a20e739fe0d92c1ac0996928af4ab119170603d1f8",
+      "originalLicenseBytesPreserved": true,
+      "matchesSameRunArtifactLicense": true
+    },
+    {
+      "path": "licenses/LICENSE-FastRPC.txt",
+      "copiedFrom": "docs/evidence/hexagon-public-qaic-41169481882/inputs-and-notices/LICENSE-FastRPC.txt",
+      "bytes": 1565,
+      "sha256": "683e80f5436e6b0761139e626d2c764870ea0ed19b14916ef4c82772b99c4d44",
+      "originalLicenseBytesPreserved": true,
+      "matchesSameRunArtifactLicense": true
+    },
+    {
+      "path": "licenses/LICENSE-llama.cpp.txt",
+      "copiedFrom": "docs/evidence/hexagon-public-qaic-41169481882/inputs-and-notices/LICENSE-llama.cpp.txt",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "originalLicenseBytesPreserved": true,
+      "matchesSameRunArtifactLicense": true
+    }
+  ],
+  "hostedSourceVerification": [
+    {
+      "path": "tools/hexagon/public_qaic_oracle.py",
+      "gitBlobSha256": "3fe99f2e62f516b31f2428e4903d2cbe17db7aa632608b47116930823a6cb3a1",
+      "hostedSha256": "3fe99f2e62f516b31f2428e4903d2cbe17db7aa632608b47116930823a6cb3a1",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public-qaic.lock.json",
+      "gitBlobSha256": "89e6de5b5e2d334e6d9d6ed926893e2f80a135e42de6d13a05fda0f54ddb56dd",
+      "hostedSha256": "89e6de5b5e2d334e6d9d6ed926893e2f80a135e42de6d13a05fda0f54ddb56dd",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public_qaic_wire.py",
+      "gitBlobSha256": "cd893f31729ff2e0deab2c1219bdb130d199f783f97c268d231052b1e74ca161",
+      "hostedSha256": "cd893f31729ff2e0deab2c1219bdb130d199f783f97c268d231052b1e74ca161",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public_qaic_wire.c",
+      "gitBlobSha256": "a3d8ca46afe5bdf58690a58f243ad917fe97d68c879f67a02a257f24725fc0bb",
+      "hostedSha256": "a3d8ca46afe5bdf58690a58f243ad917fe97d68c879f67a02a257f24725fc0bb",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public-qaic-wire.expected.json",
+      "gitBlobSha256": "de50944e2eab9c56eab0544a42c2754c421e4bdcb5cae20ac52294981aa3e552",
+      "hostedSha256": "de50944e2eab9c56eab0544a42c2754c421e4bdcb5cae20ac52294981aa3e552",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    }
+  ],
+  "selection": "host receipt and compile refusal OR reviewed three generated-source files, licenses/notices only; other bootstrap logs omitted",
+  "sharedOriginalInputAndTemplateNotices": "docs/evidence/hexagon-public-qaic-41169481882/provenance.json",
+  "scope": "public source/control data only; no SDK equivalence, Windows ABI, device ownership or numerical admission",
+  "sdkExecutableUsed": false,
+  "sdkImportsUsed": false,
+  "deviceCodeLoaded": false,
+  "profileEligible": false,
+  "observed": {
+    "outcome": "failed",
+    "stage": "mock-wire-compile",
+    "compileExitCode": 1,
+    "mockExecuted": false,
+    "rustComparisonExecuted": false,
+    "diagnostic": "pinned-public-modern-header-set-lacks-generated-default-legacy-uint32-and-uint64-names; no-device-refusal"
+  }
+}

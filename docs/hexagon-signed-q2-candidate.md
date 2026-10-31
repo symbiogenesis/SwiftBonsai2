@@ -297,6 +297,30 @@ marshalling bytes, Rust replay, equivalence to SDK6.7 imports/tool and the exact
 signed-module build remain separate gates. A declaration or generated C function
 signature does not authorize device invocation.
 
+The [first C compile attempt](evidence/hexagon-public-qaic-41170405233/provenance.json),
+run 41170405233, stopped before mock execution. The generated default-mode header
+used legacy `uint32`/`uint64` names absent from the pinned modern public header set;
+GCC reported unknown types. The retained host receipt and compile log preserve
+that refusal, compiler identities and exact inputs. No C mock or Rust comparison
+ran, and this host compilation failure supplies no driver or device diagnosis.
+
+The separately retained [standard-types generation](evidence/hexagon-public-qaic-41171073546/provenance.json),
+run 41171073546, used the documented `--standard-types` option and deliberately
+selected no mock execution. Its header is 7,920 bytes, host stub 16,963 bytes and
+skeleton 20,248 bytes. Independent whole-file comparison against the original
+retained generation confirms only `uint32` to `uint32_t`, `uint64` to `uint64_t`
+and the header's `AEEStdDef.h` to `stdint.h` include change. The 48-byte wire
+fixture and independent Rust expectation remain unchanged. These captured files
+are immutable `.txt` data with their exact raw hashes, original licenses and
+shared input/template-notice provenance. This review qualifies the generation
+mode and source differences; later C capture and Rust execution require their
+own passing receipt and still cannot establish SDK/public or device equivalence.
+
+The later receipts also identify the selected installation's 2,123,392-byte GHC
+ELF compiler and runtime executable candidates, alongside the original launcher.
+That improves the recorded tool identity while retaining the explicit limit:
+the complete toolchain and operating-system closure is not established.
+
 The pinned public compiler's
 [BSD-3-Clause-Clear license](https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/LICENSE.txt)
 permits redistribution subject to its notice/conditions requirements and excludes

@@ -1,0 +1,205 @@
+In file included from /home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:3:
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:228:4: error: unknown type name ‘uint32’
+  228 |    uint32 events[8];
+      |    ^~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:83: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                   ^~~~~~
+      |                                                                                   uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:99: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                   ^~~~~~
+      |                                                                                                   uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:120: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                        ^~~~~~
+      |                                                                                                                        uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:134: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                                      ^~~~~~
+      |                                                                                                                                      uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:148: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                                                    ^~~~~~
+      |                                                                                                                                                    uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:166: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                                                                      ^~~~~~
+      |                                                                                                                                                                      uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:183: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                                                                                       ^~~~~~
+      |                                                                                                                                                                                       uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:262:82: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  262 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_mmap)(remote_handle64 _h, uint32 fd, uint64 size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                  ^~~~~~
+      |                                                                                  uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:262:93: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  262 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_mmap)(remote_handle64 _h, uint32 fd, uint64 size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                             ^~~~~~
+      |                                                                                             uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:263:84: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  263 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_munmap)(remote_handle64 _h, uint32 fd) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                    ^~~~~~
+      |                                                                                    uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:264:86: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  264 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_profiler)(remote_handle64 _h, uint32 mode, const htp_iface_pmu_conf* pmu) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                      ^~~~~~
+      |                                                                                      uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:265:81: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  265 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_etm)(remote_handle64 _h, uint32 enable) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                 ^~~~~~
+      |                                                                                 uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:266:84: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  266 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_hwinfo)(remote_handle64 _h, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                    ^~~~~~
+      |                                                                                    uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:266:103: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  266 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_hwinfo)(remote_handle64 _h, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                       ^~~~~~
+      |                                                                                                       uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:266:118: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  266 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_hwinfo)(remote_handle64 _h, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                      ^~~~~~
+      |                                                                                                                      uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:266:133: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  266 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_hwinfo)(remote_handle64 _h, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                                     ^~~~~~
+      |                                                                                                                                     uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:318:84: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  318 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_start)(remote_handle64 _handle, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                    ^~~~~~
+      |                                                                                    uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:318:100: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  318 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_start)(remote_handle64 _handle, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                                    ^~~~~~
+      |                                                                                                    uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:318:121: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  318 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_start)(remote_handle64 _handle, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                                                         ^~~~~~
+      |                                                                                                                         uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:318:135: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  318 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_start)(remote_handle64 _handle, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                                                                       ^~~~~~
+      |                                                                                                                                       uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:318:149: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  318 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_start)(remote_handle64 _handle, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                                                                                     ^~~~~~
+      |                                                                                                                                                     uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:318:167: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  318 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_start)(remote_handle64 _handle, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                                                                                                       ^~~~~~
+      |                                                                                                                                                                       uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:318:184: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  318 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_start)(remote_handle64 _handle, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                                                                                                                        ^~~~~~
+      |                                                                                                                                                                                        uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:349:83: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  349 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_mmap)(remote_handle64 _handle, uint32 fd, uint64 size) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                   ^~~~~~
+      |                                                                                   uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:349:94: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  349 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_mmap)(remote_handle64 _handle, uint32 fd, uint64 size) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                              ^~~~~~
+      |                                                                                              uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:366:85: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  366 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_munmap)(remote_handle64 _handle, uint32 fd) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                     ^~~~~~
+      |                                                                                     uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:384:87: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  384 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_profiler)(remote_handle64 _handle, uint32 mode, const htp_iface_pmu_conf* pmu) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                       ^~~~~~
+      |                                                                                       uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:388:82: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  388 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_etm)(remote_handle64 _handle, uint32 enable) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                  ^~~~~~
+      |                                                                                  uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:410:85: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  410 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_hwinfo)(remote_handle64 _handle, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                     ^~~~~~
+      |                                                                                     uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:410:104: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  410 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_hwinfo)(remote_handle64 _handle, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                                        ^~~~~~
+      |                                                                                                        uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:410:119: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  410 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_hwinfo)(remote_handle64 _handle, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                                                       ^~~~~~
+      |                                                                                                                       uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:410:134: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  410 | __QAIC_STUB_EXPORT AEEResult __QAIC_STUB(htp_iface_hwinfo)(remote_handle64 _handle, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_STUB_ATTRIBUTE {
+      |                                                                                                                                      ^~~~~~
+      |                                                                                                                                      uint
+In file included from /home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/wire-public-inputs/public_qaic_wire.c:9:
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:228:4: error: unknown type name ‘uint32’
+  228 |    uint32 events[8];
+      |    ^~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:83: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                   ^~~~~~
+      |                                                                                   uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:99: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                   ^~~~~~
+      |                                                                                                   uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:120: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                        ^~~~~~
+      |                                                                                                                        uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:134: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                                      ^~~~~~
+      |                                                                                                                                      uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:148: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                                                    ^~~~~~
+      |                                                                                                                                                    uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:166: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                                                                      ^~~~~~
+      |                                                                                                                                                                      uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:183: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32 sess_id, uint64 dsp_queue_id, uint32 n_hvx, uint32 n_hmx, uint64 vtcm_size, uint64 max_vmem, uint32 power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                                                                                       ^~~~~~
+      |                                                                                                                                                                                       uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:262:82: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  262 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_mmap)(remote_handle64 _h, uint32 fd, uint64 size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                  ^~~~~~
+      |                                                                                  uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:262:93: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  262 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_mmap)(remote_handle64 _h, uint32 fd, uint64 size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                             ^~~~~~
+      |                                                                                             uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:263:84: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  263 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_munmap)(remote_handle64 _h, uint32 fd) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                    ^~~~~~
+      |                                                                                    uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:264:86: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  264 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_profiler)(remote_handle64 _h, uint32 mode, const htp_iface_pmu_conf* pmu) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                      ^~~~~~
+      |                                                                                      uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:265:81: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  265 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_etm)(remote_handle64 _h, uint32 enable) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                 ^~~~~~
+      |                                                                                 uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:266:84: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  266 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_hwinfo)(remote_handle64 _h, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                    ^~~~~~
+      |                                                                                    uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:266:103: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  266 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_hwinfo)(remote_handle64 _h, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                       ^~~~~~
+      |                                                                                                       uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:266:118: error: unknown type name ‘uint32’; did you mean ‘uint’?
+  266 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_hwinfo)(remote_handle64 _h, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                      ^~~~~~
+      |                                                                                                                      uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:266:133: error: unknown type name ‘uint64’; did you mean ‘uint’?
+  266 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_hwinfo)(remote_handle64 _h, uint32* n_threads, uint32* n_hvx, uint32* n_hmx, uint64* vtcm_size) __QAIC_HEADER_ATTRIBUTE;
+      |                                                                                                                                     ^~~~~~
+      |                                                                                                                                     uint
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/wire-public-inputs/public_qaic_wire.c: In function ‘main’:
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/wire-public-inputs/public_qaic_wire.c:111:24: warning: implicit declaration of function ‘htp_iface_start’; did you mean ‘htp_iface_stop’? [-Wimplicit-function-declaration]
+  111 |     int start_result = htp_iface_start(handle,
+      |                        ^~~~~~~~~~~~~~~
+      |                        htp_iface_stop
