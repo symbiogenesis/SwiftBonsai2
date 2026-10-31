@@ -54,10 +54,15 @@ parity does not close those integration gates. Preserve the captured Windows
 ARM64 MSVC exceptional-float behavior when qualifying other compiler versions.
 
 Run the hosted owning-crate Release analyzer, documentation and integration checks
-after the standard-library decoding, Philox, typed-block and HTTP-framing changes.
-Focused local decoding, captured Philox/tokenizer, projection and header-fragment
-checks pass; the source-bound speech/UI checks do not replace full native linking
-or the application acceptance gates above.
+after the standard-library decoding/owned-buffer, signedness, typed-block,
+C-string URI and HTTP-framing changes, including the diagnostic/transcript
+collection updates. Focused local decoding/ownership, signed seed/thread bounds,
+packed replay/rejection, session metadata and exact rejection-header checks pass,
+alongside the retained captured Philox/tokenizer and header-fragment controls.
+These source-bound checks do not replace full native linking, owning UI tests
+or the application acceptance gates above. The CPU-policy Release analyzer passes;
+the bounded local broker/tooling analyzer attempt timed out draining output,
+leaving its result pending.
 
 The Rust PTQ1 DLL collector also needs the hosted source-bound build/test bundle
 and main-only numerical workflow. Its pinned-DLL probe and complete 369-record
