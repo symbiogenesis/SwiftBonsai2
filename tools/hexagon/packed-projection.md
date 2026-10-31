@@ -115,8 +115,10 @@ reject. Packed weights remain row-major; each Q8_K group consumes two original
 PQ2 blocks. Q8_K records follow weights with their original scale, 256 codes and
 sixteen signed i16 sums. No native struct layout or padding crosses this boundary.
 
-`TileSource` prepares activations once and replaces one caller-owned staging
-vector per work unit. Its input has already passed the graph's CPU transform.
+`TileSource` prepares activations once and lends each payload from one source-owned
+staging vector. The slice prevents source reuse or destruction during synchronous
+consumption; asynchronous device consumers still need independently verified
+ownership through completion. Its input has already passed the graph's CPU transform.
 The receiver derives the exact expected tile from the admitted geometry and
 sequence, compares every header byte and checks exact payload length before
 accessing records. Unknown versions, changed flags or geometry, duplicates,

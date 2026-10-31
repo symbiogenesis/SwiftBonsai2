@@ -110,6 +110,7 @@ pub struct TileSource<'a> {
     activation: Vec<u8>,
     sequence: usize,
     failed: bool,
+    staging: Vec<u8>,
 }
 
 impl<'a> TileSource<'a> {
@@ -124,34 +125,34 @@ impl<'a> TileSource<'a> {
             activation: prepare_q8k(input)?,
             sequence: 0,
             failed: false,
+            staging: Vec::new(),
         })
     }
 
-    /// Replace one caller-owned staging vector with the next complete payload.
+    /// Lend the next complete payload from one reusable source-owned allocation.
     ///
-    /// `false` means every work unit was produced. Cancellation or malformed
-    /// scales terminally close this source and leave staging empty. The caller
-    /// must finish device consumption before reusing staging in a future transport.
-    /// This synchronous encoder provides no asynchronous lifetime guarantee.
+    /// `None` means every work unit was produced. Cancellation or malformed
+    /// scales terminally close this source and clear staging. The borrow prevents
+    /// another payload or source destruction until synchronous consumption ends.
+    /// An asynchronous transport must separately retain ownership until verified
+    /// completion; this slice alone provides no DMA lifetime guarantee.
     pub fn next_payload(
         &mut self,
-        staging: &mut Vec<u8>,
         continue_work: impl FnOnce() -> bool,
-    ) -> Result<bool, Error> {
-        staging.clear();
-        let result = self.encode(staging, continue_work);
-        if result.is_err() {
-            staging.clear();
-            self.failed = true;
+    ) -> Result<Option<&[u8]>, Error> {
+        self.staging.clear();
+        match self.encode(continue_work) {
+            Ok(true) => Ok(Some(&self.staging)),
+            Ok(false) => Ok(None),
+            Err(error) => {
+                self.staging.clear();
+                self.failed = true;
+                Err(error)
+            }
         }
-        result
     }
 
-    fn encode(
-        &mut self,
-        staging: &mut Vec<u8>,
-        continue_work: impl FnOnce() -> bool,
-    ) -> Result<bool, Error> {
+    fn encode(&mut self, continue_work: impl FnOnce() -> bool) -> Result<bool, Error> {
         if self.failed {
             return Err(Error::Protocol);
         }
@@ -164,10 +165,10 @@ impl<'a> TileSource<'a> {
         let header = header(self.plan, self.sequence, tile)?;
         let row_bytes = tile.groups * 2 * PQ2_BYTES;
         let extent = HEADER_BYTES + tile.rows * row_bytes + tile.groups * Q8K_BYTES;
-        staging
+        self.staging
             .try_reserve_exact(extent)
             .map_err(|_| Error::Allocation)?;
-        staging.extend_from_slice(&header);
+        self.staging.extend_from_slice(&header);
         for row in tile.row..tile.row + tile.rows {
             let start = (row * self.plan.columns / 256 + tile.group) * 2 * PQ2_BYTES;
             let packed = &self.weights[start..start + row_bytes];
@@ -177,9 +178,9 @@ impl<'a> TileSource<'a> {
             for block in blocks {
                 half(block)?;
             }
-            staging.extend_from_slice(packed);
+            self.staging.extend_from_slice(packed);
         }
-        staging.extend_from_slice(
+        self.staging.extend_from_slice(
             &self.activation[tile.group * Q8K_BYTES..(tile.group + tile.groups) * Q8K_BYTES],
         );
         self.sequence += 1;
@@ -355,16 +356,15 @@ mod tests {
             super::super::tiled_projection(plan, &weights, &input, &mut reference, || true)?;
             let mut source = TileSource::new(plan, &weights, &input)?;
             let mut receiver = TileReceiver::new(plan)?;
-            let mut staging = Vec::new();
             let mut count = 0;
             let mut traffic = 0;
-            while source.next_payload(&mut staging, || true)? {
+            while let Some(staging) = source.next_payload(|| true)? {
                 assert!(staging.len() <= plan.wire_ledger().maximum_payload_bytes);
-                receiver.accept(&staging, || true)?;
+                receiver.accept(staging, || true)?;
                 count += 1;
                 traffic += staging.len();
             }
-            assert!(staging.is_empty());
+            assert!(source.staging.is_empty());
             assert_eq!(count, plan.wire_ledger().tile_count);
             assert_eq!(traffic, plan.wire_ledger().total_payload_transfer_bytes);
             let mut output = vec![42.0];
@@ -407,11 +407,11 @@ mod tests {
             activation,
             sequence: 0,
             failed: false,
+            staging: Vec::new(),
         };
-        let mut payload = Vec::new();
-        assert!(source.next_payload(&mut payload, || true)?);
+        let payload = source.next_payload(|| true)?.ok_or(Error::Protocol)?;
         let mut receiver = TileReceiver::new(plan)?;
-        receiver.accept(&payload, || true)?;
+        receiver.accept(payload, || true)?;
         let mut output = Vec::new();
         receiver.finish(&mut output, || true)?;
         assert_eq!(output[0].to_bits(), 0xc1f9_0b01);
@@ -424,12 +424,20 @@ mod tests {
         let plan = Plan::new(512, 3, 2, 1, 1 << 20)?;
         let weights = weights(plan);
         let mut source = TileSource::new(plan, &weights, &[1.0; 512])?;
-        let mut first = Vec::new();
-        let mut second = Vec::new();
-        let mut third = Vec::new();
-        assert!(source.next_payload(&mut first, || true)?);
-        assert!(source.next_payload(&mut second, || true)?);
-        assert!(source.next_payload(&mut third, || true)?);
+        // Corruption fixtures deliberately retain independent copies. Ordinary
+        // synchronous replay above consumes each borrowed payload directly.
+        let first = source
+            .next_payload(|| true)?
+            .ok_or(Error::Protocol)?
+            .to_vec();
+        let second = source
+            .next_payload(|| true)?
+            .ok_or(Error::Protocol)?
+            .to_vec();
+        let mut third = source
+            .next_payload(|| true)?
+            .ok_or(Error::Protocol)?
+            .to_vec();
         for offset in 0..HEADER_BYTES {
             let mut corrupted = first.clone();
             corrupted[offset] ^= 0x80;
@@ -487,23 +495,16 @@ mod tests {
         let plan = Plan::new(256, 2, 2, 1, 1 << 20)?;
         let weights = weights(plan);
         let mut source = TileSource::new(plan, &weights, &[1.0; 256])?;
-        let mut staging = vec![42];
-        assert_eq!(
-            source.next_payload(&mut staging, || false),
-            Err(Error::Cancelled)
-        );
-        assert!(staging.is_empty());
-        assert_eq!(
-            source.next_payload(&mut staging, || true),
-            Err(Error::Protocol)
-        );
+        assert_eq!(source.next_payload(|| false), Err(Error::Cancelled));
+        assert!(source.staging.is_empty());
+        assert_eq!(source.next_payload(|| true), Err(Error::Protocol));
         let mut source = TileSource::new(plan, &weights, &[1.0; 256])?;
-        assert!(source.next_payload(&mut staging, || true)?);
+        let staging = source.next_payload(|| true)?.ok_or(Error::Protocol)?;
         for stop in 0..3 {
             let mut calls = 0;
             let mut receiver = TileReceiver::new(plan)?;
             assert_eq!(
-                receiver.accept(&staging, || {
+                receiver.accept(staging, || {
                     calls += 1;
                     calls != stop + 1
                 }),
@@ -514,7 +515,7 @@ mod tests {
             assert!(output.is_empty());
         }
         let mut receiver = TileReceiver::new(plan)?;
-        receiver.accept(&staging, || true)?;
+        receiver.accept(staging, || true)?;
         let mut output = vec![42.0];
         assert_eq!(
             receiver.finish(&mut output, || false),
@@ -524,6 +525,30 @@ mod tests {
         let receiver = TileReceiver::new(plan)?;
         assert_eq!(receiver.finish(&mut output, || true), Err(Error::Protocol));
         assert!(output.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn lending_source_reuses_storage_and_clears_rejected_partial_payloads() -> Result<(), Error> {
+        let plan = Plan::new(256, 2, 1, 1, 4096)?;
+        let mut weights = weights(plan);
+        {
+            let mut source = TileSource::new(plan, &weights, &[1.0; 256])?;
+            let first = source.next_payload(|| true)?.ok_or(Error::Protocol)?;
+            let pointer = first.as_ptr();
+            let length = first.len();
+            let second = source.next_payload(|| true)?.ok_or(Error::Protocol)?;
+            assert_eq!(second.as_ptr(), pointer);
+            assert_eq!(second.len(), length);
+            assert!(source.next_payload(|| true)?.is_none());
+            assert!(source.staging.is_empty());
+        }
+        weights[2 * PQ2_BYTES..2 * PQ2_BYTES + 2].copy_from_slice(&0x7c00_u16.to_le_bytes());
+        let mut source = TileSource::new(plan, &weights, &[1.0; 256])?;
+        assert!(source.next_payload(|| true)?.is_some());
+        assert_eq!(source.next_payload(|| true), Err(Error::Nonfinite));
+        assert!(source.staging.is_empty());
+        assert_eq!(source.next_payload(|| true), Err(Error::Protocol));
         Ok(())
     }
 }
