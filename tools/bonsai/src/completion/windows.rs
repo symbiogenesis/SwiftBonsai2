@@ -53,6 +53,7 @@ struct Request {
     required_available_bytes: u64,
     physical_reserve_bytes: u64,
     timeout_seconds: u64,
+    total_timeout_seconds: Option<u64>,
     stdout_limit_bytes: Option<u64>,
     stderr_limit_bytes: Option<u64>,
     require_nonempty_stdout: bool,
@@ -70,6 +71,9 @@ impl Request {
         if self.schema_version != 1
             || self.memory_limit_bytes == 0
             || !(1..=3600).contains(&self.timeout_seconds)
+            || self
+                .total_timeout_seconds
+                .is_some_and(|seconds| !(1..=240).contains(&seconds))
             || self.physical_reserve_bytes > self.required_available_bytes
             || self.artifacts.len() > 256
             || self.arguments.len() > 4096
@@ -149,7 +153,67 @@ fn validate_ci() -> Result<()> {
     Ok(())
 }
 
-fn verify_artifact(artifact: &Artifact, parent: &ParentProcess) -> Result<VerifiedFile> {
+struct Budget {
+    started: Instant,
+    total: Option<Duration>,
+}
+
+impl Budget {
+    fn new(seconds: Option<u64>) -> Self {
+        Self {
+            started: Instant::now(),
+            total: seconds.map(Duration::from_secs),
+        }
+    }
+
+    fn ensure(&self, reserve: Duration) -> Result<()> {
+        if self
+            .total
+            .is_some_and(|total| self.started.elapsed().saturating_add(reserve) >= total)
+        {
+            return Err(
+                "Complete native operation budget is exhausted; no further sample may start."
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+
+    #[test]
+    fn aggregate_budget_charges_elapsed_work_and_reserves_owned_teardown() -> Result<()> {
+        let started = Instant::now()
+            .checked_sub(Duration::from_secs(20))
+            .ok_or("Cannot construct elapsed-work fixture.")?;
+        let budget = Budget {
+            started,
+            total: Some(Duration::from_secs(40)),
+        };
+        assert!(budget.ensure(Duration::from_secs(1)).is_ok());
+        assert!(budget.ensure(Duration::from_secs(21)).is_err());
+        let exhausted = Budget {
+            started,
+            total: Some(Duration::from_secs(10)),
+        };
+        assert!(exhausted.ensure(Duration::ZERO).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn absent_aggregate_budget_preserves_existing_per_sample_only_calls() {
+        assert!(Budget::new(None).ensure(Duration::MAX).is_ok());
+    }
+}
+
+fn verify_artifact(
+    artifact: &Artifact,
+    parent: &ParentProcess,
+    budget: &Budget,
+) -> Result<VerifiedFile> {
     if artifact.bytes == 0
         || artifact.sha256.len() != 64
         || !artifact.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -161,7 +225,7 @@ fn verify_artifact(artifact: &Artifact, parent: &ParentProcess) -> Result<Verifi
         &artifact.path,
         artifact.bytes,
         &artifact.sha256.to_ascii_lowercase(),
-        || verification_checkpoint(parent, &mut checked),
+        || verification_checkpoint(parent, &mut checked, budget),
     )
     .map_err(|error| error.to_string())?;
     parent.ensure_alive().map_err(|error| error.to_string())?;
@@ -171,8 +235,12 @@ fn verify_artifact(artifact: &Artifact, parent: &ParentProcess) -> Result<Verifi
 fn verification_checkpoint(
     parent: &ParentProcess,
     checked: &mut Instant,
+    budget: &Budget,
 ) -> std::result::Result<(), ArtifactError> {
     if checked.elapsed() >= INTERVAL {
+        budget
+            .ensure(STOP_TIMEOUT)
+            .map_err(|_| ArtifactError::Cancelled)?;
         parent
             .ensure_alive()
             .map_err(|_| ArtifactError::Cancelled)?;
@@ -204,6 +272,7 @@ fn save(path: &Path, receipt: &Value) -> Result<()> {
 }
 
 fn execute(request: &Request, receipt: &mut Value) -> Result<()> {
+    let budget = Budget::new(request.total_timeout_seconds);
     let parent = ParentProcess::open(
         request.parent_process_id,
         request.parent_creation_time_file_time,
@@ -214,8 +283,10 @@ fn execute(request: &Request, receipt: &mut Value) -> Result<()> {
         .runtime
         .as_ref()
         .map(|spec| {
-            VerifiedRuntime::verify_with(spec, || verification_checkpoint(&parent, &mut checked))
-                .map_err(|error| error.to_string())
+            VerifiedRuntime::verify_with(spec, || {
+                verification_checkpoint(&parent, &mut checked, &budget)
+            })
+            .map_err(|error| error.to_string())
         })
         .transpose()?;
     if let Some(runtime) = &runtime {
@@ -228,7 +299,7 @@ fn execute(request: &Request, receipt: &mut Value) -> Result<()> {
     let _guards: Vec<VerifiedFile> = request
         .artifacts
         .iter()
-        .map(|artifact| verify_artifact(artifact, &parent))
+        .map(|artifact| verify_artifact(artifact, &parent, &budget))
         .collect::<Result<_>>()?;
     if let Some(samples) = &request.samples {
         receipt["Samples"] = json!([]);
@@ -241,6 +312,7 @@ fn execute(request: &Request, receipt: &mut Value) -> Result<()> {
                 &sample.evidence_directory,
                 &parent,
                 &mut captured,
+                &budget,
             );
             if captured["ModelProcessStarted"] == true {
                 receipt["ModelProcessStarted"] = json!(true);
@@ -270,6 +342,7 @@ fn execute(request: &Request, receipt: &mut Value) -> Result<()> {
         &request.evidence_directory,
         &parent,
         receipt,
+        &budget,
     )
 }
 
@@ -279,7 +352,11 @@ fn execute_one(
     evidence_directory: &Path,
     parent: &ParentProcess,
     receipt: &mut Value,
+    budget: &Budget,
 ) -> Result<()> {
+    // Charge verification and earlier samples before admitting the next full
+    // sample deadline, one watchdog interval and bounded owned teardown.
+    budget.ensure(Duration::from_secs(request.timeout_seconds) + STOP_TIMEOUT + INTERVAL)?;
     if request.observe_cpu_conditions {
         receipt["CpuConditions"] = json!({
             "Before": crate::host_cpu::run(&json!({}))?,
@@ -291,6 +368,7 @@ fn execute_one(
         return Err("Available physical memory changed before native operation admission.".into());
     }
     parent.ensure_alive().map_err(|error| error.to_string())?;
+    budget.ensure(Duration::from_secs(request.timeout_seconds) + STOP_TIMEOUT + INTERVAL)?;
     let spec = ProcessSpec {
         executable: request.executable.clone(),
         arguments: arguments.iter().map(OsString::from).collect(),
@@ -304,7 +382,7 @@ fn execute_one(
     let process =
         OwnedProcess::start(&spec).map_err(|error| format!("Start owned process: {error}"))?;
     receipt["ModelProcessStarted"] = json!(true);
-    let result = supervise(request, &spec, &process, parent, start, receipt);
+    let result = supervise(request, &spec, &process, parent, start, receipt, budget);
     if let Ok(peak) = process.peak_job_memory_bytes() {
         receipt["PeakJobMemoryBytes"] = json!(peak);
     }
@@ -349,6 +427,7 @@ fn supervise(
     parent: &ParentProcess,
     start: Instant,
     receipt: &mut Value,
+    budget: &Budget,
 ) -> Result<Option<String>> {
     let mut minimum = receipt["MinimumAvailablePhysicalBytes"]
         .as_u64()
@@ -356,6 +435,7 @@ fn supervise(
     let mut memory = super::memory::Observation::new(request.observe_output_progress);
     receipt["ProcessMemory"] = memory.receipt(INTERVAL);
     let exit = loop {
+        budget.ensure(STOP_TIMEOUT + INTERVAL)?;
         parent.ensure_alive().map_err(|error| error.to_string())?;
         if let Some(exit) = process
             .wait_for_exit(INTERVAL)
@@ -482,6 +562,9 @@ pub(super) fn run(value: Value) -> Result<Value> {
         "SchemaVersion": 1, "Status": "running", "ModelProcessStarted": false,
         "EvidenceDirectory": request.evidence_directory,
     });
+    if let Some(seconds) = request.total_timeout_seconds {
+        receipt["TotalTimeoutSeconds"] = json!(seconds);
+    }
     match execute(&request, &mut receipt) {
         Ok(()) => {
             receipt["Status"] = json!("completed");

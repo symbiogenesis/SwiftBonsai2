@@ -97,6 +97,34 @@ fn batch_preserves_outputs_and_retains_verified_inputs() -> Result<()> {
 }
 
 #[test]
+fn aggregate_budget_refuses_a_sample_without_full_deadline_and_teardown_room() -> Result<()> {
+    let (lane, mut request) = fixture("aggregate-budget")?;
+    request["totalTimeoutSeconds"] = json!(20);
+    let error = bonsai_tools::completion::run(request)
+        .err()
+        .ok_or("Expected budget rejection.")?;
+    assert!(error.contains("budget is exhausted"));
+    let receipt: Value = serde_json::from_slice(&fs::read(lane.join("supervision.json"))?)?;
+    assert_eq!(receipt["Status"], "failed");
+    assert_eq!(receipt["ModelProcessStarted"], false);
+    assert_eq!(receipt["TotalTimeoutSeconds"], 20);
+    assert!(!lane.join("stdout.txt").exists());
+    Ok(())
+}
+
+#[test]
+fn aggregate_budget_rejects_zero_and_over_owner_limit() -> Result<()> {
+    let (lane, request) = fixture("invalid-aggregate-budget")?;
+    for seconds in [0, 241] {
+        let mut invalid = request.clone();
+        invalid["totalTimeoutSeconds"] = json!(seconds);
+        assert!(bonsai_tools::completion::run(invalid).is_err());
+    }
+    assert!(!lane.join("supervision.json").exists());
+    Ok(())
+}
+
+#[test]
 fn cpu_conditions_are_retained_per_sample_through_failed_sample() -> Result<()> {
     let (lane, mut request) = fixture("cpu-conditions")?;
     let mut samples = Vec::new();
