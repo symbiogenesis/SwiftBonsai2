@@ -14,7 +14,7 @@ NoSpeechModels disables automatic speech setup. Models load only when used.
 NativeEngine explicitly selects the pinned Rust runtime. Original PQ2 remains
 the weight default; UseRepackedPtq1 selects the verified current-weight export.
 NativeRowWorkers selects one or four workers; four requires NativeEngine and
-the reviewed 0.1.9 runtime. One remains the default.
+the reviewed 0.1.9 or 0.1.10 runtime. One remains the default.
 NoAbliterateLora explicitly omits the approved adapter. Selection is not promotion.
 .EXAMPLE
 ./scripts/Start-Chat.ps1 -UseRepackedPtq1

@@ -1896,7 +1896,7 @@ fn pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget() {
     let runtime_lock =
         serde_json::from_str::<Value>(include_str!("../../../config/prism-inference.lock.json"))
             .unwrap();
-    assert_eq!(runtime_lock["version"], "0.1.9");
+    assert_eq!(runtime_lock["version"], "0.1.10");
     let data = env::var_os("BONSAI_NATIVE_DATA").unwrap();
     let evidence = env::var_os("BONSAI_NATIVE_EVIDENCE").unwrap();
     let evidence = Path::new(&evidence);

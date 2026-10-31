@@ -132,7 +132,7 @@ fn release(input: &str) -> Result<ReleasePin, LaunchError> {
 }
 
 fn row_workers_supported(version: &str, workers: u8) -> Result<(), LaunchError> {
-    if workers == 1 || (workers == 4 && version == "0.1.9") {
+    if workers == 1 || (workers == 4 && matches!(version, "0.1.9" | "0.1.10")) {
         Ok(())
     } else {
         Err(LaunchError::Artifacts)
@@ -214,17 +214,28 @@ mod tests {
     #[test]
     fn four_row_workers_require_the_reviewed_parallel_release() {
         assert!(row_workers_supported("0.1.8", 1).is_ok());
-        assert!(row_workers_supported("0.1.9", 1).is_ok());
-        assert!(row_workers_supported("0.1.9", 4).is_ok());
-        for version in ["0.1.8", "0.1.10", "0.1.9-dev", "", "latest"] {
+        for version in ["0.1.9", "0.1.10"] {
+            assert!(row_workers_supported(version, 1).is_ok());
+            assert!(row_workers_supported(version, 4).is_ok());
+            for workers in [0, 2, 3, 5, 16, 255] {
+                assert_eq!(
+                    row_workers_supported(version, workers),
+                    Err(LaunchError::Artifacts)
+                );
+            }
+        }
+        for version in [
+            "0.1.8",
+            "0.1.11",
+            "0.1.9-dev",
+            "0.1.10-dev",
+            "v0.1.10",
+            "0.1.10.0",
+            "",
+            "latest",
+        ] {
             assert_eq!(
                 row_workers_supported(version, 4),
-                Err(LaunchError::Artifacts)
-            );
-        }
-        for workers in [0, 2, 3, 5, 16, 255] {
-            assert_eq!(
-                row_workers_supported("0.1.9", workers),
                 Err(LaunchError::Artifacts)
             );
         }
