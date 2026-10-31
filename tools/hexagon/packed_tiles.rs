@@ -317,7 +317,7 @@ fn validate_activations(blocks: &[[u8; Q8K_BYTES]]) -> Result<(), Error> {
         for group in 0..16 {
             let sum: i16 = block[4 + group * 16..4 + (group + 1) * 16]
                 .iter()
-                .map(|&byte| i16::from(i8::from_ne_bytes([byte])))
+                .map(|&byte| i16::from(byte.cast_signed()))
                 .sum();
             if block[260 + group * 2..262 + group * 2] != sum.to_le_bytes() {
                 return Err(Error::Protocol);

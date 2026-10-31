@@ -231,7 +231,7 @@ fn specials(
         if let Some(key) = metadata.find(name.as_ref()) {
             let bits = metadata.u32_value(key)?;
             reject_stage(6)?;
-            let id = i32::from_le_bytes(bits.to_le_bytes());
+            let id = bits.cast_signed();
             #[cfg(test)]
             tests::SPECIAL_IDS.with(|ids| ids.borrow_mut().push(id));
             owner.add_special_id(id)?;

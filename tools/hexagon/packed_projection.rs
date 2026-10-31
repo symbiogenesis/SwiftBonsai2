@@ -202,12 +202,12 @@ pub fn prepare_q8k(input: &[f32]) -> Result<Vec<u8>, Error> {
                 .map_err(|_| Error::Nonfinite)?
                 - 0x0040_0000;
             let code = i8::try_from(integer.min(127)).map_err(|_| Error::Nonfinite)?;
-            *destination = code.to_ne_bytes()[0];
+            *destination = code.cast_unsigned();
         }
         for group in 0..16 {
             let sum: i16 = block[4 + group * 16..4 + (group + 1) * 16]
                 .iter()
-                .map(|&byte| i16::from(i8::from_ne_bytes([byte])))
+                .map(|&byte| i16::from(byte.cast_signed()))
                 .sum();
             block[260 + group * 2..262 + group * 2].copy_from_slice(&sum.to_le_bytes());
         }
@@ -257,7 +257,7 @@ fn packed_sum(packed: &[u8], activation: &[u8]) -> i32 {
     for (&byte, group) in packed.iter().zip(activation.as_chunks::<4>().0) {
         for (lane, &value) in group.iter().enumerate() {
             let weight = i32::from((byte >> (lane * 2)) & 3) - 1;
-            sum += weight * i32::from(i8::from_ne_bytes([value]));
+            sum += weight * i32::from(value.cast_signed());
         }
     }
     sum

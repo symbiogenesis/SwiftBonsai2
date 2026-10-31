@@ -116,7 +116,7 @@ fn signs(metadata: &Metadata) -> Result<(Vec<u8>, String)> {
         // extracting the first width's lossless i8 representation for the CPU.
         hash.update(i32::from(value).to_le_bytes());
         if index < COLUMNS {
-            output.push(value.to_ne_bytes()[0]);
+            output.push(value.cast_unsigned());
         }
     }
     Ok((output, hex(hash.finalize())))

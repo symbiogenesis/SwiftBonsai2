@@ -39,7 +39,7 @@ impl CpuThreads {
         }
         // Match the pinned Windows C++ unsigned-to-int cast, including its
         // two's-complement interpretation, before the signed division by two.
-        let logical_threads = c_int::from_ne_bytes(logical_threads.to_ne_bytes());
+        let logical_threads = logical_threads.cast_signed();
         (logical_threads / 2).max(1)
     }
 }

@@ -184,9 +184,7 @@ fn active_scheme() -> io::Result<String> {
     // Success transfers one LocalFree-owned GUID allocation to the caller.
     let result = unsafe { PowerGetActiveScheme(ptr::null_mut(), &raw mut allocation) };
     if result != 0 {
-        return Err(io::Error::from_raw_os_error(i32::from_ne_bytes(
-            result.to_ne_bytes(),
-        )));
+        return Err(io::Error::from_raw_os_error(result.cast_signed()));
     }
     if allocation.is_null() {
         return Err(io::Error::new(
