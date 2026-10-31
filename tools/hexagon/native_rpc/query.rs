@@ -37,6 +37,22 @@ fn run() -> Result<String, hexagon_native_rpc::Error> {
         let location = DriverLocation::inspect_system()?;
         return Ok(format!("{{\"schemaVersion\":1,\"kind\":\"native-fastrpc-inspection\",\"driverDll\":{},\"driverLoaded\":false,\"dspCodeLoaded\":false,\"profileEligible\":false}}", quote(&location.path().to_string_lossy())));
     }
+    let forbidden = ["ADSP_", "CDSP_", "FASTRPC_", "RPCMEM_", "GGML_", "GENIEX_", "QNN_", "QAIRT_", "HEXAGON_"];
+    if std::env::vars_os().any(|(name, _)| {
+        let name = name.to_string_lossy().to_ascii_uppercase();
+        forbidden.iter().any(|prefix| name.starts_with(prefix))
+    }) { return Err(hexagon_native_rpc::Error::InheritedOverride); }
+    if arguments[0] == "--mapping-probe" {
+        let driver = Driver::open_system()?;
+        let driver_path = driver.path().to_string_lossy().into_owned();
+        let report = driver.scratch_mapping_probe()?;
+        let raw = |value: Option<i32>| value.map_or_else(|| String::from("null"), |value| value.to_string());
+        return Ok(format!("{{\"schemaVersion\":1,\"kind\":\"native-fastrpc-mapping-probe\",\"driverDll\":{},\"passed\":{},\"stage\":{},\"bytes\":{},\"domain\":3,\"heapId\":25,\"allocationFlags\":1,\"mapFlags\":0,\"allocationSucceeded\":{},\"descriptorObserved\":{},\"descriptorError\":{},\"cpuRoundtripVerified\":{},\"mappingAttempted\":{},\"mappingResult\":{},\"unmappingResult\":{},\"freeCompleted\":{},\"poisoned\":{},\"ownerPinnedUntilExit\":{},\"implicitSessionMayOpen\":true,\"customDspModuleLoaded\":false,\"dmaExecuted\":false,\"computeExecuted\":false,\"sessionTeardownVerified\":false,\"profileEligible\":false}}",
+            quote(&driver_path), report.completed_mapping_cycle(), quote(report.stage), report.bytes,
+            report.allocation_succeeded, report.descriptor_observed, raw(report.descriptor_error),
+            report.cpu_roundtrip_verified, report.mapping_attempted, raw(report.mapping_result),
+            raw(report.unmapping_result), report.free_completed, report.poisoned, report.owner_pinned_until_exit));
+    }
     if arguments[0] != "--query" { return Err(hexagon_native_rpc::Error::Contract); }
     let mut driver = Driver::open_system()?;
     let driver_path = driver.path().to_string_lossy().into_owned();

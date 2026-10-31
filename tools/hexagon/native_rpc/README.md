@@ -2,9 +2,10 @@
 
 This std-only Rust boundary queries the installed Qualcomm Windows driver
 directly. It has no ggml, GenieX, QNN or C/C++ inference-library dependency. Its
-only vendor call is `remote_handle_control(DSPRPC_GET_DSP_INFO, ...)` for domain
-3 and eight fixed read-only capability attributes. It cannot submit a kernel,
-allocate RPC memory, open a DSP module, enable unsigned processes or alter power.
+ordinary vendor call is `remote_handle_control(DSPRPC_GET_DSP_INFO, ...)` for
+domain 3 and eight fixed read-only attributes. A separate terminal probe uses
+the fixed allocator/registration APIs described below. Neither path submits a
+kernel, opens a custom DSP module, enables unsigned processes or alters power.
 
 `lib.rs` provides a safe API around the isolated audited `windows.rs` boundary.
 It resolves the fixed `qcnspmcdm` SCM service with query-only rights, derives
@@ -15,6 +16,10 @@ writes/deletion through cached, no-UI Authenticode verification, restricted DLL
 loading, every completed query and unload. Dependency search is limited to the
 driver directory and System32. The session is deliberately neither Send nor
 Sync, and no raw export pointer escapes the safe API.
+A process-wide nonblocking mutex lease also permits only one native owner across
+all threads and independently created driver objects. Contention or poisoning
+rejects immediately. That lease covers unload/file close and remains pinned with
+the terminal mapping owner, so an old query cannot race a new mapping session.
 
 Cached Authenticode acceptance is not a publisher pin, fresh revocation check,
 installed-kernel acceptance or device qualification. The trusted supervisor must
@@ -33,6 +38,28 @@ one of the following arguments:
   loading it, for independent signature/hash checks.
 - `--query`: verifies/loads that fixed vendor driver and records each query's
   native success/value or failure. Missing values remain null and unknown.
+- `--mapping-probe`: consumes one driver/process admission for a fixed 4096-byte
+  system-heap allocation, descriptor lookup, CPU byte check, static domain-3
+  registration, matching unmap and free. It never submits or reads DSP work.
+
+Before driver loading, the query/mapping CLI rejects inherited names beginning
+with `ADSP_`, `CDSP_`, `FASTRPC_`, `RPCMEM_`, `GGML_`, `GENIEX_`, `QNN_`,
+`QAIRT_` or `HEXAGON_`, regardless of case. It logs no names/values and mutates
+no environment. The trusted library caller and supervisor own the corresponding
+child-environment policy; these restrictions do not change the parent process.
+
+The terminal probe uses heap ID 25, cached allocation flags 1, offset 0, length
+4096 and `FASTRPC_MAP_STATIC=0`. The public vendor header documents that mapping
+may implicitly open a domain session. There is no explicit remote-handle,
+module-open or unsigned-process call. A successful host allocation proves no
+registration; registration proves no DSP visibility, DMA64, DMA or compute.
+The report keeps all returned codes and completed steps separate. Mapping and
+unmapping failures pin the uncertain allocation, DLL and deny-mutation file
+guard until the supervising process dies. No native free or DLL unload follows
+uncertain use. Every later driver open/query/probe in that process rejects.
+Normal completion unregisters and frees the scratch, but every mapping attempt
+retains its DLL/file owner until supervised process death. Complete implicit-session
+teardown and failure recovery remain unqualified.
 
 The architecture decoder follows the pinned ggml low-byte packed-decimal
 interpretation, but rejects invalid nibbles and zero; raw values remain in the
