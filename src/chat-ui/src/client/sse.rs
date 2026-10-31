@@ -29,6 +29,7 @@ struct Framer {
     dispatched: bool,
 }
 
+#[derive(Clone, Copy)]
 struct Frame<'a> {
     data: &'a [u8],
     event: &'a [u8],
