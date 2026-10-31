@@ -20,8 +20,8 @@ const fn words(value: u64) -> [u32; 2] {
 
 fn block(mut counter: [u32; 4], mut key: [u32; 2]) -> [u32; 4] {
     for round in 0..10 {
-        let [low0, high0] = words(u64::from(MULTIPLIERS[0]) * u64::from(counter[0]));
-        let [low1, high1] = words(u64::from(MULTIPLIERS[1]) * u64::from(counter[2]));
+        let (low0, high0) = MULTIPLIERS[0].carrying_mul(counter[0], 0);
+        let (low1, high1) = MULTIPLIERS[1].carrying_mul(counter[2], 0);
         counter = [
             high1 ^ counter[1] ^ key[0],
             low1,
