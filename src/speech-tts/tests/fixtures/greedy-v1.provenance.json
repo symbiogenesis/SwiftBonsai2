@@ -1,7 +1,24 @@
 {
   "schema_version": 1,
   "source_capture": "sampling-v1.provenance.json",
-  "purpose": "Native std::max_element first-maximum and greedy dump observations over each nonempty original sampling case, before suppression.",
+  "purpose": "Native optimized ARM64 std::max_element and greedy dump observations over each nonempty original sampling case, before suppression.",
+  "observed_standard_library": {
+    "implementation": "Microsoft STL 14.51.36231, Windows ARM64 optimized float max_element",
+    "license_identity": "Copyright (c) Microsoft Corporation; Apache-2.0 WITH LLVM-exception. No implementation source is copied into the Rust policy.",
+    "header": {
+      "path": "VC/Tools/MSVC/14.51.36231/include/xutility",
+      "sha256_raw_bytes": "44344065c26095b03a7228d2c733d41532ae99a56bbadf052baba64d22e39a9d",
+      "dispatch": "_Max_element_unchecked -> _Max_element_vectorized -> __std_max_element_f_"
+    },
+    "native_implementation": {
+      "path": "VC/Tools/MSVC/14.51.36231/crt/src/stl/vector_algorithms.cpp",
+      "sha256_raw_bytes": "7e39c776775ce3b6aeebe34750a55fed5fad092233b892fe3199fdb0b6bceb80",
+      "functions": "_Traits_f_base, _Traits_f_neon, _Minmax_element_impl, _Minmax_element_disp"
+    },
+    "float_configuration": "Capture used /fp:precise. Vector float minmax remains enabled by default without _M_FP_EXCEPT.",
+    "mechanism": "Scalar initial maximum is negative infinity. Complete four-float vectors use NaN-propagating vmaxq_f32 and vmaxvq_f32; any NaN in that vector prefix prevents committing its maximum. The remaining zero to three scalar tail entries are then compared against negative infinity, ignoring NaNs. Without a NaN in the vector prefix, the first equal maximum across prefix and tail is returned. If no candidate exceeds negative infinity, the original first index is returned.",
+    "scope": "The private c_int vocabulary bound is below the implementation's 2^32-vector portion-wrap boundary. This target-specific capture does not promise other targets or STL revisions have identical exceptional-value results. Owning hosted integration remains pending."
+  },
   "capture": {
     "cases": 714,
     "empty_cases_omitted": 8,

@@ -11,19 +11,44 @@
 //! `9812a8b428efffcfe3d832409f3eae092cb3be90bfeefbf141f75df0320e2241`.
 #![forbid(unsafe_code)]
 
-/// Select the first maximum using the pinned `std::max_element` comparisons.
+/// Select the captured Windows ARM64 MSVC 14.51 greedy maximum.
 ///
-/// Equal values retain the earlier token, a leading NaN remains selected, and
-/// later NaNs are ignored. Empty input returns zero without accessing storage.
+/// Ordinary maxima retain the first equal token. The native optimized float
+/// algorithm propagates any NaN across its complete four-lane vector prefix,
+/// discards that prefix and scans the remaining scalar tail from negative
+/// infinity. Its short-input scalar path also starts from negative infinity
+/// and ignores NaNs. Empty input returns zero without accessing storage.
+///
+/// This independently expressed scalar policy preserves the captured target
+/// behavior, including its exceptional-value results. The mechanism and exact
+/// local STL source identities are recorded in `greedy-v1.provenance.json`;
+/// broader compiler/target and owning-crate qualification remain separate gates.
 #[allow(
     clippy::redundant_pub_crate,
     reason = "Sampler policy is private to the speech crate and its native ABI module."
 )]
 pub(super) fn greedy_argmax(logits: &[f32]) -> usize {
+    // The private C ABI limits vocabulary to positive c_int, so the native
+    // 2^32-vector index-wrap portion boundary cannot be reached.
+    let vector_end = logits.len() / 4 * 4;
     let mut best = 0;
-    for (index, &candidate) in logits.iter().enumerate().skip(1) {
-        if logits[best] < candidate {
+    let mut maximum = f32::NEG_INFINITY;
+    let mut prefix_nan = false;
+    for (index, &candidate) in logits[..vector_end].iter().enumerate() {
+        prefix_nan |= candidate.is_nan();
+        if maximum < candidate {
+            maximum = candidate;
             best = index;
+        }
+    }
+    if prefix_nan {
+        best = 0;
+        maximum = f32::NEG_INFINITY;
+    }
+    for (offset, &candidate) in logits[vector_end..].iter().enumerate() {
+        if maximum < candidate {
+            maximum = candidate;
+            best = vector_end + offset;
         }
     }
     best
@@ -98,18 +123,54 @@ mod tests {
     use super::{greedy_argmax, repetition_penalty, suppress};
 
     #[test]
-    fn greedy_selection_retains_first_ties_and_pinned_nan_ordering() {
+    fn greedy_selection_retains_captured_arm64_ties_and_nan_boundaries() {
         let nan = f32::from_bits(0x7fc0_1234);
         for (logits, expected) in [
             (vec![], 0),
             (vec![nan], 0),
-            (vec![nan, f32::INFINITY], 0),
+            (vec![nan, f32::INFINITY], 1),
+            (vec![nan, 2.0, 1.0], 1),
             (vec![-0.0, 0.0], 0),
             (vec![0.0, -0.0], 0),
-            (vec![1.0, nan, 2.0, 2.0], 2),
+            (vec![1.0, nan, 2.0, 2.0], 0),
+            (vec![1.0, 2.0, 2.0, nan], 0),
+            (vec![1.0, 2.0, 2.0, 1.0, nan], 1),
+            (vec![1.0, nan, 2.0, 2.0, -5.0], 4),
+            (vec![1.0, nan, 2.0, 2.0, -5.0, -6.0], 4),
+            (vec![1.0, nan, 2.0, 2.0, -5.0, -6.0, -4.0], 6),
+            (vec![1.0, nan, 2.0, 2.0, -5.0, -6.0, -4.0, 7.0], 0),
+            (vec![1.0, nan, 2.0, 2.0, -5.0, -6.0, -4.0, 7.0, -8.0], 8),
+            (vec![nan; 3], 0),
+            (vec![nan; 4], 0),
+            (vec![nan; 7], 0),
+            (vec![nan; 8], 0),
+            (vec![nan; 9], 0),
             (vec![f32::NEG_INFINITY; 3], 0),
+            (vec![f32::NEG_INFINITY; 4], 0),
+            (vec![f32::NEG_INFINITY; 7], 0),
+            (
+                vec![
+                    f32::NEG_INFINITY,
+                    nan,
+                    f32::NEG_INFINITY,
+                    f32::NEG_INFINITY,
+                    f32::NEG_INFINITY,
+                ],
+                0,
+            ),
+            (vec![-0.0, 0.0, -1.0, -2.0, 0.0], 0),
             (
                 vec![f32::NEG_INFINITY, f32::INFINITY, nan, f32::INFINITY],
+                0,
+            ),
+            (
+                vec![
+                    f32::NEG_INFINITY,
+                    f32::INFINITY,
+                    0.0,
+                    f32::INFINITY,
+                    f32::INFINITY,
+                ],
                 1,
             ),
         ] {
