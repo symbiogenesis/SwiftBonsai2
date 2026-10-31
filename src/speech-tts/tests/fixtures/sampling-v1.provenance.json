@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "purpose": "Immutable native masking and repetition observations; replay never compiles or launches a native oracle.",
+  "source": {
+    "repository": "https://github.com/ServeurpersoCom/qwentts.cpp",
+    "revision": "5916bf7c79dbb4e66fc059cdc507a79a23a28bb4",
+    "path": "src/sampling.h",
+    "license_file": "../../LICENSE.qwen-core",
+    "bytes_normalized_lf": 6906,
+    "sha256_normalized_lf": "9812a8b428efffcfe3d832409f3eae092cb3be90bfeefbf141f75df0320e2241"
+  },
+  "retired_reference": {
+    "repository": "https://github.com/symbiogenesis/SwiftBonsai2Runner",
+    "revision": "a5afa99bdf02302804ed7e5e50eee28fc527ba97",
+    "path": "src/speech-tts/tests/sampling_oracle.cpp",
+    "bytes_normalized_lf": 2063,
+    "sha256_normalized_lf": "edbd90e880282d6ac9f1ff50075d2abc76fd899f77edeffc5daf15a67ab892f5",
+    "executed_driver_bytes": 2515,
+    "executed_driver_sha256": "a34d8afb7edd3c9f46d4789f36541e339cfa46ffc35c57310739daaceca82b78",
+    "additional_greedy_probe_utf8": "        if (V > 0) {\n            float draw = 123.0f;\n            const int32_t greedy = sample_top_k_p(logits.data(), V, 0.0f, 0, 1.0f, 1.0f,\n                                                  history.data(), H, 0, 0, &draw);\n            if (std::fwrite(&greedy, sizeof(greedy), 1, stdout) != 1 ||\n                std::fwrite(&draw, sizeof(draw), 1, stdout) != 1) { std::fclose(input); return 8; }\n        }\n",
+    "additional_greedy_probe_position": "Immediately before the sole apply_suppress call; every other driver byte is unchanged.",
+    "unused_philox_dependency": "Abort-only stub; the stochastic sampler is not called.",
+    "unused_philox_stub_sha256": "298a5afb7a7ad1a45140a4c1b57ecc11b50bc1763ea21aff04bd0aae2c3bd32e"
+  },
+  "capture": {
+    "time_utc": "2026-10-31T02:56:06.007872+00:00",
+    "target": "aarch64-pc-windows-msvc",
+    "compiler_version": "clang version 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5)\nTarget: aarch64-pc-windows-msvc\nThread model: posix\nInstalledDir: C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\tools\\llvm-23.1.4-arm64\\clang+llvm-23.1.4-aarch64-pc-windows-msvc\\bin\nBuild config: +alloc:rpmalloc",
+    "compiler_executable_sha256": "d5487944bbd56cea6ac4fdde2496f58b32802a3276c24b32e231e0d72e2122c9",
+    "compiler_flags": [
+      "/nologo",
+      "/std:c++17",
+      "/EHsc",
+      "/W4",
+      "/WX",
+      "/O2",
+      "/fp:precise"
+    ],
+    "msvc_tools": "14.51.36231",
+    "windows_sdk": "10.0.26100.0",
+    "compile_exit_code": 0,
+    "oracle_exit_code": 0,
+    "expected_outputs_generated_by": "Unmodified pinned native header and original driver extended only with the recorded greedy probe; Rust output was not used.",
+    "cases": 722,
+    "edge_cases": 210,
+    "lcg_cases": 512,
+    "inputs_sha256": "466cf6ba39354931cc50cc65f15a79747ad7e9ce0dda1a3887c98476f0a3585b",
+    "output_bits_sha256": "55b8415088bc4611b7b5e3fdc95949315d1cfba376c617ca4a4520691a9c1217",
+    "output_words": 36540,
+    "models_loaded": false
+  },
+  "fixture": {
+    "file": "sampling-v1.bin",
+    "magic_hex": "42534d4676310000",
+    "version": 1,
+    "header_bytes": 16,
+    "records": 722,
+    "record_fields": [
+      "vocabulary:u32-le",
+      "history_count:u32-le",
+      "penalty_f32_bits:u32-le",
+      "low:i32-le",
+      "high:i32-le",
+      "keep:i32-le",
+      "logits_f32_bits:[u32-le;vocabulary]",
+      "history:[i32-le;history_count]",
+      "suppressed_f32_bits:[u32-le;vocabulary]",
+      "penalized_f32_bits:[u32-le;vocabulary]"
+    ],
+    "bytes": 306584,
+    "sha256": "0f758ee6c996b4c44ecb756b8664c6cc0bd17e60dc02da5f2db25970f6f4eb23"
+  },
+  "qualification_boundary": "Exact masking/repetition bit replay retains all original cases, including duplicate/invalid IDs, signed zeros and exceptional floats. The probability pipeline, hosted owning-crate integration and actual-model speech acceptance remain separate gates."
+}

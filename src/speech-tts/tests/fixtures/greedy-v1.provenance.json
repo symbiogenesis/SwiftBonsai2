@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "source_capture": "sampling-v1.provenance.json",
+  "purpose": "Native std::max_element first-maximum and greedy dump observations over each nonempty original sampling case, before suppression.",
+  "capture": {
+    "cases": 714,
+    "empty_cases_omitted": 8,
+    "temperature_f32_bits": "00000000",
+    "dump_initial_f32_bits": "42f60000",
+    "dump_expected_f32_bits": "bf800000",
+    "expected_outputs_generated_by": "Pinned sample_top_k_p greedy branch in the executed driver identified by sampling-v1.provenance.json; Rust output was not used."
+  },
+  "fixture": {
+    "file": "greedy-v1.bin",
+    "magic_hex": "4253474176310000",
+    "version": 1,
+    "header_bytes": 16,
+    "records": 714,
+    "record_fields": [
+      "vocabulary:u32-le",
+      "logits_f32_bits:[u32-le;vocabulary]",
+      "expected_token:i32-le",
+      "dump_u_f32_bits:u32-le"
+    ],
+    "bytes": 81664,
+    "sha256": "ffa6f1013c35bc8aa46a1be60eadc02d5badcdc7c7f97fb9c3af84bb67617ea7"
+  },
+  "qualification_boundary": "Empty-vocabulary behavior is a new Rust boundary assertion, not an observation from native std::max_element. Greedy capture does not qualify the stochastic probability pipeline."
+}
