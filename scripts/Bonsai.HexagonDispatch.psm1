@@ -1,0 +1,292 @@
+#requires -Version 7.6
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
+
+function Get-BonsaiHexagonDispatchPlan {
+    <# .SYNOPSIS
+    Describes the fixed supported-type access fixture without opening files or devices.
+    #>
+    [CmdletBinding()]
+    [OutputType([Collections.Specialized.OrderedDictionary])]
+    param([ValidateRange(1,240)][int]$MaximumSeconds = 120)
+    return [ordered]@{
+        SchemaVersion = 1; Kind = 'runner-hexagon-dispatch-plan'; MaximumSeconds = $MaximumSeconds
+        CleanupReserveSeconds = 75; ModelLoaded = $false; CpuFallbackAllowed = $false
+        OwnedJobRequired = $true; CatalogMemberVerificationRequired = $true
+        SourceBoundHostedFixtureRequired = $true; DriverInstallationAllowed = $false
+        Cases = @(@{ Columns = 128; Rows = 32; Batch = 1 }, @{ Columns = 128; Rows = 32; Batch = 32 })
+        Qualification = 'device-access-only'; ProfileEligible = $false
+    }
+}
+
+function Assert-BonsaiHexagonDispatchBuild {
+    <# .SYNOPSIS
+    Checks exact build/source identity without treating an asserted receipt as provenance.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory)][Collections.IDictionary]$Receipt,
+        [Parameter(Mandatory)][string]$ExpectedRunnerRevision,
+        [Parameter(Mandatory)][string]$SourceSha256,
+        [Parameter(Mandatory)][string]$LockSha256)
+    foreach ($digest in @($SourceSha256, $LockSha256)) {
+        if ($digest -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid dispatch source identity.' }
+    }
+    if ($ExpectedRunnerRevision -cnotmatch '^[a-f0-9]{40}$' -or
+        $Receipt.SchemaVersion -isnot [long] -and $Receipt.SchemaVersion -isnot [int] -or $Receipt.SchemaVersion -ne 1 -or
+        $Receipt.RunnerRevision -isnot [string] -or $Receipt.RunnerRevision -cne $ExpectedRunnerRevision -or
+        $Receipt.RustToolchain -isnot [string] -or $Receipt.RustToolchain -cne 'nightly-2026-10-22-aarch64-pc-windows-msvc' -or
+        $Receipt.SourceSha256 -isnot [string] -or $Receipt.SourceSha256 -cne $SourceSha256 -or
+        $Receipt.LockSha256 -isnot [string] -or $Receipt.LockSha256 -cne $LockSha256 -or
+        $Receipt.HostedBuild -isnot [bool] -or -not $Receipt.HostedBuild -or
+        $Receipt.Target -isnot [string] -or $Receipt.Target -cne 'aarch64-pc-windows-msvc' -or
+        $Receipt.CompilerIdentitySha256 -isnot [string] -or $Receipt.CompilerIdentitySha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        $Receipt.Executable -isnot [Collections.IDictionary]) { throw 'Dispatch fixture build identity differs from the trusted source selection.' }
+    $entry = $Receipt.Executable
+    if ($entry.Name -isnot [string] -or $entry.Name -cne 'hexagon-dispatch-fixture.exe' -or
+        $entry.Bytes -isnot [long] -and $entry.Bytes -isnot [int] -or
+        $entry.Bytes -le 0 -or $entry.Bytes -gt 16MB -or
+        $entry.Sha256 -isnot [string] -or $entry.Sha256 -cnotmatch '^[a-f0-9]{64}$') {
+        throw 'Invalid dispatch fixture executable identity.'
+    }
+}
+
+function Get-BonsaiHexagonDispatchEnvironment {
+    <# .SYNOPSIS
+    Returns the reviewed child-only environment removal and lookup policy.
+    #>
+    [CmdletBinding()]
+    [OutputType([Collections.Specialized.OrderedDictionary])]
+    param([Parameter(Mandatory)][string]$RuntimeDirectory, [Parameter(Mandatory)][string]$SystemDirectory)
+    return [ordered]@{
+        RemovePrefixes = @('GGML_', 'GENIEX_', 'QNN_', 'QAIRT_', 'HEXAGON_', 'ADSP_', 'CDSP_')
+        RemoveNames = @('ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_URL',
+            'GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNNER_INPUT_TOKEN', 'LD_LIBRARY_PATH', 'LD_PRELOAD')
+        Set = @{ PATH = $RuntimeDirectory + ';' + $SystemDirectory; ADSP_LIBRARY_PATH = $RuntimeDirectory }
+    }
+}
+
+function Get-BonsaiHexagonDispatchFixtureResult {
+    <# .SYNOPSIS
+    Requires explicit device dispatch and every numeric output rather than library presence.
+    #>
+    [CmdletBinding()]
+    [OutputType([Collections.IDictionary])]
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Json, [Parameter(Mandatory)][int]$ExitCode)
+    if ($Json.Length -gt 65536) { throw 'Dispatch fixture output exceeds its bound.' }
+    $record = ConvertFrom-Json -InputObject $Json -AsHashtable -NoEnumerate -DateKind String
+    if ($record -isnot [Collections.IDictionary] -or
+        $record.SchemaVersion -isnot [long] -and $record.SchemaVersion -isnot [int] -or $record.SchemaVersion -ne 1 -or
+        $record.Kind -isnot [string] -or $record.Kind -cne 'runner-hexagon-dispatch-fixture' -or
+        $record.SourceRevision -isnot [string] -or $record.SourceRevision -cne '94256114c229674ef96e76eb2dea596e65b43818' -or
+        $record.Outcome -isnot [string] -or $record.Outcome -cnotin @('passed', 'pending', 'failed') -or
+        $record.SelfTest -isnot [bool] -or $record.SelfTest -or
+        $record.DispatchEvidence -cne 'explicit-hexagon-compute-sync-and-full-output-oracle' -or
+        $record.SessionCleanup -cne 'supervised-process-exit-required' -or
+        $record.Stage -isnot [string] -or $record.Stage -cnotmatch '^[a-z][a-z0-9-]{0,63}$' -or
+        ($null -ne $record.Failure -and ($record.Failure -isnot [string] -or $record.Failure -cnotmatch '^[a-z][a-z0-9-]{0,95}$')) -or
+        $record.DeviceDispatchVerified -isnot [bool] -or
+        $record.CpuFallbackAllowed -isnot [bool] -or $record.CpuFallbackAllowed -or
+        $record.ModelLoaded -isnot [bool] -or $record.ModelLoaded -or
+        $record.SwiftQualified -isnot [bool] -or $record.SwiftQualified -or
+        $record.ProfileEligible -isnot [bool] -or $record.ProfileEligible -or
+        $record.Cases -isnot [array] -or $record.Cases.Count -gt 2) {
+        throw 'Invalid dispatch fixture result contract.'
+    }
+    $expectedExit = switch -CaseSensitive ($record.Outcome) { 'passed' { 0 }; 'pending' { 2 }; 'failed' { 1 } }
+    if ($ExitCode -ne $expectedExit -or $record.DeviceDispatchVerified -ne ($record.Outcome -ceq 'passed')) {
+        throw 'Dispatch exit status and device result disagree.'
+    }
+    if ($record.Outcome -ceq 'passed') {
+        if ($record.Cases.Count -ne 2 -or $null -ne $record.Failure -or $record.BackendName -cne 'HTP0') { throw 'Dispatch did not complete both fixed numeric cases on HTP0.' }
+        $batches = [Collections.Generic.HashSet[int]]::new()
+        foreach ($case in $record.Cases) {
+            if ($case -isnot [Collections.IDictionary]) { throw 'Dispatch case must be an object.' }
+            foreach ($field in @('Columns', 'Rows', 'Batch', 'OutputValuesChecked')) {
+                if ($case[$field] -isnot [long] -and $case[$field] -isnot [int]) { throw 'Dispatch case requires exact integer extents.' }
+            }
+            if ($case.Columns -ne 128 -or $case.Rows -ne 32 -or
+                $case.Batch -notin @(1, 32) -or -not $batches.Add([int]$case.Batch) -or
+                $case.OutputValuesChecked -ne (32 * $case.Batch) -or
+                $case.MatmulParity -isnot [bool] -or -not $case.MatmulParity -or
+                $case.ExecutedOnHexagon -isnot [bool] -or -not $case.ExecutedOnHexagon) {
+                throw 'Dispatch fixture output lacks complete fixed-shape parity.'
+            }
+        }
+    }
+    return $record
+}
+
+function Get-BonsaiHexagonDispatchFile {
+    <# .SYNOPSIS
+    Holds exact checked file bytes against replacement until the diagnostic exits.
+    #>
+    [CmdletBinding()]
+    [OutputType([IO.FileStream])]
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][Collections.IDictionary]$Pin)
+    if ($Pin.bytes -isnot [long] -and $Pin.bytes -isnot [int] -or $Pin.bytes -le 0 -or $Pin.bytes -gt 128MB -or
+        $Pin.sha256 -isnot [string] -or $Pin.sha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid dispatch file pin.' }
+    $full = Resolve-ExternalPath $Path
+    $stream = [IO.FileStream]::new($full, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try {
+        if ($stream.Length -ne $Pin.bytes) { throw 'Dispatch file length differs from its pin.' }
+        $digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($stream)).ToLowerInvariant()
+        if ($digest -cne $Pin.sha256) { throw 'Dispatch file hash differs from its pin.' }
+        $stream.Position = 0
+        return $stream
+    } catch { $stream.Dispose(); throw }
+}
+
+function Read-BonsaiHexagonDispatchJson {
+    <# .SYNOPSIS
+    Reads one bounded JSON object from an already retained source or receipt handle.
+    #>
+    [CmdletBinding()]
+    [OutputType([Collections.IDictionary])]
+    param([Parameter(Mandatory)][IO.FileStream]$Stream)
+    if ($Stream.Length -le 0 -or $Stream.Length -gt 65536) { throw 'Dispatch metadata exceeds its byte bound.' }
+    $bytes = [byte[]]::new([int]$Stream.Length)
+    $Stream.Position = 0
+    $Stream.ReadExactly($bytes)
+    $json = [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
+    $value = ConvertFrom-Json -InputObject $json -AsHashtable -NoEnumerate -DateKind String -Depth 32
+    if ($value -isnot [Collections.IDictionary]) { throw 'Dispatch metadata must be a JSON object.' }
+    return $value
+}
+
+function Save-BonsaiHexagonDispatchWorkerReceipt {
+    <# .SYNOPSIS
+    Retains completed verification stages before a later dispatch can block or fail.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param([Parameter(Mandatory)][Collections.IDictionary]$Report, [Parameter(Mandatory)][string]$Path)
+    $temporary = $Path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+    $stream = [IO.FileStream]::new($temporary, 'CreateNew', 'Write', 'None')
+    try {
+        $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($Report | ConvertTo-Json -Depth 16) + "`n")
+        $stream.Write($bytes)
+        $stream.Flush($true)
+    } finally { $stream.Dispose() }
+    [IO.File]::Move($temporary, $Path, $true)
+}
+
+function Invoke-BonsaiHexagonDispatchWorker {
+    <# .SYNOPSIS
+    Verifies pinned files and catalog membership inside the parent's owned Job before dispatch.
+    #>
+    [CmdletBinding()]
+    [OutputType([Collections.Specialized.OrderedDictionary])]
+    param([Parameter(Mandatory)][Collections.IDictionary]$Request)
+    $holds = [Collections.Generic.List[IO.FileStream]]::new()
+    $report = [ordered]@{
+        SchemaVersion = 1; Kind = 'runner-hexagon-dispatch-worker'; Outcome = 'pending'; Stage = 'source-identity'
+        Failure = $null; CatalogMemberVerified = $false; DeviceDispatchVerified = $false; FixtureResult = $null
+        FixtureSha256 = $null; FixtureSourceSha256 = $null; LockSha256 = $null; SigntoolSha256 = $null
+        RuntimeFilesVerified = 0; SourceRevision = $Request.ExpectedRunnerRevision
+        ModelLoaded = $false; SwiftQualified = $false; ProfileEligible = $false; DriverInstalled = $false; TrustChanged = $false
+    }
+    try {
+        Save-BonsaiHexagonDispatchWorkerReceipt -Report $report -Path $Request.WorkerReceiptPath
+        $environment = Get-BonsaiHexagonDispatchEnvironment -RuntimeDirectory $Request.PackageDirectory -SystemDirectory ([Environment]::SystemDirectory)
+        foreach ($variable in @(Get-ChildItem Env:)) {
+            if ($environment.RemoveNames -contains $variable.Name -or @($environment.RemovePrefixes | Where-Object { $variable.Name.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count) {
+                [Environment]::SetEnvironmentVariable($variable.Name, $null, 'Process')
+            }
+        }
+        foreach ($name in $environment.Set.Keys) { [Environment]::SetEnvironmentVariable($name, $environment.Set[$name], 'Process') }
+        $lockStream = [IO.FileStream]::new($Request.LockPath, 'Open', 'Read', 'Read')
+        $holds.Add($lockStream)
+        $lock = Read-BonsaiHexagonDispatchJson -Stream $lockStream
+        $lockStream.Position = 0
+        $lockDigest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($lockStream)).ToLowerInvariant()
+        $report.LockSha256 = $lockDigest
+        if ($lock.schemaVersion -ne 1 -or $lock.ggmlCommit -cne '94256114c229674ef96e76eb2dea596e65b43818' -or
+            $lock.files -isnot [array] -or $lock.files.Count -lt 3 -or $lock.files.Count -gt 32 -or
+            $lock.catalog.name -cne 'libggml-htp.cat' -or $lock.catalog.member -cne 'libggml-htp-v81.so' -or
+            $lock.signtool -isnot [Collections.IDictionary]) { throw 'Invalid exact signed-runtime selection.' }
+        $sourceStream = [IO.FileStream]::new($Request.SourcePath, 'Open', 'Read', 'Read')
+        $holds.Add($sourceStream)
+        if ($sourceStream.Length -le 0 -or $sourceStream.Length -gt 1MB) { throw 'Dispatch source exceeds its byte bound.' }
+        $sourceDigest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($sourceStream)).ToLowerInvariant()
+        $report.FixtureSourceSha256 = $sourceDigest
+        $bundleEntries = @([IO.Directory]::EnumerateFileSystemEntries($Request.FixtureDirectory))
+        if ($bundleEntries.Count -ne 2) { throw 'The fixture bundle must contain exactly two pinned entries.' }
+        foreach ($bundleEntry in $bundleEntries) {
+            if ([IO.Path]::GetFileName($bundleEntry) -cnotin @('hexagon-dispatch-fixture.exe', 'fixture-build.json') -or
+                ([IO.File]::GetAttributes($bundleEntry) -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint))) {
+                throw 'The fixture bundle contains an unreviewed dependency or link.'
+            }
+        }
+        $receiptPath = Join-Path $Request.FixtureDirectory 'fixture-build.json'
+        $receiptStream = [IO.FileStream]::new($receiptPath, 'Open', 'Read', 'Read')
+        $holds.Add($receiptStream)
+        $receipt = Read-BonsaiHexagonDispatchJson -Stream $receiptStream
+        Assert-BonsaiHexagonDispatchBuild -Receipt $receipt -ExpectedRunnerRevision $Request.ExpectedRunnerRevision -SourceSha256 $sourceDigest -LockSha256 $lockDigest
+        $fixturePath = Join-Path $Request.FixtureDirectory 'hexagon-dispatch-fixture.exe'
+        $holds.Add((Get-BonsaiHexagonDispatchFile -Path $fixturePath -Pin @{ bytes = $receipt.Executable.Bytes; sha256 = $receipt.Executable.Sha256 }))
+        Assert-Arm64PE -Path $fixturePath
+        $report.FixtureSha256 = $receipt.Executable.Sha256
+        $report.Stage = 'runtime-identity'
+        Save-BonsaiHexagonDispatchWorkerReceipt -Report $report -Path $Request.WorkerReceiptPath
+        $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        [long]$totalBytes = 0
+        foreach ($pin in $lock.files) {
+            if ($pin -isnot [Collections.IDictionary] -or $pin.name -isnot [string] -or
+                $pin.name -cnotmatch '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$' -or -not $names.Add($pin.name)) {
+                throw 'Invalid or duplicate runtime filename.'
+            }
+            $holds.Add((Get-BonsaiHexagonDispatchFile -Path (Join-Path $Request.PackageDirectory $pin.name) -Pin $pin))
+            $totalBytes += $pin.bytes
+            if ($totalBytes -gt 256MB) { throw 'Runtime package exceeds the aggregate byte bound.' }
+            $report.RuntimeFilesVerified++
+        }
+        $seen = 0
+        foreach ($entry in [IO.Directory]::EnumerateFileSystemEntries($Request.PackageDirectory)) {
+            $seen++
+            if ($seen -gt 32 -or -not $names.Contains([IO.Path]::GetFileName($entry)) -or
+                ([IO.File]::GetAttributes($entry) -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint))) {
+                throw 'Runtime directory contains unpinned entries.'
+            }
+        }
+        if ($seen -ne $names.Count -or -not $names.Contains($lock.catalog.name) -or -not $names.Contains($lock.catalog.member)) {
+            throw 'Runtime directory omits a pinned catalog or DSP member.'
+        }
+        $report.Stage = 'catalog-verification'
+        Save-BonsaiHexagonDispatchWorkerReceipt -Report $report -Path $Request.WorkerReceiptPath
+        $holds.Add((Get-BonsaiHexagonDispatchFile -Path $Request.SigntoolPath -Pin $lock.signtool))
+        $report.SigntoolSha256 = $lock.signtool.sha256
+        # This checks the current SO against the current signed catalog. It does
+        # not install the catalog or infer installed driver deployment readiness.
+        $signature = Invoke-BonsaiNativeProcess -Executable $Request.SigntoolPath -ArgumentList @('verify', '/pa', '/v', '/c',
+            (Join-Path $Request.PackageDirectory $lock.catalog.name), (Join-Path $Request.PackageDirectory $lock.catalog.member)) -WorkingDirectory $Request.PackageDirectory -TimeoutSeconds 10
+        if ($signature.ExitCode -ne 0) { $report.Failure = 'catalog-membership-unverified'; return $report }
+        $report.CatalogMemberVerified = $true
+        $report.Stage = 'device-dispatch'
+        Save-BonsaiHexagonDispatchWorkerReceipt -Report $report -Path $Request.WorkerReceiptPath
+        # The surrounding worker already belongs to the owner's kill-on-close
+        # Job. The fixture inherits it before any DSP/runtime code can execute.
+        $fixture = Invoke-BonsaiNativeProcess -Executable $fixturePath -ArgumentList @('--runtime-directory', $Request.PackageDirectory) -WorkingDirectory $Request.PackageDirectory -TimeoutSeconds 0
+        if ($fixture.StandardError.Length -gt 65536) { throw 'Fixture diagnostics exceeded their bound.' }
+        $numeric = Get-BonsaiHexagonDispatchFixtureResult -Json $fixture.StandardOutput -ExitCode $fixture.ExitCode
+        $report.FixtureResult = $numeric
+        $report.Outcome = $numeric.Outcome
+        $report.Stage = $numeric.Stage
+        $report.Failure = $numeric.Failure
+        $report.DeviceDispatchVerified = $numeric.DeviceDispatchVerified
+    } catch {
+        # Stable stage names preserve a useful blocker without publishing provider,
+        # argument, local path or credential text from an arbitrary native error.
+        $report.Failure = $report.Stage + '-rejected'
+        $report.Outcome = 'pending'
+    } finally {
+        foreach ($stream in $holds) { $stream.Dispose() }
+        Save-BonsaiHexagonDispatchWorkerReceipt -Report $report -Path $Request.WorkerReceiptPath
+    }
+    return $report
+}
+
+Export-ModuleMember -Function Get-BonsaiHexagonDispatchPlan, Assert-BonsaiHexagonDispatchBuild, Get-BonsaiHexagonDispatchEnvironment, Get-BonsaiHexagonDispatchFixtureResult, Invoke-BonsaiHexagonDispatchWorker
