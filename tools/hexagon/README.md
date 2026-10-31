@@ -65,3 +65,8 @@ The [native Rust driver boundary](native_rpc/README.md) and
 questions. [Current evidence and execution commands](../../docs/hexagon-native-progress.md)
 describe the successful driver queries, scoped STATIC-mode refusal and hosted
 numeric-dispatch gate. Neither tool changes the production runtime.
+
+The separate [packed projection operation control](packed-projection.md) keeps
+original PQ2 blocks and pinned Swift Q8_K/FMA arithmetic in a bounded CPU tile
+schedule. Retained native captures, Walsh ordering and rollback controls prepare
+an oracle for future signed kernels; they establish no DSP execution or speedup.

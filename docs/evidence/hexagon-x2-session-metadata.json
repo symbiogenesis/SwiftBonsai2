@@ -1,0 +1,32 @@
+{
+  "SchemaVersion": 1,
+  "RunnerRevision": "d7eee0ab8c0dcf3fa4e6e0ab49c94f07f679a55f",
+  "RunId": "41162447956",
+  "ExecutableSha256": "1fcaf7e45d8c4fc3b179610b6b877db9532390b533267484f04d17db1764d6fc",
+  "DriverSha256": "5cf6aa86670cceb84461050ad00b012662e4859d15be2a1cf147d98d5002f37d",
+  "ExitCode": 0,
+  "OwnedJobTeardown": "confirmed-empty",
+  "Observation": {
+    "schemaVersion": 1,
+    "kind": "native-fastrpc-session-preparation",
+    "metadataPrepared": true,
+    "stage": "session-metadata-prepared",
+    "architectureRaw": 32897,
+    "architecture": 81,
+    "sessionId": 0,
+    "domainRequestId": 14,
+    "domainResult": 0,
+    "effectiveDomain": 3,
+    "uriRequestId": 15,
+    "uriResult": 0,
+    "uriVerified": true,
+    "driverLoaded": true,
+    "remoteModuleOpened": false,
+    "signedDeploymentVerified": false,
+    "mappingExecuted": false,
+    "computeExecuted": false,
+    "unsignedProcessRequested": false,
+    "profileEligible": false
+  },
+  "ProfileEligible": false
+}

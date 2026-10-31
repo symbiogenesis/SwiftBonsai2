@@ -1,0 +1,153 @@
+{
+  "SchemaVersion": 1,
+  "Kind": "hexagon-hosted-controls-and-bounded-X2-observations",
+  "ReviewDateLocal": "2026-10-30",
+  "HostedRun": {
+    "id": 41162447956,
+    "head_sha": "d7eee0ab8c0dcf3fa4e6e0ab49c94f07f679a55f",
+    "head_branch": "codex/hexagon-advance-integration-1030",
+    "event": "push",
+    "run_attempt": 1,
+    "status": "completed",
+    "conclusion": "success",
+    "html_url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41162447956"
+  },
+  "FixtureBuild": {
+    "SchemaVersion": 1,
+    "RunnerRevision": "d7eee0ab8c0dcf3fa4e6e0ab49c94f07f679a55f",
+    "RunId": "41162447956",
+    "RunAttempt": "1",
+    "RustToolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+    "Target": "aarch64-pc-windows-msvc",
+    "HostedBuild": true,
+    "CompilerIdentitySha256": "3d03c3c0e97a9e6a04bb31d7194e26147d4c2ef2fd6528725d47f94a21f32b23",
+    "SourceSha256": "1520f8d8bc3fedab62d6d9d9806f7ee9d8c61601f1536285bc103411205ea5fa",
+    "ManifestSha256": "66640ccb8231409d1f1a13348a325ae6e4c06b740a82c34855de742f806017be",
+    "LockSha256": "6d4e5d5378591a60cbcc22d3bfbfeb07b16fe77adbb2d6853548e4f81ba7acfc",
+    "Executable": {
+      "Name": "hexagon-dispatch-fixture.exe",
+      "Bytes": 177152,
+      "Sha256": "5da69f6787ea0597c19ebab64b5b41f7526ba147f40207dddaa46edcc518e5f7"
+    },
+    "DeviceCodeLoaded": false,
+    "DeviceExecutionQualified": false
+  },
+  "NativeBuild": {
+    "SchemaVersion": 1,
+    "RunnerRevision": "d7eee0ab8c0dcf3fa4e6e0ab49c94f07f679a55f",
+    "RunId": "41162447956",
+    "RustToolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+    "Target": "aarch64-pc-windows-msvc",
+    "CompilerIdentitySha256": "3d03c3c0e97a9e6a04bb31d7194e26147d4c2ef2fd6528725d47f94a21f32b23",
+    "SourceFiles": [
+      {
+        "Name": "lib.rs",
+        "Sha256": "cd83ac11a4c6a075c59475a0e4dd29bed05fa59cbc676724af1516590b06b777"
+      },
+      {
+        "Name": "windows.rs",
+        "Sha256": "2e913252733776aa14163e1046e9ccc0d1a20ac71bfd3a4ad4f6f46009c6ac9f"
+      },
+      {
+        "Name": "mapping.rs",
+        "Sha256": "7bf9d51ba11755107acb2ec1680f4201d95e8e96647a09dd804f5adbaf85c380"
+      },
+      {
+        "Name": "session.rs",
+        "Sha256": "1c62d21b73c74283607989211fd2eada0a134c54af69cb1bb8cffb5da3f39bec"
+      },
+      {
+        "Name": "session_native.rs",
+        "Sha256": "98441626c6caee13b03bbe55d87fab0fcf6080336549dca55ef4314f7861896a"
+      },
+      {
+        "Name": "query.rs",
+        "Sha256": "b66fdc64d0f8c90d54cfb1f2551bb8e0604b061b149b0de844ecb5cb86b5af86"
+      },
+      {
+        "Name": "sources.json",
+        "Sha256": "8b3d0ace3a5134209257c1bf321dcaf33010efbca259289bacc51250ced37b96"
+      }
+    ],
+    "ExecutableSha256": "1fcaf7e45d8c4fc3b179610b6b877db9532390b533267484f04d17db1764d6fc",
+    "DeviceCodeLoaded": false,
+    "DspCodeLoaded": false,
+    "ProfileEligible": false
+  },
+  "PackedBuild": {
+    "SchemaVersion": 1,
+    "RunnerRevision": "d7eee0ab8c0dcf3fa4e6e0ab49c94f07f679a55f",
+    "RunId": "41162447956",
+    "CompilerIdentitySha256": "3d03c3c0e97a9e6a04bb31d7194e26147d4c2ef2fd6528725d47f94a21f32b23",
+    "Target": "aarch64-pc-windows-msvc",
+    "SourceSha256": "14b6505aa7d48a9075a2e32a2064f15c7f373f57b55ffd959f5075125f035478",
+    "SourceFiles": [
+      {
+        "Name": "packed_projection.rs",
+        "Sha256": "14b6505aa7d48a9075a2e32a2064f15c7f373f57b55ffd959f5075125f035478"
+      },
+      {
+        "Name": "packed-sources.json",
+        "Sha256": "5cd291f9c3c3ba579e75c3fecac86b8439697af3df7c56870853e167696caab3"
+      },
+      {
+        "Name": "verify_packed_fixture.py",
+        "Sha256": "1a9482b0d9eb7e16b0a87115bc7b9aa708782ef34702b531c9d06121e5f7092a"
+      },
+      {
+        "Name": "fixtures/swift-q8k-parity.bin",
+        "Sha256": "86d985b8a60fde3241daeeb1712dac45a0cc8e4684ac962dcb488ef17bb1fba5"
+      },
+      {
+        "Name": "fixtures/swift-q8k-parity.json",
+        "Sha256": "e8dc5c41b5152b15ddcdf4b2fd4a5cb94133a6fe5fc3badeac233b92992a4383"
+      }
+    ],
+    "ExecutableSha256": "33e29db9fed8c4fc306dd22c65d1fab3bdfc942a5068cbc31c9c0c2ba1d84307",
+    "ExecutionBackend": "CPU-control-only",
+    "DspCodeLoaded": false,
+    "ProfileEligible": false
+  },
+  "HostedTests": {
+    "PackedOperationPassed": 7,
+    "NativeContractPassed": 8,
+    "PackedCaptureVerifier": "passed",
+    "LayoutPreflightDispatchPolicy": "passed",
+    "ComparativeRankingAndClippy": "passed"
+  },
+  "OwnerBudget": {
+    "StartedUtc": "2026-10-31T03:03:12.0271423+00:00",
+    "PriorFocusedCheckAllowanceSeconds": 30,
+    "TotalMaximumSeconds": 300,
+    "FinishedUtc": "2026-10-31T03:04:33.9936117+00:00",
+    "AggregateChargedMilliseconds": 111967
+  },
+  "Selections": [
+    {
+      "Sha256": "3bbfe41fe042506e86e3aec5f88a96263336380e653d16e1446642037a1b0e04",
+      "Name": "hexagon-x2-dispatch.json"
+    },
+    {
+      "Sha256": "82c304ac055e815eedd163b31cac5feaab49719e6914274d39b001d881a2c7d4",
+      "Name": "hexagon-x2-session-metadata.json"
+    }
+  ],
+  "Limits": [
+    "generic numeric access only; no Swift model or custom packed kernel",
+    "dispatch auto-selected DSP binary and driver tuple not independently captured",
+    "session metadata is not a loaded native signed session or mapping",
+    "Windows Job empty does not qualify vendor session teardown",
+    "retained selections do not close durable owner-managed archival or independent review"
+  ],
+  "SwiftQualified": false,
+  "ProfileEligible": false,
+  "RawOwnerReceipts": {
+    "DispatchSha256": "b58da52de2a5213eb13afe4d79a63d12df914add07a93e5aa1b71bb3ea4228e9",
+    "SessionMetadataSha256": "ab833c77b6538d28d2196dd67defcc6234649af560a2a61e78b97b7da6ebb4cf",
+    "BudgetSha256": "13768d84e1de38faf958889721827dcd36938fe7f2faf4003b81d479b2af59b1"
+  },
+  "HostedTestLogs": {
+    "NativeContractSha256": "111d5fb0d975952b54ba3478925748bbe23eb2a0bd047e3b63f88ce71aa04011",
+    "PackedOperationSha256": "69c8669fe7aa07f75857a7dad922dc7792d42f616bd802434ef5e7c292d2d3c7"
+  }
+}

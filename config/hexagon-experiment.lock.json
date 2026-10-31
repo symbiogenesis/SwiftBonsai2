@@ -34,10 +34,10 @@
       "digestSource": "https://api.github.com/repos/qualcomm/GenieX/releases/tags/v0.8.0",
       "downloadedOrExecutedBySourceAudit": false
     },
-    "signatureEvidence": "local-v81-catalog-membership-and-chain-verified; direct-Rust-driver-capabilities-observed; installed-DSP-deployment-and-compute-pending",
+    "signatureEvidence": "all-four-bundled-catalog-members-verified; generic-X2-numeric-dispatch-passed; native-capability-and-session-metadata-observed; exact-loaded-driver-DSP-tuple-and-native-mapping-pending",
     "supportedMatmulWeightsAtBundledSource": ["Q4_0", "Q4_1", "Q8_0", "IQ4_NL", "MXFP4", "Q4_K", "Q6_K", "F16", "F32"],
     "swiftPackedTypesAtBundledSource": "unsupported",
-    "modelFreeTestExecutable": "LLAMA_BUILD_TESTS-OFF; standalone-Rust-numeric-fixture-prepared; hosted-build-and-device-dispatch-pending",
+    "modelFreeTestExecutable": "LLAMA_BUILD_TESTS-OFF; standalone-Rust-fixture-hosted-build-and-X2-two-graph-dispatch-passed; docs/evidence/hexagon-advance-controls.json",
     "qualification": "device-access-only; not-a-Swift-runtime"
   },
   "otherSourceLeads": [
@@ -68,7 +68,7 @@
     "packedWeightBytes": 23674880,
     "activationContract": "exact-pinned-Q8_K-preparation-and-scale-reduction-order",
     "inputTransform": "explicit-sign-normalized-1024-Sylvester-Walsh-Hadamard-on-input-last-dimension",
-    "execution": "pending-signed-kernel-and-operation-oracle",
+    "execution": "CPU-only-tiled-operation-control-hosted-tests-passed; signed-packed-device-kernel-and-actual-artifact-parity-pending",
     "stateOwner": "CPU-until-full-state-qualification",
     "sessionLimit": 1,
     "wholeModelExpansion": false

@@ -75,7 +75,7 @@
       "fdMappingFlag": 2,
       "delayedFdMappingFlag": 3,
       "extendedFlagAtPublicHeader": "absent-not-invented",
-      "deviceObservation": "pending"
+      "deviceObservation": "X2-metadata-prepared; see docs/evidence/hexagon-x2-session-metadata.json; remote-module-and-mapping-pending"
     },
     "terminalScratchProbe": {
       "bytes": 4096,

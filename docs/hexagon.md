@@ -22,8 +22,9 @@ The [packed projection control](../tools/hexagon/packed-projection.md) adds an
 N=1 CPU tile schedule with captured native Q8_K/FMA observations, explicit signed
 Hadamard input, bounded scratch and cancellation before output publication. Its
 VTCM/traffic ledger is a proposal, not device measurement or signed kernel support.
-[Native Rust access progress](hexagon-native-progress.md) records direct driver
-capability success and the scoped 4 KiB STATIC mapping refusal. The separate
+[Native Rust access progress](hexagon-native-progress.md) records successful
+generic numeric X2 dispatch, native default-session metadata preparation and
+the scoped 4 KiB STATIC mapping refusal. The separate
 native boundary is prepared in an unpublished Prism workspace crate.
 [Hosted prerequisite CI](../.github/workflows/hexagon-qualification.yml) owns full
 regressions, source-bound fixture preparation and a main-only opt-in inventory or
