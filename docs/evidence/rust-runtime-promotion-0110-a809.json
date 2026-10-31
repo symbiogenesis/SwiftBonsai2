@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "kind": "frozen-pre-checker-fix-prism0110-runner-a809-runtime-promotion-snapshot",
+  "recordedDate": "2026-10-31",
+  "runnerRevision": "a809113e68875cb5bbf22f36b02587cc3f7d653c",
+  "runtimeRevision": "749a5f5b43bf77764a29682557ec91a8de8dcdef",
+  "runtimeRelease": "v0.1.10",
+  "runtimeReleasePublishedAtUtc": "2026-10-31T07:32:53Z",
+  "runtimeReleaseIsPrerelease": true,
+  "profile": "swift-pq2-standard-lora-1.3",
+  "policySha256": "5195a07139077290a384decadeea69c10606c81c6ac6ea6a75759f1ea6dd49bc",
+  "identities": {
+    "adapterLockSha256": "84bf87bd873a372ebd943dae81d3300d74ec09055d6c5fe0628873d3863ae74a",
+    "adapterScale": 1.3,
+    "adapterSha256": "f1669534803d340a496015f5c45125f3437b4d13ec764f40e34488ce83967f42",
+    "admissionBytes": 16642998272,
+    "assessmentLockSha256": "a378f4a4551170a27f9d0f3649114c954011cc149c0ebd16fb4413ac1094a86b",
+    "contextTokens": 8192,
+    "jobCommitLimitBytes": 12348030976,
+    "maxCompletionTokens": 4096,
+    "modelSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+    "nativeRowWorkers": 1,
+    "physicalReserveBytes": 4294967296,
+    "referenceRuntimeRevision": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+    "runnerRevision": "a809113e68875cb5bbf22f36b02587cc3f7d653c",
+    "runtimeArchiveSha256": "72aa9856cf9ad6b37b8815cc43c0da5168a74c5b2dbdc1f0ffc828dd75a30769",
+    "runtimeLockSha256": "8918ff8cbbe3f72d893c0462c453ba2253ef87501a551dbef3c2459efb238e16",
+    "runtimeRevision": "749a5f5b43bf77764a29682557ec91a8de8dcdef",
+    "serverSha256": "58e61f153853a04f811ea26656fad9d76fb4655fb69197854fd556e901d863a7",
+    "servingStatePolicy": "reset-every-request",
+    "target": "aarch64-pc-windows-msvc",
+    "templateSha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041"
+  },
+  "maintenanceTool": {
+    "sha256": "53b0a8d4754639e57d3dd74523a7cfc5a5566b14435e32c37a0191f8663f59ae",
+    "runnerRevision": "a809113e68875cb5bbf22f36b02587cc3f7d653c",
+    "hostedRunId": "41182054830",
+    "hostedArtifactId": 13035786511,
+    "hostedArtifactSha256": "38790e0c08d5c7daf1c94d1c12c5e874bd386681535f4207129dbeb01143f215"
+  },
+  "reviewerId": "Codex:/root/service_evidence",
+  "humanReviewed": false,
+  "gateCounts": {
+    "passed": 4,
+    "pending": 13,
+    "rejected": 0
+  },
+  "passedGates": [
+    "released-binary-provenance",
+    "runtime-foundation",
+    "runtime-conformance",
+    "runner-foundation"
+  ],
+  "pendingGates": [
+    "full-context-numerical-parity",
+    "prompt-sampler-termination",
+    "full-output-lifecycle-recovery",
+    "full-model-resources",
+    "adapter-basis-and-logits",
+    "adapter-standard-scale-throughput",
+    "adapter-standard-scale-quality",
+    "sandbox-and-transport",
+    "speech-offline-and-recovery",
+    "sustained-device-and-creative-acceptance",
+    "installation-and-rollback",
+    "paired-target-device-benefit",
+    "released-adapter-service-integration"
+  ],
+  "evaluatorStatus": "pending",
+  "promotionReady": false,
+  "scope": "This is a frozen snapshot of a809113 before the invalid-scale acceptance-checker fix. Its four documentary passes never transfer to a later Runner revision. All 13 application/device gates stay pending; the failed row4 service attempt supplies partial observations only.",
+  "policyTransferToLaterRunnerRevisionsAllowed": false,
+  "serviceIntegration": {
+    "status": "pending",
+    "partialAttempt": "docs/evidence/prism-0110-service-attempt.json",
+    "runId": "41182054830",
+    "attemptPassed": false,
+    "configuredRowWorkers": 4,
+    "suppliedHistoryAndOwnedStopObserved": false,
+    "partialFourWorkerObservationDoesNotQualifyOneWorkerPolicy": true
+  },
+  "owningRuns": [
+    {
+      "repository": "symbiogenesis/prism-inference",
+      "runId": "41178893822",
+      "name": "Foundation",
+      "revision": "749a5f5b43bf77764a29682557ec91a8de8dcdef",
+      "passedJobs": 15
+    },
+    {
+      "repository": "symbiogenesis/prism-inference",
+      "runId": "41178893812",
+      "name": "Runtime Conformance",
+      "revision": "749a5f5b43bf77764a29682557ec91a8de8dcdef",
+      "passedJobs": 58
+    },
+    {
+      "repository": "symbiogenesis/SwiftBonsai2Runner",
+      "runId": "41182025547",
+      "name": "Foundation",
+      "revision": "a809113e68875cb5bbf22f36b02587cc3f7d653c",
+      "passedJobs": 11
+    }
+  ],
+  "executions": [
+    {
+      "operation": "runtime-promotion/plan",
+      "request": "plan-request.json",
+      "tool": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\prism-0110-owner-20261031\\package\\bonsai-tools.exe",
+      "toolSha256": "53b0a8d4754639e57d3dd74523a7cfc5a5566b14435e32c37a0191f8663f59ae",
+      "exitCode": 0,
+      "elapsedMilliseconds": 833.2427999998799,
+      "timeoutSeconds": 30,
+      "stdoutSha256": "5bfe4a920daa1530c68de95c98ee61180338073c44e0625a2205a1b481be76a7",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "modelExecuted": false
+    },
+    {
+      "operation": "runtime-promotion/file-score",
+      "request": "score-request.json",
+      "tool": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\prism-0110-owner-20261031\\package\\bonsai-tools.exe",
+      "toolSha256": "53b0a8d4754639e57d3dd74523a7cfc5a5566b14435e32c37a0191f8663f59ae",
+      "exitCode": 0,
+      "elapsedMilliseconds": 34.229899999900226,
+      "timeoutSeconds": 30,
+      "stdoutSha256": "bcec9fb0ada54e0dcd53927e0c1c334c6c19f7fbedff6bd8f70d62420da29c71",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "modelExecuted": false
+    }
+  ],
+  "modelExecutions": 0,
+  "inferenceRuntimeExecutions": 0,
+  "localBuilds": 0,
+  "localTestSuiteExecutions": 0,
+  "defaultsChanged": false,
+  "limitsChanged": false,
+  "durableArchive": {
+    "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\runtime-promotion-0110-a809-20261031",
+    "manifest": "file-manifest.json",
+    "manifestSha256": "f78c77ee5f2cefdce58a624b0b8e34e384c761584d166908c72110c7ab3dc516",
+    "manifestBytes": 6737,
+    "fileCountExcludingManifest": 39,
+    "retainedBytesExcludingManifest": 14576381,
+    "allDigestsReread": true,
+    "fullPolicyIdentitiesRetained": true,
+    "toolOutputsRetainedUnmodified": true,
+    "gateEvidence": "promotion-evidence.json",
+    "planOutput": "plan-stdout.json",
+    "scoreOutput": "score-stdout.json",
+    "independentReview": "independent-review.json",
+    "credentialsOrModelWeightsIncluded": false
+  }
+}
