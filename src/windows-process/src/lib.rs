@@ -53,6 +53,9 @@ pub struct VulkanQueryFailure {
 pub struct WindowsGraphicsAdapterCount {
     /// Fixed stage: existing module, exported entry point, or count query.
     pub stage: &'static str,
+    /// Immediate Win32 lookup error, unknown when no lookup failed.
+    /// A module lookup error does not establish that the module is absent.
+    pub windows_error: Option<u32>,
     /// Raw `NTSTATUS` from the count query, unknown before the call.
     pub ntstatus: Option<i32>,
     /// Reported count only when the query returned `STATUS_SUCCESS`.

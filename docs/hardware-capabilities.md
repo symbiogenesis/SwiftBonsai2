@@ -134,7 +134,9 @@ or selecting alternate loaders. Windows may resolve an export forwarder internal
 this observation does not audit that resolution. A null adapter array requests no
 adapter handles. The report retains the raw
 `NTSTATUS` and reports a count only for `STATUS_SUCCESS`; Microsoft defines the
-output count as undefined on error. Missing module/export remains unknown. The
+output count as undefined on error. Failed module/export lookup retains the immediate
+Win32 `windows_error`; neither lookup failure establishes that the module or export
+is absent. The `ntstatus` and count remain unknown when the count call never runs. The
 existing ten-second Job deadline bounds this call too; there is no second Vulkan
 attempt or weaker-policy retry.
 

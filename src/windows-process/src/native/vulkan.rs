@@ -202,6 +202,7 @@ struct Instance(ash::Instance);
 const fn graphics_count_result(status: i32, count: u32) -> WindowsGraphicsAdapterCount {
     WindowsGraphicsAdapterCount {
         stage: "count-query",
+        windows_error: None,
         ntstatus: Some(status),
         // Microsoft specifies that NumAdapters is undefined on error. Retain
         // no output count unless the call returned exactly STATUS_SUCCESS.
@@ -213,7 +214,7 @@ fn graphics_adapter_count() -> WindowsGraphicsAdapterCount {
     use windows_sys::{
         Wdk::Graphics::Direct3D::D3DKMT_ENUMADAPTERS2,
         Win32::{
-            Foundation::{FreeLibrary, HMODULE},
+            Foundation::{FreeLibrary, GetLastError, HMODULE},
             System::LibraryLoader::{GetModuleHandleExW, GetProcAddress},
         },
     };
@@ -230,6 +231,7 @@ fn graphics_adapter_count() -> WindowsGraphicsAdapterCount {
 
     let mut report = WindowsGraphicsAdapterCount {
         stage: "existing-gdi32-module",
+        windows_error: None,
         ntstatus: None,
         adapter_count: None,
     };
@@ -237,6 +239,9 @@ fn graphics_adapter_count() -> WindowsGraphicsAdapterCount {
     // SAFETY: The fixed name is NUL terminated and the handle output is live.
     // This takes a reference only to an existing module, without loading one.
     if unsafe { GetModuleHandleExW(0, windows_sys::w!("gdi32.dll"), &raw mut handle) } == 0 {
+        // SAFETY: Capture this thread's lookup error immediately, before any
+        // other native call can replace it. A failed lookup does not prove absence.
+        report.windows_error = Some(unsafe { GetLastError() });
         return report;
     }
     let module = ExistingModule(handle);
@@ -246,6 +251,9 @@ fn graphics_adapter_count() -> WindowsGraphicsAdapterCount {
     let Some(function) =
         (unsafe { GetProcAddress(module.0, c"D3DKMTEnumAdapters2".as_ptr().cast()) })
     else {
+        // SAFETY: Capture the export lookup's error before releasing the module
+        // reference or making any other native call.
+        report.windows_error = Some(unsafe { GetLastError() });
         return report;
     };
     // SAFETY: The fixed Windows export has this documented system ABI, using
@@ -643,11 +651,13 @@ mod tests {
     fn graphics_count_failure_never_exposes_undefined_adapter_count() {
         let success = graphics_count_result(0, 2);
         assert_eq!(success.ntstatus, Some(0));
+        assert_eq!(success.windows_error, None);
         assert_eq!(success.adapter_count, Some(2));
         assert_eq!(graphics_count_result(0, 0).adapter_count, Some(0));
         for status in [-1, i32::MIN, 1] {
             let failure = graphics_count_result(status, u32::MAX);
             assert_eq!(failure.stage, "count-query");
+            assert_eq!(failure.windows_error, None);
             assert_eq!(failure.ntstatus, Some(status));
             assert_eq!(failure.adapter_count, None);
         }

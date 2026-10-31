@@ -75,7 +75,8 @@ fn failed_query(error: &std::io::Error) -> Value {
         .map_or(Value::Null, |count| {
             json!({
                 "scope": "current-worker-post-instance-failure-count-only",
-                "stage": count.stage, "ntstatus": count.ntstatus,
+                "stage": count.stage, "windows_error": count.windows_error,
+                "ntstatus": count.ntstatus,
                 "adapter_count": count.adapter_count,
                 "adapter_handles_requested": false,
                 "failure_cause_verified": false,
@@ -264,6 +265,7 @@ mod tests {
             }),
             graphics_adapter_count: Some(bonsai_windows_process::WindowsGraphicsAdapterCount {
                 stage: "count-query",
+                windows_error: None,
                 ntstatus: Some(-1),
                 adapter_count: None,
             }),
@@ -282,6 +284,7 @@ mod tests {
         );
         assert_eq!(report["instance_modules"]["dependencies_verified"], false);
         assert_eq!(report["graphics_adapter_count"]["ntstatus"], -1);
+        assert!(report["graphics_adapter_count"]["windows_error"].is_null());
         assert!(report["graphics_adapter_count"]["adapter_count"].is_null());
         assert_eq!(
             report["graphics_adapter_count"]["adapter_handles_requested"],
@@ -301,6 +304,47 @@ mod tests {
         assert!(report["instance_modules"].is_null());
         assert!(report["graphics_adapter_count"].is_null());
         assert!(!report.to_string().contains("sensitive"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_gpu_lookup_failures_preserve_windows_error_without_claiming_absence() {
+        for (stage, windows_error) in [
+            ("existing-gdi32-module", 126),
+            ("enum-adapters-entry-point", 127),
+        ] {
+            let report = failed_query(&std::io::Error::other(
+                bonsai_windows_process::VulkanQueryFailure {
+                    stage: "instance-creation",
+                    vulkan_result: Some(-9),
+                    loader_api_version: None,
+                    application_api_version: None,
+                    instance_modules: None,
+                    graphics_adapter_count: Some(
+                        bonsai_windows_process::WindowsGraphicsAdapterCount {
+                            stage,
+                            windows_error: Some(windows_error),
+                            ntstatus: None,
+                            adapter_count: None,
+                        },
+                    ),
+                },
+            ));
+            assert_eq!(report["failure"]["vulkan_result"], -9);
+            assert_eq!(report["graphics_adapter_count"]["stage"], stage);
+            assert_eq!(
+                report["graphics_adapter_count"]["windows_error"],
+                windows_error
+            );
+            assert!(report["graphics_adapter_count"]["ntstatus"].is_null());
+            assert!(report["graphics_adapter_count"]["adapter_count"].is_null());
+            assert_eq!(
+                report["graphics_adapter_count"]["failure_cause_verified"],
+                false
+            );
+            assert_eq!(report["status"], "unknown");
+            assert_eq!(report["backend_ready"], false);
+        }
     }
 
     #[cfg(windows)]
