@@ -152,12 +152,16 @@ enum Request {
     Plan {
         #[serde(rename = "runnerRevision")]
         runner_revision: String,
+        #[serde(rename = "nativeRowWorkers", default = "default_row_workers")]
+        native_row_workers: u8,
     },
     FileScore {
         #[serde(rename = "runnerRevision")]
         runner_revision: String,
         #[serde(rename = "evidencePath")]
         evidence_path: PathBuf,
+        #[serde(rename = "nativeRowWorkers", default = "default_row_workers")]
+        native_row_workers: u8,
     },
 }
 
@@ -217,7 +221,15 @@ fn require(condition: bool, message: &str) -> crate::Result<()> {
     condition.ok_or_else(|| message.into())
 }
 
-fn policy(revision: &str) -> crate::Result<Value> {
+fn default_row_workers() -> u8 {
+    1
+}
+
+fn policy(revision: &str, native_row_workers: u8) -> crate::Result<Value> {
+    require(
+        matches!(native_row_workers, 1 | 4),
+        "Promotion requires an explicitly supported native row-worker count (1 or 4).",
+    )?;
     require(
         is_lower_hex(revision, 40),
         "Runner revision must be a full lowercase Git commit.",
@@ -280,6 +292,8 @@ fn policy(revision: &str) -> crate::Result<Value> {
             "contextTokens": 8192, "maxCompletionTokens": 4096,
             "admissionBytes": 16_642_998_272_u64, "jobCommitLimitBytes": 12_348_030_976_u64,
             "physicalReserveBytes": 4_294_967_296_u64,
+            "nativeRowWorkers": native_row_workers,
+            "servingStatePolicy": "reset-every-request",
             "target": "aarch64-pc-windows-msvc"
         },
         "requiredGates": GATES.iter().map(|gate| json!({"id": gate.id, "repository": gate.repository, "snapdragonRequired": gate.device, "humanReviewRequired": gate.human, "requirement": gate.requirement})).collect::<Vec<_>>()
@@ -477,8 +491,11 @@ fn score(value: Value, policy: &Value, directory: &Path) -> crate::Result<Value>
 pub fn run(request: Value) -> crate::Result<Value> {
     let request: Request = serde_json::from_value(request).map_err(|error| error.to_string())?;
     match request {
-        Request::Plan { runner_revision } => {
-            let policy = policy(&runner_revision)?;
+        Request::Plan {
+            runner_revision,
+            native_row_workers,
+        } => {
+            let policy = policy(&runner_revision, native_row_workers)?;
             let digest = sha256(&serde_json::to_vec(&policy).map_err(|error| error.to_string())?);
             Ok(json!({"policySha256": digest, "policy": policy,
                     "evidenceTemplate": {"schemaVersion": 1, "policySha256": digest, "identities": policy["identities"], "gates": GATES.iter().map(|gate| json!({"id": gate.id, "status": "pending", "note": "Evidence has not yet been collected and reviewed."})).collect::<Vec<_>>()}}))
@@ -486,8 +503,9 @@ pub fn run(request: Value) -> crate::Result<Value> {
         Request::FileScore {
             runner_revision,
             evidence_path,
+            native_row_workers,
         } => {
-            let policy = policy(&runner_revision)?;
+            let policy = policy(&runner_revision, native_row_workers)?;
             let value = serde_json::from_slice(&read(&evidence_path, MANIFEST_LIMIT)?)
                 .map_err(|error| error.to_string())?;
             score(

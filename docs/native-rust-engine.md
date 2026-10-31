@@ -290,10 +290,16 @@ $revision = git rev-parse main
 $plan = ./scripts/Get-RuntimePromotion.ps1 -RunnerRevision $revision
 $plan.policy.requiredGates
 ./scripts/Get-RuntimePromotion.ps1 -RunnerRevision $revision -EvidencePath D:\Evidence\promotion.json
+# Review the four-worker candidate independently; its evidence cannot qualify one worker.
+./scripts/Get-RuntimePromotion.ps1 -RunnerRevision $revision -NativeRowWorkers 4
 ```
 
 The evaluator checks offline completeness and byte integrity, without inference,
 benchmarks, selection changes, reviewer authentication or network provenance checks.
+The policy binds the selected `nativeRowWorkers` (one by default, or explicit four)
+and `servingStatePolicy: reset-every-request`. Evidence for a different worker count
+or experimental state reuse cannot qualify this policy. Regenerate pending manifests
+after a policy identity change; retained historical reports remain unchanged.
 Independently review CI/source/report/reviewer identities and require `promotionReady:
 true`; command success alone cannot authorize promotion.
 

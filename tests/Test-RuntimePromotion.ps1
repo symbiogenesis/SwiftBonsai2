@@ -17,8 +17,15 @@ $revision = 'a' * 40
 $plan = & $script -RunnerRevision $revision -ToolPath $ToolPath
 if ($plan.policy.identities.runnerRevision -cne $revision -or
     $plan.policy.identities.adapterScale -ne 1.3 -or
+    $plan.policy.identities.nativeRowWorkers -ne 1 -or
+    $plan.policy.identities.servingStatePolicy -cne 'reset-every-request' -or
     $plan.policy.requiredGates.Count -lt 17) {
     throw 'Promotion wrapper did not preserve the complete standard-profile policy.'
+}
+$parallel = & $script -RunnerRevision $revision -NativeRowWorkers 4 -ToolPath $ToolPath
+if ($parallel.policy.identities.nativeRowWorkers -ne 4 -or
+    $parallel.policySha256 -ceq $plan.policySha256) {
+    throw 'Promotion wrapper did not bind the selected row-worker policy.'
 }
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('Runtime-Promotion-Bridge-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($scratch)
