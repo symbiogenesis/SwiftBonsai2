@@ -123,10 +123,10 @@ fn signs(metadata: &Metadata) -> Result<(Vec<u8>, String)> {
 }
 
 fn validate_scales(weights: &[u8]) -> Result<()> {
-    if !weights.len().is_multiple_of(34) {
+    let (blocks, []) = weights.as_chunks::<34>() else {
         return Err(bad("Incomplete PQ2 block."));
-    }
-    for block in weights.chunks_exact(34) {
+    };
+    for block in blocks {
         if u16::from_le_bytes([block[0], block[1]]) & 0x7c00 == 0x7c00 {
             return Err(bad("Nonfinite original PQ2 scale."));
         }

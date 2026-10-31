@@ -150,8 +150,9 @@ fn finite(value: f32) -> Result<f32, Error> {
     }
 }
 
-fn half(bytes: &[u8]) -> Result<f32, Error> {
-    let bits = u16::from_le_bytes([bytes[0], bytes[1]]);
+fn half(bytes: &[u8; PQ2_BYTES]) -> Result<f32, Error> {
+    let &[low, high, ..] = bytes;
+    let bits = u16::from_le_bytes([low, high]);
     if bits & 0x7c00 == 0x7c00 {
         return Err(Error::Nonfinite);
     }
@@ -295,9 +296,18 @@ fn project_prepared(
     output: &mut Vec<f32>,
     mut continue_work: impl FnMut() -> bool,
 ) -> Result<(), Error> {
+    let (weights, []) = weights.as_chunks::<PQ2_BYTES>() else {
+        return Err(Error::Extent);
+    };
+    let (activation, []) = activation.as_chunks::<Q8K_BYTES>() else {
+        return Err(Error::Extent);
+    };
     let mut pending = zeroed::<f32>(plan.rows)?;
     let mut stage = zeroed::<u8>(plan.ledger().cpu_weight_stage_bytes)?;
-    let row_bytes = plan.columns / 128 * PQ2_BYTES;
+    let (stage, []) = stage.as_chunks_mut::<PQ2_BYTES>() else {
+        return Err(Error::Extent);
+    };
+    let row_blocks = plan.columns / 128;
     let groups = plan.columns / 256;
     for row_start in (0..plan.rows).step_by(plan.tile_rows) {
         let tile_rows = plan.tile_rows.min(plan.rows - row_start);
@@ -306,19 +316,19 @@ fn project_prepared(
                 return Err(Error::Cancelled);
             }
             let tile_groups = plan.tile_q8k.min(groups - group_start);
-            let stage_row = tile_groups * 2 * PQ2_BYTES;
+            let stage_row = tile_groups * 2;
             for row in 0..tile_rows {
-                let source = (row_start + row) * row_bytes + group_start * 2 * PQ2_BYTES;
+                let source = (row_start + row) * row_blocks + group_start * 2;
                 stage[row * stage_row..(row + 1) * stage_row]
                     .copy_from_slice(&weights[source..source + stage_row]);
             }
             for row in 0..tile_rows {
                 for block_index in 0..tile_groups * 2 {
-                    let start = row * stage_row + block_index * PQ2_BYTES;
-                    let block = &stage[start..start + PQ2_BYTES];
+                    let block = &stage[row * stage_row + block_index];
                     let group = group_start + block_index / 2;
-                    let q8 = &activation[group * Q8K_BYTES..(group + 1) * Q8K_BYTES];
-                    let scale = f32::from_le_bytes(q8[..4].try_into().map_err(|_| Error::Extent)?);
+                    let q8 = &activation[group];
+                    let &[s0, s1, s2, s3, ..] = q8;
+                    let scale = f32::from_le_bytes([s0, s1, s2, s3]);
                     let start = 4 + block_index % 2 * 128;
                     let integer = packed_sum(&block[2..], &q8[start..start + 128]);
                     let product_scale = half(block)? * scale;
@@ -454,7 +464,10 @@ mod tests {
         let mut output = Vec::new();
         for row in weights.chunks_exact(input.len() / 128 * PQ2_BYTES) {
             let mut sum = 0.0_f32;
-            for (index, block) in row.chunks_exact(PQ2_BYTES).enumerate() {
+            let (blocks, []) = row.as_chunks::<PQ2_BYTES>() else {
+                return Err(Error::Extent);
+            };
+            for (index, block) in blocks.iter().enumerate() {
                 let q8 = &activation[index / 2 * Q8K_BYTES..(index / 2 + 1) * Q8K_BYTES];
                 // Independently expand one whole block, rather than traversing
                 // packed bytes in the staged fused integer implementation.
@@ -540,12 +553,15 @@ mod tests {
             transform_input(&input[..256], &signs[..256]),
             Err(Error::Extent)
         );
-        assert_eq!(
-            half(&0x8000_u16.to_le_bytes())?.to_bits(),
-            (-0.0_f32).to_bits()
-        );
-        assert_eq!(half(&1_u16.to_le_bytes())?, 2.0_f32.powi(-24));
-        assert_eq!(half(&0x7bff_u16.to_le_bytes())?, 65504.0);
+        for (bits, expected) in [
+            (0x8000_u16, -0.0_f32),
+            (1, 2.0_f32.powi(-24)),
+            (0x7bff, 65504.0),
+        ] {
+            let mut block = [0; PQ2_BYTES];
+            block[..2].copy_from_slice(&bits.to_le_bytes());
+            assert_eq!(half(&block)?.to_bits(), expected.to_bits());
+        }
         Ok(())
     }
 
