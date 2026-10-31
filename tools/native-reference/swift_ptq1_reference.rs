@@ -535,7 +535,7 @@ mod native {
         )
     }
 
-    fn model_settings(mut parameters: ModelParams) -> ModelParams {
+    const fn model_settings(mut parameters: ModelParams) -> ModelParams {
         parameters.n_gpu_layers = 0;
         parameters.load_mode = 1; // LLAMA_LOAD_MODE_MMAP
         parameters.use_extra_bufts = false;
@@ -543,7 +543,7 @@ mod native {
         parameters
     }
 
-    fn context_settings(mut parameters: ContextParams) -> ContextParams {
+    const fn context_settings(mut parameters: ContextParams) -> ContextParams {
         parameters.n_ctx = 8192;
         parameters.n_batch = 128;
         parameters.n_ubatch = 64;
@@ -560,6 +560,10 @@ mod native {
         parameters
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Keep the fixed native acquisition/decode/snapshot sequence and its safety obligations in one auditable path."
+    )]
     fn capture(
         api: &Api<'_>,
         defaults: &Defaults<'_>,
@@ -682,6 +686,10 @@ mod native {
         )
     }
 
+    #[allow(
+        clippy::redundant_pub_crate,
+        reason = "Expose the audited boundary only to this standalone executable's safe entry point."
+    )]
     pub(super) fn run(request: &super::Request, output: &mut impl io::Write) -> io::Result<()> {
         // Declaration order deliberately unloads llama, CPU, ggml, then base,
         // after capture's context/adapter/model/backend guards have finished.
@@ -718,6 +726,10 @@ mod native {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Enumerate every ABI field in source order without omitting layout or value obligations."
+    )]
     fn observations(defaults: &Defaults<'_>) -> String {
         let mut output = String::new();
         let mut value = |key: &str, number: u64| {
@@ -866,6 +878,10 @@ mod native {
         u64::from_le_bytes(value.to_le_bytes())
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "The complete version-bound parameter inventory is intentionally visible as one list."
+    )]
     fn append_parameters(value: &mut impl FnMut(&str, u64), defaults: &Defaults<'_>, kind: &str) {
         macro_rules! signed {
             ($prefix:literal, $instance:expr, [$($field:ident),* $(,)?]) => {$(
@@ -989,6 +1005,10 @@ mod native {
         );
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Retain the complete pinned enum/type inventory alongside its immutable independent control."
+    )]
     fn append_types(value: &mut impl FnMut(&str, u64)) {
         macro_rules! scalar {
             ($name:literal, $kind:ty, $signed:expr) => {
@@ -1113,10 +1133,431 @@ mod native {
 
     #[cfg(test)]
     mod tests {
+        use std::cell::{Cell, RefCell};
+
         use super::*;
+
+        std::thread_local! {
+            static FAIL: Cell<&'static str> = const { Cell::new("") };
+            static CALLS: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+            static VALID: Cell<bool> = const { Cell::new(true) };
+            static ROW: RefCell<Vec<f32>> = const { RefCell::new(Vec::new()) };
+        }
+
+        fn called(name: &'static str) -> bool {
+            CALLS.with(|calls| calls.borrow_mut().push(name));
+            FAIL.with(|fail| fail.get() == name)
+        }
+
+        fn observed(condition: bool) {
+            VALID.with(|valid| valid.set(valid.get() && condition));
+        }
+
+        unsafe extern "C-unwind" fn load_backend(path: *const c_char) -> *mut c_void {
+            // SAFETY: The capture path retains this NUL-terminated CString
+            // during synchronous backend registration and all dependent work.
+            let path = unsafe { CStr::from_ptr(path) };
+            observed(path.to_bytes().ends_with(b"ggml-cpu.dll"));
+            if called("load_backend") {
+                std::ptr::null_mut()
+            } else {
+                std::ptr::without_provenance_mut(4)
+            }
+        }
+
+        unsafe extern "C-unwind" fn backend_init() {
+            called("backend_init");
+        }
+
+        unsafe extern "C-unwind" fn backend_free() {
+            called("backend_free");
+        }
+
+        unsafe extern "C-unwind" fn load_model(
+            path: *const c_char,
+            parameters: ModelParams,
+        ) -> *mut c_void {
+            // SAFETY: The capture path retains this live C-string through all
+            // model/context work and calls the mock synchronously.
+            let path = unsafe { CStr::from_ptr(path) };
+            observed(
+                path.to_bytes()
+                    .ends_with(super::super::MODEL_NAME.as_bytes()),
+            );
+            observed(parameters.n_gpu_layers == 0 && parameters.load_mode == 1);
+            observed(!parameters.use_extra_bufts && !parameters.load_mtp);
+            if called("load_model") {
+                std::ptr::null_mut()
+            } else {
+                std::ptr::without_provenance_mut(1)
+            }
+        }
+
+        unsafe extern "C-unwind" fn free_model(pointer: *mut c_void) {
+            observed(pointer.addr() == 1);
+            called("free_model");
+        }
+
+        unsafe extern "C-unwind" fn vocab(pointer: *const c_void) -> *const c_void {
+            observed(pointer.addr() == 1);
+            if called("vocab") {
+                std::ptr::null()
+            } else {
+                std::ptr::without_provenance(5)
+            }
+        }
+
+        unsafe extern "C-unwind" fn vocab_count(pointer: *const c_void) -> i32 {
+            observed(pointer.addr() == 5);
+            if called("vocab_count") { 0 } else { 248_320 }
+        }
+
+        unsafe extern "C-unwind" fn load_adapter(
+            model: *mut c_void,
+            path: *const c_char,
+        ) -> *mut c_void {
+            observed(model.addr() == 1);
+            // SAFETY: The actual collector borrows its retained NUL-terminated
+            // adapter path until all matching object guards have dropped.
+            let path = unsafe { CStr::from_ptr(path) };
+            observed(
+                path.to_bytes()
+                    .ends_with(super::super::ADAPTER_NAME.as_bytes()),
+            );
+            if called("load_adapter") {
+                std::ptr::null_mut()
+            } else {
+                std::ptr::without_provenance_mut(2)
+            }
+        }
+
+        unsafe extern "C-unwind" fn free_adapter(pointer: *mut c_void) {
+            observed(pointer.addr() == 2);
+            called("free_adapter");
+        }
+
+        unsafe extern "C-unwind" fn init_context(
+            model: *mut c_void,
+            parameters: ContextParams,
+        ) -> *mut c_void {
+            observed(model.addr() == 1);
+            observed(parameters.n_ctx == 8192 && parameters.n_batch == 128);
+            observed(parameters.n_ubatch == 64 && parameters.n_seq_max == 1);
+            observed(parameters.n_rs_seq == 0 && parameters.n_threads == 4);
+            observed(parameters.n_threads_batch == 4);
+            observed(parameters.type_k == 1 && parameters.type_v == 1);
+            observed(parameters.flash_attn_type == 0);
+            observed(!parameters.offload_kqv && !parameters.op_offload && parameters.no_perf);
+            if called("init_context") {
+                std::ptr::null_mut()
+            } else {
+                std::ptr::without_provenance_mut(3)
+            }
+        }
+
+        unsafe extern "C-unwind" fn free_context(pointer: *mut c_void) {
+            observed(pointer.addr() == 3);
+            called("free_context");
+        }
+
+        unsafe extern "C-unwind" fn set_adapter(
+            context: *mut c_void,
+            adapters: *mut *mut c_void,
+            count: usize,
+            scales: *mut f32,
+        ) -> i32 {
+            observed(context.addr() == 3 && count == 1);
+            // SAFETY: The collector supplies one live initialized pointer and
+            // scale; this synchronous mock does not retain either borrowed span.
+            observed(unsafe { (*adapters).addr() == 2 });
+            // SAFETY: Same complete single-element scale span.
+            observed(unsafe { (*scales).to_bits() == 1.3_f32.to_bits() });
+            i32::from(called("set_adapter"))
+        }
+
+        unsafe extern "C-unwind" fn one_batch(token: *mut i32, count: i32) -> Batch {
+            called("batch_one");
+            observed(count == 1);
+            // SAFETY: The caller borrows one initialized input token until the
+            // batch's synchronous decode has returned.
+            observed(unsafe { *token == INPUT_TOKEN });
+            Batch {
+                n_tokens: count,
+                token,
+                embd: std::ptr::null_mut(),
+                pos: std::ptr::null_mut(),
+                n_seq_id: std::ptr::null_mut(),
+                seq_id: std::ptr::null_mut(),
+                logits: std::ptr::null_mut(),
+            }
+        }
+
+        unsafe extern "C-unwind" fn decode(context: *mut c_void, batch: Batch) -> i32 {
+            observed(context.addr() == 3 && batch.n_tokens == 1);
+            // SAFETY: This batch borrows the actual collector's one live token.
+            observed(unsafe { *batch.token == INPUT_TOKEN });
+            i32::from(called("decode"))
+        }
+
+        unsafe extern "C-unwind" fn logits(context: *mut c_void, index: i32) -> *mut f32 {
+            observed(context.addr() == 3 && index == -1);
+            if called("logits") {
+                std::ptr::null_mut()
+            } else {
+                ROW.with(|row| row.borrow_mut().as_mut_ptr())
+            }
+        }
+
+        unsafe extern "C-unwind" fn state_size(context: *mut c_void, sequence: i32) -> usize {
+            observed(context.addr() == 3 && sequence == 0);
+            called("state_size");
+            FAIL.with(|fail| match fail.get() {
+                "state_zero" => 0,
+                "state_oversized" => MAX_STATE + 1,
+                _ => 16,
+            })
+        }
+
+        unsafe extern "C-unwind" fn state_data(
+            context: *mut c_void,
+            data: *mut u8,
+            size: usize,
+            sequence: i32,
+        ) -> usize {
+            observed(context.addr() == 3 && sequence == 0 && size == 16);
+            // SAFETY: The actual collector allocates the complete initialized
+            // extent returned by this test's state_size before this call.
+            unsafe { std::slice::from_raw_parts_mut(data, size) }.fill(0x5a);
+            if called("state_data") { size - 1 } else { size }
+        }
+
+        fn mock_api() -> Api<'static> {
+            Api {
+                backend_init,
+                backend_free,
+                load_model,
+                free_model,
+                init_context,
+                free_context,
+                vocab,
+                vocab_count,
+                load_adapter,
+                free_adapter,
+                set_adapter,
+                decode,
+                logits,
+                state_size,
+                state_data,
+                load_backend,
+                _libraries: PhantomData,
+            }
+        }
+
+        fn mock_defaults() -> Defaults<'static> {
+            // SAFETY: Every field is an integer/float, raw pointer, bool, or
+            // nullable function pointer. All-zero is valid for all those types.
+            let model = unsafe { std::mem::zeroed() };
+            // SAFETY: The context has the same valid zero field categories.
+            let context = unsafe { std::mem::zeroed() };
+            Defaults {
+                model,
+                context,
+                one_batch,
+                _library: PhantomData,
+            }
+        }
+
+        struct Directory(std::path::PathBuf);
+
+        impl Directory {
+            fn new(label: &str) -> io::Result<Self> {
+                let stamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(io::Error::other)?
+                    .as_nanos();
+                let path = std::env::temp_dir().join(format!(
+                    "Bonsai-RustCollector-{}-{stamp}-{label}",
+                    std::process::id(),
+                ));
+                std::fs::create_dir(&path)?;
+                Ok(Self(path))
+            }
+        }
+
+        impl Drop for Directory {
+            fn drop(&mut self) {
+                // This one exact freshly created task directory contains only
+                // files written by this test; no arbitrary input is traversed.
+                for name in [
+                    "logits-0.f32le",
+                    "state-0.native-seq",
+                    "native-capture.json",
+                ] {
+                    let _ = std::fs::remove_file(self.0.join(name));
+                }
+                let _ = std::fs::remove_dir(&self.0);
+            }
+        }
+
+        fn reset(fail: &'static str) {
+            FAIL.with(|value| value.set(fail));
+            CALLS.with(|calls| calls.borrow_mut().clear());
+            VALID.with(|value| value.set(true));
+            ROW.with(|row| {
+                let mut row = row.borrow_mut();
+                *row = vec![-1.0; VOCABULARY];
+                row[7] = 1.0;
+                if fail == "nonfinite" {
+                    row[17] = f32::NAN;
+                }
+            });
+        }
+
+        fn mock_capture(directory: &Directory, output: &mut impl io::Write) -> io::Result<()> {
+            capture(
+                &mock_api(),
+                &mock_defaults(),
+                Path::new("C:/runtime"),
+                &Path::new("C:/models").join(super::super::MODEL_NAME),
+                &directory.0,
+                &Path::new("C:/adapters").join(super::super::ADAPTER_NAME),
+                output,
+            )
+        }
+
+        #[test]
+        #[allow(
+            clippy::too_many_lines,
+            reason = "Retain the full native failure/release schedule as one comparable table."
+        )]
+        fn every_native_capture_failure_releases_only_acquired_dependencies_in_order()
+        -> io::Result<()> {
+            for (failure, releases) in [
+                ("load_backend", &[][..]),
+                ("load_model", &["backend_free"][..]),
+                ("vocab", &["free_model", "backend_free"][..]),
+                ("vocab_count", &["free_model", "backend_free"][..]),
+                ("load_adapter", &["free_model", "backend_free"][..]),
+                (
+                    "init_context",
+                    &["free_adapter", "free_model", "backend_free"][..],
+                ),
+                (
+                    "set_adapter",
+                    &["free_context", "free_adapter", "free_model", "backend_free"][..],
+                ),
+                (
+                    "decode",
+                    &["free_context", "free_adapter", "free_model", "backend_free"][..],
+                ),
+                (
+                    "logits",
+                    &["free_context", "free_adapter", "free_model", "backend_free"][..],
+                ),
+                (
+                    "state_zero",
+                    &["free_context", "free_adapter", "free_model", "backend_free"][..],
+                ),
+                (
+                    "state_oversized",
+                    &["free_context", "free_adapter", "free_model", "backend_free"][..],
+                ),
+                (
+                    "state_data",
+                    &["free_context", "free_adapter", "free_model", "backend_free"][..],
+                ),
+                (
+                    "nonfinite",
+                    &["free_context", "free_adapter", "free_model", "backend_free"][..],
+                ),
+            ] {
+                reset(failure);
+                let directory = Directory::new(failure)?;
+                let mut output = Vec::new();
+                assert!(mock_capture(&directory, &mut output).is_err(), "{failure}");
+                assert_eq!(output, []);
+                assert!(VALID.with(Cell::get), "{failure}");
+                let actual: Vec<_> = CALLS.with(|calls| {
+                    calls
+                        .borrow()
+                        .iter()
+                        .copied()
+                        .filter(|name| name.starts_with("free_") || *name == "backend_free")
+                        .collect()
+                });
+                assert_eq!(actual, releases, "{failure}");
+                assert_eq!(std::fs::read_dir(&directory.0)?.count(), 0);
+            }
+            Ok(())
+        }
+
+        #[test]
+        fn successful_capture_keeps_exact_controls_outputs_and_release_order() -> io::Result<()> {
+            reset("");
+            let directory = Directory::new("success")?;
+            let mut output = Vec::new();
+            mock_capture(&directory, &mut output)?;
+            assert!(VALID.with(Cell::get));
+            assert_eq!(
+                String::from_utf8(output).map_err(io::Error::other)?,
+                "{\"position\":0,\"inputToken\":248045,\"greedyToken\":7,\"logitsCount\":248320,\"sequenceStateBytes\":16}\n"
+            );
+            assert_eq!(
+                std::fs::read(directory.0.join("state-0.native-seq"))?,
+                vec![0x5a; 16]
+            );
+            let logits = std::fs::read(directory.0.join("logits-0.f32le"))?;
+            assert_eq!(logits.len(), VOCABULARY * 4);
+            assert_eq!(&logits[7 * 4..8 * 4], 1.0_f32.to_le_bytes());
+            assert_eq!(&logits[..4], (-1.0_f32).to_le_bytes());
+            let record = token_record(0, INPUT_TOKEN, 16, &ROW.with(|row| row.borrow().clone()))?;
+            assert_eq!(
+                std::fs::read_to_string(directory.0.join("native-capture.json"))?,
+                report(&record)
+            );
+            CALLS.with(|calls| {
+                assert_eq!(
+                    &calls.borrow()[calls.borrow().len() - 4..],
+                    ["free_context", "free_adapter", "free_model", "backend_free"]
+                )
+            });
+            Ok(())
+        }
+
+        #[test]
+        fn output_failure_preserves_written_evidence_and_releases_native_state() -> io::Result<()> {
+            struct Refuse;
+            impl io::Write for Refuse {
+                fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+                    Err(io::Error::other("injected output failure"))
+                }
+                fn flush(&mut self) -> io::Result<()> {
+                    Ok(())
+                }
+            }
+            reset("");
+            let directory = Directory::new("stdout-failure")?;
+            assert!(mock_capture(&directory, &mut Refuse).is_err());
+            assert!(directory.0.join("logits-0.f32le").is_file());
+            assert!(directory.0.join("state-0.native-seq").is_file());
+            assert!(!directory.0.join("native-capture.json").exists());
+            CALLS.with(|calls| {
+                assert_eq!(
+                    &calls.borrow()[calls.borrow().len() - 4..],
+                    ["free_context", "free_adapter", "free_model", "backend_free"]
+                )
+            });
+            Ok(())
+        }
 
         #[test]
         fn snapshot_creation_preserves_original_bytes_and_refuses_overwrite() -> io::Result<()> {
+            struct Cleanup(std::path::PathBuf);
+            impl Drop for Cleanup {
+                fn drop(&mut self) {
+                    let _ = std::fs::remove_file(&self.0);
+                }
+            }
             let path = std::env::temp_dir().join(format!(
                 "Bonsai-RustCollector-{}-{}.bin",
                 std::process::id(),
@@ -1125,12 +1566,6 @@ mod native {
                     .map_err(io::Error::other)?
                     .as_nanos(),
             ));
-            struct Cleanup(std::path::PathBuf);
-            impl Drop for Cleanup {
-                fn drop(&mut self) {
-                    let _ = std::fs::remove_file(&self.0);
-                }
-            }
             let _cleanup = Cleanup(path.clone());
             let data: Vec<_> = (0_u32..1_048_577).flat_map(u32::to_le_bytes).collect();
             write_new(&path, &data)?;
@@ -1174,6 +1609,10 @@ mod tests {
         }
         assert!(absolute(OsStr::new("C:/runtime with spaces")));
         assert!(absolute(OsStr::new("C:\\runtime with spaces")));
+        for path in ["C:/runtime/", "C:/runtime/.", "C:/runtime\\", "C:/Runtime"] {
+            assert!(!basename_is(OsStr::new(path), "runtime"));
+        }
+        assert!(basename_is(OsStr::new("C:/runtime"), "runtime"));
         assert!(Request::parse(&["collector".into(), "--abi-probe".into()]).is_err());
         assert!(
             Request::parse(&[
