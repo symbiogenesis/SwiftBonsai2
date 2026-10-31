@@ -221,7 +221,7 @@ fn require(condition: bool, message: &str) -> crate::Result<()> {
     condition.ok_or_else(|| message.into())
 }
 
-fn default_row_workers() -> u8 {
+const fn default_row_workers() -> u8 {
     1
 }
 
