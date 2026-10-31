@@ -117,7 +117,10 @@ impl Search {
             self.cached_query.clear();
             self.cached_messages.clear();
         } else {
-            let query = self.query.to_lowercase();
+            // Streaming bodies fold each scalar independently; contextual
+            // string lowercasing (for example final sigma) must not change the
+            // query's matching convention.
+            let query: String = self.query.chars().flat_map(char::to_lowercase).collect();
             if self.cached_query != query {
                 self.query_revision = self.query_revision.wrapping_add(1);
                 self.cached_messages.clear();

@@ -34,7 +34,9 @@ exhaustion closes the worker without blocking teardown.
 Find retains a queued scroll only while its exact message and UTF-8 range remain
 in the current results. Response replacement, message eviction and closing the
 query discard stale targets before rendering; retained results preserve active
-selection and navigation across prefix eviction. This is a model-free correctness
+selection and navigation across prefix eviction. Queries use the same scalar
+lowercase mapping as complete and streamed message bodies, including Greek sigma.
+This is a model-free correctness
 boundary; native-device interaction acceptance remains pending.
 
 ## Recovery and startup

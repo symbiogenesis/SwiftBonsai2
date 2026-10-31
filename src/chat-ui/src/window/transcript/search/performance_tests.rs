@@ -3,6 +3,31 @@ use super::*;
 use crate::window::transcript::{Role, Transcript};
 
 #[test]
+fn find_query_and_streamed_text_use_the_same_scalar_unicode_lowercase() {
+    let mut transcript = Transcript::default();
+    transcript.push(Role::User, "\u{39f}\u{3a3}".to_owned());
+    transcript.push(Role::Assistant, "\u{39f}".to_owned());
+    transcript.search.query = "\u{39f}\u{3a3}".to_owned();
+    transcript.search.refresh(&transcript.messages);
+    assert_eq!(transcript.search.matches.len(), 1);
+    assert_eq!(transcript.search.matches[0].range, 0..4);
+    let query_revision = transcript.search.query_revision;
+
+    // Uppercase final sigma must match both an existing body and the same
+    // word arriving in separate deltas. Contextual string lowercasing would
+    // turn only the query into a final-sigma scalar, losing both matches.
+    transcript.append("\u{3a3}", false);
+    transcript.search.refresh(&transcript.messages);
+    assert_eq!(transcript.search.matches.len(), 2);
+    assert_eq!(transcript.search.matches[1].range, 0..4);
+    transcript.search.query = "\u{3bf}\u{3c3}".to_owned();
+    transcript.search.invalidate();
+    transcript.search.refresh(&transcript.messages);
+    assert_eq!(transcript.search.matches.len(), 2);
+    assert_eq!(transcript.search.query_revision, query_revision);
+}
+
+#[test]
 fn find_refresh_retains_current_scroll_targets_and_discards_evicted_or_closed_results() {
     let mut transcript = Transcript::default();
     for _ in 0..super::super::MAX_MESSAGES {
