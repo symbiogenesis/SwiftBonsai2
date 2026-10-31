@@ -172,7 +172,7 @@ fn session_mapping_json(path: &str, report: &hexagon_native_rpc::SessionMappingR
         .architecture
         .map_or_else(|| String::from("null"), |value| value.to_string());
     format!(
-        "{{\"schemaVersion\":1,\"kind\":\"native-fastrpc-session-mapping-probe\",\"driverDll\":{},\"passed\":{},\"stage\":{},\"metadataPrepared\":{},\"metadataStage\":{},\"architectureRaw\":{},\"architecture\":{},\"sessionId\":0,\"domainRequestId\":14,\"domainResult\":{},\"effectiveDomain\":{},\"uriRequestId\":15,\"uriResult\":{},\"uriVerified\":{},\"moduleOpenResult\":{},\"handleObserved\":{},\"remoteModuleOpened\":{},\"bytes\":4096,\"heapId\":25,\"allocationFlags\":1,\"mapFlags\":2,\"allocationSucceeded\":{},\"descriptorObserved\":{},\"descriptorError\":{},\"cpuRoundtripVerified\":{},\"mappingAttempted\":{},\"mappingResult\":{},\"unmappingResult\":{},\"freeCompleted\":{},\"poisoned\":{},\"moduleCloseResult\":{},\"moduleCloseCompleted\":{},\"ownerPinnedUntilExit\":{},\"driverLoaded\":true,\"signedDeploymentVerified\":false,\"computeExecuted\":false,\"dmaExecuted\":false,\"referenceProcessInitializationSelected\":{},\"processInitializationRequestId\":2,\"processInitializationEnable\":1,\"processInitializationStructureBytes\":8,\"processInitializationResult\":{},\"unsignedProcessRequested\":{},\"sessionTeardownVerified\":false,\"profileEligible\":false}}",
+        "{{\"schemaVersion\":1,\"kind\":\"native-fastrpc-session-mapping-probe\",\"driverDll\":{},\"passed\":{},\"stage\":{},\"metadataPrepared\":{},\"metadataStage\":{},\"architectureRaw\":{},\"architecture\":{},\"sessionId\":0,\"domainRequestId\":14,\"domainResult\":{},\"effectiveDomain\":{},\"uriRequestId\":15,\"uriResult\":{},\"uriVerified\":{},\"moduleOpenResult\":{},\"handleObserved\":{},\"remoteModuleOpened\":{},\"bytes\":4096,\"heapId\":25,\"allocationFlags\":1,\"mapFlags\":2,\"allocationSucceeded\":{},\"descriptorObserved\":{},\"descriptorError\":{},\"cpuRoundtripVerified\":{},\"mappingAttempted\":{},\"mappingResult\":{},\"unmappingResult\":{},\"freeCompleted\":{},\"poisoned\":{},\"moduleCloseResult\":{},\"moduleCloseCompleted\":{},\"ownerPinnedUntilExit\":{},\"driverLoaded\":true,\"signedDeploymentVerified\":false,\"computeExecuted\":false,\"dmaExecuted\":false,\"referenceProcessInitializationSelected\":{},\"processInitializationRequestId\":2,\"processInitializationEnable\":1,\"processInitializationStructureBytes\":8,\"processInitializationResult\":{},\"processInitializationDomainAfter\":{},\"processInitializationEnableAfter\":{},\"unsignedProcessRequested\":{},\"sessionTeardownVerified\":false,\"profileEligible\":false}}",
         quote(path),
         report.completed_cycle(),
         quote(report.stage),
@@ -201,6 +201,8 @@ fn session_mapping_json(path: &str, report: &hexagon_native_rpc::SessionMappingR
         report.owner_pinned_until_exit,
         report.reference_process_initialization_selected,
         raw(report.process_initialization_result),
+        raw(report.process_initialization_domain_after),
+        raw(report.process_initialization_enable_after),
         report.unsigned_process_requested,
     )
 }
