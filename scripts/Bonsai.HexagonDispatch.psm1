@@ -176,6 +176,79 @@ function Save-BonsaiHexagonDispatchWorkerReceipt {
     [IO.File]::Move($temporary, $Path, $true)
 }
 
+function Invoke-BonsaiHexagonBoundedCapture {
+    <# .SYNOPSIS
+    Captures fixed fixture streams with byte caps while the surrounding Job owns lifetime.
+    .DESCRIPTION
+    This private helper runs only inside the parent's owned worker. The shared
+    Job deadline remains authoritative while reads, process exit or teardown
+    wait. Never return in-use buffers or checked input handles to the caller
+    before the fixture's process exit is confirmed.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][string]$Executable,
+        [AllowEmptyCollection()][string[]]$ArgumentList = @(),
+        [Parameter(Mandatory)][string]$WorkingDirectory)
+    $start = [Diagnostics.ProcessStartInfo]::new($Executable)
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.WorkingDirectory = $WorkingDirectory
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    foreach ($argument in $ArgumentList) { $start.ArgumentList.Add($argument) }
+    $child = [Diagnostics.Process]::new()
+    $child.StartInfo = $start
+    $started = $false
+    $channels = @()
+    try {
+        if (-not $child.Start()) { throw 'The fixed fixture failed to start.' }
+        $started = $true
+        $child.StandardInput.Close()
+        $channels = @(
+            @{ Stream = $child.StandardOutput.BaseStream; Bytes = [byte[]]::new(4096); Store = [IO.MemoryStream]::new(); Limit = 131072; Ended = $false; Pending = $null },
+            @{ Stream = $child.StandardError.BaseStream; Bytes = [byte[]]::new(4096); Store = [IO.MemoryStream]::new(); Limit = 65536; Ended = $false; Pending = $null }
+        )
+        foreach ($channel in $channels) { $channel.Pending = $channel.Stream.ReadAsync($channel.Bytes, 0, $channel.Bytes.Length) }
+        while ($true) {
+            foreach ($channel in $channels) {
+                if (-not $channel.Ended -and $channel.Pending.IsCompleted) {
+                    $count = $channel.Pending.GetAwaiter().GetResult()
+                    if ($count -eq 0) { $channel.Ended = $true }
+                    else {
+                        if ($channel.Store.Length + $count -gt $channel.Limit) { throw 'Fixture stream exceeded its fixed byte cap.' }
+                        $channel.Store.Write($channel.Bytes, 0, $count)
+                        $channel.Pending = $channel.Stream.ReadAsync($channel.Bytes, 0, $channel.Bytes.Length)
+                    }
+                }
+            }
+            if ($channels[0].Ended -and $channels[1].Ended -and $child.HasExited) { break }
+            # Both pipe reads stay outstanding concurrently; a quiet stderr
+            # cannot block stdout drainage or turn a byte cap into a deadlock.
+            [Threading.Thread]::Sleep(10)
+        }
+        $utf8 = [Text.UTF8Encoding]::new($false, $true)
+        return [pscustomobject]@{
+            ExitCode = $child.ExitCode
+            StandardOutput = $utf8.GetString($channels[0].Store.ToArray())
+            StandardError = $utf8.GetString($channels[1].Store.ToArray())
+        }
+    } finally {
+        if ($started) {
+            if (-not $child.HasExited) {
+                try { $child.Kill($true) } catch { [void]$child.WaitForExit(1) }
+            }
+            # If termination is refused, keep checked inputs and async buffers
+            # alive until the outer Job deadline tears down the entire worker.
+            # Returning or disposing them while native code remains live is invalid.
+            while (-not $child.WaitForExit(1000)) { }
+        }
+        foreach ($channel in $channels) { $channel.Stream.Dispose(); $channel.Store.Dispose() }
+        $child.Dispose()
+    }
+}
+
 function Invoke-BonsaiHexagonDispatchWorker {
     <# .SYNOPSIS
     Verifies pinned files and catalog membership inside the parent's owned Job before dispatch.
@@ -305,8 +378,7 @@ function Invoke-BonsaiHexagonDispatchWorker {
         Save-BonsaiHexagonDispatchWorkerReceipt -Report $report -Path $Request.WorkerReceiptPath
         # The surrounding worker already belongs to the owner's kill-on-close
         # Job. The fixture inherits it before any DSP/runtime code can execute.
-        $fixture = Invoke-BonsaiNativeProcess -Executable $fixturePath -ArgumentList @('--runtime-directory', $Request.PackageDirectory) -WorkingDirectory $Request.PackageDirectory -TimeoutSeconds 0
-        if ($fixture.StandardError.Length -gt 65536) { throw 'Fixture diagnostics exceeded their bound.' }
+        $fixture = Invoke-BonsaiHexagonBoundedCapture -Executable $fixturePath -ArgumentList @('--runtime-directory', $Request.PackageDirectory) -WorkingDirectory $Request.PackageDirectory
         $numeric = Get-BonsaiHexagonDispatchFixtureResult -Json $fixture.StandardOutput -ExitCode $fixture.ExitCode
         $report.FixtureResult = $numeric
         $report.Outcome = $numeric.Outcome

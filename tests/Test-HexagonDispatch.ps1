@@ -4,7 +4,7 @@ Checks source-bound Hexagon dispatch policy with synthetic metadata only.
 #>
 [CmdletBinding()]
 [OutputType([string])]
-param([Parameter(Mandatory)][ValidateSet('Plan', 'Build', 'Result', 'Environment')][string]$Case)
+param([Parameter(Mandatory)][ValidateSet('Plan', 'Build', 'Result', 'Environment', 'Capture')][string]$Case)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -62,12 +62,37 @@ if ($Case -ceq 'Plan') {
     Assert-Failure { Get-BonsaiHexagonDispatchFixtureResult -Json ($changed | ConvertTo-Json -Depth 5) -ExitCode 0 } 'Duplicate fixture passed.'
     $changed = $record.Clone(); $changed.SelfTest = $true; $changed.DeviceDispatchVerified = $false; $changed.BackendName = $null
     Assert-Failure { Get-BonsaiHexagonDispatchFixtureResult -Json ($changed | ConvertTo-Json -Depth 5) -ExitCode 0 } 'Host-only self-test was accepted as device proof.'
-} else {
+} elseif ($Case -ceq 'Environment') {
     $environment = Get-BonsaiHexagonDispatchEnvironment -RuntimeDirectory 'C:\runtime' -SystemDirectory 'C:\Windows\System32'
     Assert ($environment.Set.PATH -ceq 'C:\runtime;C:\Windows\System32' -and $environment.Set.ADSP_LIBRARY_PATH -ceq 'C:\runtime') 'Child DLL/HTP lookup escaped fixed directories.'
     Assert ('GGML_' -cin $environment.RemovePrefixes -and 'GENIEX_' -cin $environment.RemovePrefixes -and
         'FASTRPC_' -cin $environment.RemovePrefixes -and 'RPCMEM_' -cin $environment.RemovePrefixes -and
         'ACTIONS_RUNTIME_TOKEN' -cin $environment.RemoveNames -and 'GITHUB_TOKEN' -cin $environment.RemoveNames) 'Inherited backend overrides or CI credentials were retained.'
     Assert ($environment.Set.Count -eq 2) 'Unreviewed child backend override added.'
+} else {
+    # The test process itself enters the existing Job gate before its synthetic
+    # stdout/stderr children run. No fixture, package, verifier or driver loads.
+    Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Native.psm1')
+    $modulePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../scripts/Bonsai.HexagonDispatch.psm1'))
+    $command = @'
+$ErrorActionPreference = 'Stop'
+Import-Module '__MODULE__'
+& (Get-Module Bonsai.HexagonDispatch) {
+    $normal = '[Console]::Out.Write("ok"); [Console]::Error.Write("error")'
+    $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($normal)))
+    $result = Invoke-BonsaiHexagonBoundedCapture -Executable (Join-Path $PSHOME 'pwsh.exe') -ArgumentList $arguments -WorkingDirectory ([IO.Path]::GetTempPath())
+    if ($result.ExitCode -ne 0 -or $result.StandardOutput -cne 'ok' -or $result.StandardError -cne 'error') { throw 'Concurrent stream capture failed.' }
+    $overflow = '[Console]::Out.Write("x" * 131073)'
+    $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($overflow)))
+    $rejected = $false
+    try { $null = Invoke-BonsaiHexagonBoundedCapture -Executable (Join-Path $PSHOME 'pwsh.exe') -ArgumentList $arguments -WorkingDirectory ([IO.Path]::GetTempPath()) }
+    catch { $rejected = $_.Exception.Message -like '*fixed byte cap*' }
+    if (-not $rejected) { throw 'Fixture output overflow was accepted.' }
+}
+'@
+    $command = $command.Replace('__MODULE__', $modulePath.Replace("'", "''"))
+    $result = Invoke-BonsaiNativeProcess -Executable (Join-Path $PSHOME 'pwsh.exe') -ArgumentList @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand',
+        [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))) -WorkingDirectory ([IO.Path]::GetTempPath()) -TimeoutSeconds 5 -OwnDescendants
+    Assert ($result.ExitCode -eq 0) 'Bounded synthetic capture worker failed.'
 }
 "Focused Hexagon dispatch $Case checks passed without native signatures or device access."
