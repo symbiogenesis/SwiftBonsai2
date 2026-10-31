@@ -1436,18 +1436,19 @@ async fn bounded_adapter_acceptance(
         // Cancel outstanding HTTP work with a separate complete owned-cleanup
         // allowance still available. A cancelled connection may close admission.
         if deadline.saturating_duration_since(tokio::time::Instant::now()) > STOP_WAIT {
-            if let Ok(passed) = tokio::time::timeout_at(
+            tokio::time::timeout_at(
                 deadline - STOP_WAIT,
                 required_adapter_scale_history(port, &credential, evidence, deadline, report),
             )
             .await
-            {
-                passed
-            } else {
-                report["scaleHistoryWorkload"]["reason"] = json!("request-budget-expired");
-                save_acceptance_report(evidence, report);
-                false
-            }
+            .map_or_else(
+                |_| {
+                    report["scaleHistoryWorkload"]["reason"] = json!("request-budget-expired");
+                    save_acceptance_report(evidence, report);
+                    false
+                },
+                std::convert::identity,
+            )
         } else {
             report["scaleHistoryWorkload"]["reason"] = json!("insufficient-owned-cleanup-reserve");
             false
@@ -1748,7 +1749,11 @@ fn native_adapter_scale_history_profile_requires_separate_explicit_selection() {
     );
     assert!(args.iter().any(|arg| arg == "--use-abliterate-lora"));
     assert!(!args.iter().any(|arg| arg == "--use-repacked-ptq1"));
-    assert!(!PQ2_ADAPTER_ROW4_PROFILE.required_scale_history);
+    assert!(
+        !adapter_profile("pq2-adapter-row4")
+            .unwrap()
+            .required_scale_history
+    );
 }
 
 #[test]
