@@ -261,7 +261,14 @@
     "conclusion": "success"
   },
   "independentArtifactBinderStatus": "failed; not part of native access qualification",
-  "durableOwnerManagedRawArchive": "pending",
+  "durableOwnerManagedRawArchive": {
+    "directoryRelativeToDataDirectory": "qualification/hexagon-session-20261030",
+    "manifest": "docs/evidence/hexagon-session-next-archive.json",
+    "selectedCopiedDigestsVerified": true,
+    "independentOffDeviceBackup": "pending",
+    "retrievalWithoutOriginalRunner": "pending",
+    "independentReview": "pending"
+  },
   "profileEligible": false,
   "kind": "generic-numeric-dispatch-with-independent-loaded-driver",
   "build": {

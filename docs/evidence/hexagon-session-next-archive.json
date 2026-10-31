@@ -1,0 +1,269 @@
+{
+  "schemaVersion": 1,
+  "kind": "owner-managed-Hexagon-credential-free-selection",
+  "reviewDateLocal": "2026-10-30",
+  "directoryRelativeToDataDirectory": "qualification/hexagon-session-20261030",
+  "sourceRevisions": [
+    "bc847a7cf17fe888e68fa1e22b5d7ea330045988",
+    "5f6bad956a7bb962658f0928c50bde3843100318",
+    "3cf4f129f082e2b43a86d3d5a39ee1676de5cea5"
+  ],
+  "hostedRunIds": [
+    41163991030,
+    41164935923,
+    41165875635
+  ],
+  "scope": "Exact credential-free local reports, own Rust diagnostic bundles, binding metadata, callers and losing build observations.",
+  "modelWeightsOrAdaptersIncluded": false,
+  "vendorRuntimeBinariesIncluded": false,
+  "independentCopiedByteDigestsVerified": true,
+  "independentOffDeviceBackup": "pending",
+  "retrievalWithoutOriginalRunner": "pending",
+  "independentQualificationReview": "pending",
+  "profileEligible": false,
+  "ownerBudget": {
+    "SchemaVersion": 1,
+    "TotalMaximumSeconds": 300,
+    "PriorFormattingAndPreparationAllowanceMilliseconds": 30000,
+    "DiagnosticElapsedMilliseconds": 50530,
+    "AggregateChargedMilliseconds": 140537,
+    "FullSuitesExecuted": false,
+    "DriverLoaded": true,
+    "FocusedChecksLoadedDriver": false,
+    "ModelInferenceExecuted": false,
+    "NativeProbeAttempts": 3,
+    "GenericDispatchAttempts": 1,
+    "AdministrativeIntakeAndAdditionalPreparationAllowanceMilliseconds": 60000,
+    "ArtifactBindingAttempts": 1,
+    "SignedQ2PackageAuditAttempts": 1,
+    "SignedQ2CatalogFollowupChecks": 1,
+    "OwnerManagedEvidenceSelectionCopies": 1
+  },
+  "files": [
+    {
+      "path": "device-session/session.json",
+      "bytes": 3562,
+      "sha256": "0be6134a9bb33c3368bb1f135ba14ce895942498e2825fa6e5f6ad64335dcd73"
+    },
+    {
+      "path": "device-session/worker.json",
+      "bytes": 2821,
+      "sha256": "1ad553ffa82429048a91dd5522818485687aa507b4dceb4f23cfd322dc14122b"
+    },
+    {
+      "path": "native-bundle/native-build.json",
+      "bytes": 2093,
+      "sha256": "fb172e3a72b60230fade4cc88e51020ff83f4b92fe3129adf5bec5de57cb8033"
+    },
+    {
+      "path": "native-bundle/native-hexagon-query.exe",
+      "bytes": 205312,
+      "sha256": "4367fad283ebbc6f03eee905fe2f2c20915ce2e490eb2873d6ba127f849bf409"
+    },
+    {
+      "path": "reference-session/session.json",
+      "bytes": 4085,
+      "sha256": "be1b21a56f1e6ba86421f614bad9aab412d71138b6a158be6f70bda3d739135d"
+    },
+    {
+      "path": "reference-session/worker.json",
+      "bytes": 3203,
+      "sha256": "131d1fe88c65026147a3e85bfa3e5e7061739a101790414e0b96a709be77d5e2"
+    },
+    {
+      "path": "native-reference-bundle/native-build.json",
+      "bytes": 2093,
+      "sha256": "0b022138b44db8b2a042df9a80ca4473491420010e7193b69179dceadda78fc5"
+    },
+    {
+      "path": "native-reference-bundle/native-hexagon-query.exe",
+      "bytes": 210432,
+      "sha256": "68127f2c8fd9dfd9c2639d446266e3510ef5eff4eddc073f630287c340b5b53a"
+    },
+    {
+      "path": "dispatch-identity/dispatch.json",
+      "bytes": 3426,
+      "sha256": "d5918969d32888a67e7ef0d920ba763b27d5eb8327aa0a6f4d6dabe0a885fa60"
+    },
+    {
+      "path": "dispatch-identity/worker.json",
+      "bytes": 2715,
+      "sha256": "210f7d251f93ff56db37cffa260227912073aabce50365ba611b12971496a531"
+    },
+    {
+      "path": "dispatch-identity-bundle/fixture-build.json",
+      "bytes": 872,
+      "sha256": "c1cd68ff993387546bcd50f13e00abe6c84f54737307505e831a163b67b730ff"
+    },
+    {
+      "path": "dispatch-identity-bundle/hexagon-dispatch-fixture.exe",
+      "bytes": 177152,
+      "sha256": "10e90989bace07ac83d8b7502115f290da32a02d0a44a40a6d40dd545d944fd5"
+    },
+    {
+      "path": "mutable-reference-session/session.json",
+      "bytes": 4077,
+      "sha256": "c2c2a44c475d1cc08a9253209363095b07dcc7841192cb75f16e41cfbdb59b02"
+    },
+    {
+      "path": "mutable-reference-session/worker.json",
+      "bytes": 3224,
+      "sha256": "3462284387fb5d9cb1e95cc05425e140b0758039390c8d12239021860d60669f"
+    },
+    {
+      "path": "native-mutable-reference-bundle/native-build.json",
+      "bytes": 2093,
+      "sha256": "97ca488cd54aaf5553794fd2d1889ade0cbf1d9d824cb32417577a1839532454"
+    },
+    {
+      "path": "native-mutable-reference-bundle/native-hexagon-query.exe",
+      "bytes": 210944,
+      "sha256": "95d45de9ee8c563320206e6d9ce4f5d8a51a6a96fe698588d3d9d069a0056ce1"
+    },
+    {
+      "path": "actual-projection/binding.json",
+      "bytes": 1442,
+      "sha256": "e996318664e10cac421d0d19399a33e2dc74b28aa5338d55334cf7315c2b58b0"
+    },
+    {
+      "path": "artifact-observation.json",
+      "bytes": 2143,
+      "sha256": "0308783f4883582270751bb7c6aef61b6047b177129d094aadc3b6ab40447b47"
+    },
+    {
+      "path": "artifact-bundle/artifact-build.json",
+      "bytes": 2401,
+      "sha256": "73175bdcf1bc56ef9edda0c5325667d43f21593962d03301cf6ddda1db70b549"
+    },
+    {
+      "path": "artifact-bundle/hexagon-packed-artifact.exe",
+      "bytes": 307712,
+      "sha256": "94425f20d84073c2b97960cd13842d985406b933777908653b45b1d649bdb5e5"
+    },
+    {
+      "path": "hosted-native-run.json",
+      "bytes": 259,
+      "sha256": "1b7019175beb6f4bb2af49d2f1797df6de43323c44737cb5515e3a78cfc24479"
+    },
+    {
+      "path": "hosted-reference-run.json",
+      "bytes": 6160,
+      "sha256": "58c6f18deb2e6e8af72fba2131156e52aae4fd4f3c8c692f8050439369315d65"
+    },
+    {
+      "path": "hosted-mutable-reference-run.json",
+      "bytes": 8200,
+      "sha256": "6ef93490e9ec029fc46328a94fe9101da572df51305873c21b9bbda5e6ea708d"
+    },
+    {
+      "path": "hosted-artifact-run.json",
+      "bytes": 8200,
+      "sha256": "6ef93490e9ec029fc46328a94fe9101da572df51305873c21b9bbda5e6ea708d"
+    },
+    {
+      "path": "native-clippy.txt",
+      "bytes": 3601,
+      "sha256": "ce67c8a30711412fb463a893369384520247d2145a408da92abc50379e93dcfa"
+    },
+    {
+      "path": "native-clippy-fixed.txt",
+      "bytes": 209,
+      "sha256": "f7f855755215b6d25726d72889465eeff06b11412a2f631744257508953badff"
+    },
+    {
+      "path": "session-result-check.txt",
+      "bytes": 79,
+      "sha256": "376b345462f5061799260a85aee11b0c759c681efaafc31e7d4fc3b79dac4e26"
+    },
+    {
+      "path": "signed-q2-package/package-audit.json",
+      "bytes": 3238,
+      "sha256": "aa265874745ecb7bcfcc505a1a9538da0248c77a99068a86c2cbcb91973e115d"
+    },
+    {
+      "path": "signed-q2-package/catalog-audit.json",
+      "bytes": 3495,
+      "sha256": "5c5f2076fe94c472130d0ef4914f907b1b7a33420c083d28a86d9d205908003c"
+    },
+    {
+      "path": "signed-q2-package/catalog-verification.txt",
+      "bytes": 419,
+      "sha256": "da729777efcb840b775741412dba895c7abbe5eee3e691eb64699ad051dc947e"
+    },
+    {
+      "path": "signed-q2-package/catalog-verification-readonly.txt",
+      "bytes": 10021,
+      "sha256": "bd0e624b188ed817c3f0f79754066d2ee4e1dd06ae5dc356efcc366daf7d7be1"
+    },
+    {
+      "path": "hosted-binder-failure/gguf-build.txt",
+      "bytes": 1200,
+      "sha256": "65c01c0091cee46e75a382bbcdaf6deec95ddb14bf0b65a412cb63cef921c43f"
+    },
+    {
+      "path": "hosted-binder-compile/extractor-build.txt",
+      "bytes": 665,
+      "sha256": "779d42331ffa164bd2c16e5eee0a7aa93252c6ed525d57ff6fed01480f1460bd"
+    },
+    {
+      "path": "hosted-binder-metadata/extractor-build.txt",
+      "bytes": 141,
+      "sha256": "1b66c34d0db755b70bdb50a57c598fc6994adc33905b60fe169134d4dbeb923d"
+    },
+    {
+      "path": "callers/Bonsai-Hexagon-SessionNext-20261030-check.ps1",
+      "bytes": 1840,
+      "sha256": "0e34384621389ad6cbf6c69c8405dd16221106c5078b7441f9cd31cf9f156156"
+    },
+    {
+      "path": "callers/Bonsai-Hexagon-SessionNext-20261030-focused.ps1",
+      "bytes": 2348,
+      "sha256": "444ccb504df6a41b3b9c49f27b4e6b9047e7deb9e231e3676884947c3043fa8c"
+    },
+    {
+      "path": "callers/Bonsai-Hexagon-SessionNext-20261030-device.ps1",
+      "bytes": 3811,
+      "sha256": "6a67e00253657a2378abd8a851f648bf6d5ecfc3f463de61dc27d5bd4626560f"
+    },
+    {
+      "path": "callers/Bonsai-Hexagon-SessionNext-20261030-reference.ps1",
+      "bytes": 5685,
+      "sha256": "aa62e52b8a8aca573cab70f3040b4f441b9c256dbd21284e32636da26bb04c33"
+    },
+    {
+      "path": "callers/Bonsai-Hexagon-SessionNext-20261030-mutable-reference.ps1",
+      "bytes": 4192,
+      "sha256": "dcc1b515277c028e85bf2eb74d857bd0989e7d560fa114d544d5010c05820cad"
+    },
+    {
+      "path": "callers/Bonsai-Hexagon-SessionNext-20261030-extract.ps1",
+      "bytes": 7860,
+      "sha256": "5bf56e3b443d81297508b3f533935f7b9210425d8a163fead31838e598466d34"
+    },
+    {
+      "path": "callers/Bonsai-Hexagon-SessionNext-20261030-q2-package.ps1",
+      "bytes": 1657,
+      "sha256": "2eb4329869c2f9d10a7e5d88bd1fa1cd72e934f691aac9f35ddf03f968f69eb1"
+    },
+    {
+      "path": "callers/Bonsai-Hexagon-SessionNext-20261030-q2-package-worker.ps1",
+      "bytes": 6384,
+      "sha256": "1302fed8da34774971f164272f79af7ada7a9ca2741cf3d9ee7e232beb6d5e62"
+    },
+    {
+      "path": "callers/Bonsai-Hexagon-SessionNext-20261030-q2-catalog.ps1",
+      "bytes": 1515,
+      "sha256": "91cc02f76da4b33d30b7d940dc312ee53e9849ae024e9e54168339e6795ce635"
+    },
+    {
+      "path": "callers/Bonsai-Hexagon-SessionNext-20261030-q2-catalog-worker.ps1",
+      "bytes": 3791,
+      "sha256": "d87762efcfa3ae7752b0020b1b0f4a44a593b1ead8b0b2bfdcadb4d106121bbc"
+    },
+    {
+      "path": "owner-budget-final.json",
+      "bytes": 619,
+      "sha256": "600e63c2f5fc869be291885b26e013218cd0a1ee9ead739ab70b29f89556ede0"
+    }
+  ]
+}

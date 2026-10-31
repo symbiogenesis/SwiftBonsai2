@@ -194,8 +194,9 @@ creation. Failures can retain bounded partial files; only a successful owned
 process receipt plus independently verified output digests permits intake.
 The tool reads no other tensor and writes no complete-model conversion.
 
-Actual extraction, independently retained output digests and consumption through
-the CPU operation control remain pending until an authorized bounded run. The
+The [bounded actual extraction](../../docs/evidence/hexagon-swift-projection-binding.json)
+and independent output-digest checks passed. Consumption through the operation
+and device controls remains pending. The
 binding establishes original weights and signs only; activations, logits,
 complete state, adapters, signed DSP computation and performance need their
 separate evidence. Any insufficient shared time allowance leaves extraction

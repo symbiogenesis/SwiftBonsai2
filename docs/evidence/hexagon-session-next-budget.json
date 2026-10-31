@@ -2,8 +2,8 @@
   "SchemaVersion": 1,
   "TotalMaximumSeconds": 300,
   "PriorFormattingAndPreparationAllowanceMilliseconds": 30000,
-  "DiagnosticElapsedMilliseconds": 49856,
-  "AggregateChargedMilliseconds": 139863,
+  "DiagnosticElapsedMilliseconds": 50530,
+  "AggregateChargedMilliseconds": 140537,
   "FullSuitesExecuted": false,
   "DriverLoaded": true,
   "FocusedChecksLoadedDriver": false,
@@ -13,5 +13,6 @@
   "AdministrativeIntakeAndAdditionalPreparationAllowanceMilliseconds": 60000,
   "ArtifactBindingAttempts": 1,
   "SignedQ2PackageAuditAttempts": 1,
-  "SignedQ2CatalogFollowupChecks": 1
+  "SignedQ2CatalogFollowupChecks": 1,
+  "OwnerManagedEvidenceSelectionCopies": 1
 }

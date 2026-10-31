@@ -225,6 +225,13 @@
     "priorStaticRefusal": "separate-scoped-observation",
     "profileEligible": false,
     "modelQualified": false,
-    "durableOwnerManagedRawArchive": "pending"
+    "durableOwnerManagedRawArchive": {
+      "directoryRelativeToDataDirectory": "qualification/hexagon-session-20261030",
+      "manifest": "docs/evidence/hexagon-session-next-archive.json",
+      "selectedCopiedDigestsVerified": true,
+      "independentOffDeviceBackup": "pending",
+      "retrievalWithoutOriginalRunner": "pending",
+      "independentReview": "pending"
+    }
   }
 }

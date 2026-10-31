@@ -3,7 +3,14 @@
   "reviewDateLocal": "2026-10-30",
   "profileEligible": false,
   "independentWorkloadReview": "pending",
-  "durableRawArchive": "pending-local-selection-copy",
+  "durableRawArchive": {
+    "directoryRelativeToDataDirectory": "qualification/hexagon-session-20261030",
+    "manifest": "docs/evidence/hexagon-session-next-archive.json",
+    "selectedCopiedDigestsVerified": true,
+    "independentOffDeviceBackup": "pending",
+    "retrievalWithoutOriginalRunner": "pending",
+    "independentReview": "pending"
+  },
   "kind": "GenieX-v0.10.0-signed-Q2-candidate-package-data-verification",
   "release": {
     "tag": "v0.10.0",

@@ -214,3 +214,12 @@ terminal native variants, the driver-bound generic control, full-file extraction
 new-package data verification and conservative preparation/administration allowances.
 Complete Rust, PowerShell/C# and artifact-binder suites ran only on hosted ARM64.
 No latency, energy or profile promotion follows from these access observations.
+
+The [selected credential-free archive](evidence/hexagon-session-next-archive.json)
+retains 45 exact reports, own Rust diagnostic bundles, binding metadata, callers
+and losing observations under the owner-managed qualification data directory.
+All copied file digests were independently rechecked. Model weights, adapters
+and vendor runtime binaries are excluded. Off-device backup, retrieval without
+the original runner and independent qualification review remain pending.
+The final charged owner total, including archive verification, is **140,537 ms**
+within the single 300,000 ms allowance; this is accounting, not a performance result.
