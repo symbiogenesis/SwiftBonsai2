@@ -82,7 +82,17 @@ fn semantic_sampling(text: &str) -> io::Result<String> {
     let end = text
         .find("// Stochastic sampler.")
         .ok_or_else(|| io::Error::other("Pinned Qwen sampler source differs."))?;
-    let text = format!("{}{}{}", &text[..start], SAMPLING_HELPERS, &text[end..]);
+    let text = format!(
+        "{}extern \"C\" int bonsai_qt_greedy_argmax(const float * logits, int V);\n{}{}",
+        &text[..start],
+        SAMPLING_HELPERS,
+        &text[end..]
+    );
+    let text = replace_once(
+        &text,
+        "return (int) (std::max_element(logits, logits + V) - logits);",
+        "return bonsai_qt_greedy_argmax(logits, V);",
+    )?;
     replace_once(
         &text,
         SEMANTIC_DRAW,
@@ -387,6 +397,8 @@ mod tests {
         assert!(patched.contains("bonsai_qt_apply_repetition_penalty(logits, V, history, n_history, penalty, seen_buf.data());"));
         assert!(!patched.contains("logits[i] = -INFINITY;\n    }\n}"));
         assert!(!patched.contains("seen_buf[(size_t) tok]"));
+        assert!(!patched.contains("std::max_element"));
+        assert!(patched.contains("return bonsai_qt_greedy_argmax(logits, V);"));
         assert!(patched.contains("std::nth_element"));
         assert!(patched.contains("std::sort(sorted_buf.begin()"));
         assert!(patched.contains("u = bonsai_qt_philox_uniform(seed, philox_subseq, 0u);"));

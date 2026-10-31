@@ -1,4 +1,4 @@
-//! Exact masking and repetition policy from the pinned Qwen sampler.
+//! Exact masking, repetition and greedy selection from the pinned Qwen sampler.
 //!
 //! Ported from `src/sampling.h` in qwentts.cpp revision
 //! `5916bf7c79dbb4e66fc059cdc507a79a23a28bb4`, under the MIT license reproduced
@@ -9,6 +9,24 @@
 //! Original header SHA-256:
 //! `9812a8b428efffcfe3d832409f3eae092cb3be90bfeefbf141f75df0320e2241`.
 #![forbid(unsafe_code)]
+
+/// Select the first maximum using the pinned `std::max_element` comparisons.
+///
+/// Equal values retain the earlier token, a leading NaN remains selected, and
+/// later NaNs are ignored. Empty input returns zero without accessing storage.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "Sampler policy is private to the speech crate and its native ABI module."
+)]
+pub(super) fn greedy_argmax(logits: &[f32]) -> usize {
+    let mut best = 0;
+    for (index, &candidate) in logits.iter().enumerate().skip(1) {
+        if logits[best] < candidate {
+            best = index;
+        }
+    }
+    best
+}
 
 /// Mask the clipped half-open interval, preserving the optional kept token.
 #[allow(
@@ -76,7 +94,35 @@ mod tests {
         clippy::float_cmp,
         reason = "Exact zero, infinity and integral results describe the pinned sampler contract."
     )]
-    use super::{repetition_penalty, suppress};
+    use super::{greedy_argmax, repetition_penalty, suppress};
+
+    #[test]
+    fn greedy_selection_retains_first_ties_and_pinned_nan_ordering() {
+        let nan = f32::from_bits(0x7fc0_1234);
+        for (logits, expected) in [
+            (vec![], 0),
+            (vec![nan], 0),
+            (vec![nan, f32::INFINITY], 0),
+            (vec![-0.0, 0.0], 0),
+            (vec![0.0, -0.0], 0),
+            (vec![1.0, nan, 2.0, 2.0], 2),
+            (vec![f32::NEG_INFINITY; 3], 0),
+            (
+                vec![f32::NEG_INFINITY, f32::INFINITY, nan, f32::INFINITY],
+                1,
+            ),
+        ] {
+            let original: Vec<_> = logits.iter().map(|value| value.to_bits()).collect();
+            assert_eq!(greedy_argmax(&logits), expected);
+            assert_eq!(
+                logits
+                    .iter()
+                    .map(|value| value.to_bits())
+                    .collect::<Vec<_>>(),
+                original
+            );
+        }
+    }
 
     #[test]
     fn suppression_clips_ranges_and_preserves_kept_bits() {

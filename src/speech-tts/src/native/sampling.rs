@@ -6,6 +6,24 @@
 
 use std::ffi::c_int;
 
+// SAFETY: The pinned greedy sampler supplies vocabulary initialized f32s,
+// borrowed read-only for this synchronous call. No reference or pointer escapes.
+#[unsafe(no_mangle)]
+pub(super) extern "C" fn bonsai_qt_greedy_argmax(logits: *const f32, vocabulary: c_int) -> c_int {
+    let vocabulary = usize::try_from(vocabulary).unwrap_or_else(|_| std::process::abort());
+    if vocabulary == 0 {
+        return 0;
+    }
+    if logits.is_null() || !logits.is_aligned() {
+        std::process::abort();
+    }
+    // SAFETY: The native caller retains the aligned initialized vocabulary
+    // extent throughout this call, with no concurrent mutation or deallocation.
+    let logits = unsafe { std::slice::from_raw_parts(logits, vocabulary) };
+    c_int::try_from(super::super::sampling::greedy_argmax(logits))
+        .unwrap_or_else(|_| std::process::abort())
+}
+
 // SAFETY: This private static-link ABI is called only by the pinned sampler
 // wrapper. For positive vocabulary, logits points to that many exclusively
 // borrowed initialized f32s. The wrapper retains storage for this synchronous
