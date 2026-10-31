@@ -16,6 +16,13 @@ CI-only; hosted cloud CI has its own workflow limits.
 Each worker in a parallel fan-out must use its own individual Git worktree.
 Within each worktree, place each logical change in its own individual commit.
 
+# Prism repository workflow
+
+On this computer, the owner authorizes direct pushes to `main` from the sibling
+`..\prism-inference` clone. Do not create Prism pull requests as the routine
+delivery workflow. Keep parallel changes in individual worktrees and commits;
+review them before integrating and pushing to Prism `main`.
+
 # UI architecture
 
 The first-party UI must remain native and written entirely in Rust. Use native
