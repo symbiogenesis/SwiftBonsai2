@@ -62,31 +62,38 @@ if ($library.ExitCode -ne 0) { throw 'The pinned GGUF library did not build.' }
 # Bind Cargo's actual artifact paths instead of guessing host/target subdirectories.
 $ggufPaths = [Collections.Generic.List[string]]::new()
 $shaPaths = [Collections.Generic.List[string]]::new()
+$ggufMetadata = [Collections.Generic.List[string]]::new()
+$shaMetadata = [Collections.Generic.List[string]]::new()
+$searchDirectories = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 foreach ($line in $library.StandardOutput -split '\r?\n') {
     if (-not $line) { continue }
     $message = ConvertFrom-Json -InputObject $line -AsHashtable -NoEnumerate -Depth 32
     if ($message.reason -cne 'compiler-artifact' -or $message.target.kind -cnotcontains 'lib') { continue }
     foreach ($path in $message.filenames) {
-        if ([IO.Path]::GetExtension($path) -cne '.rlib') { continue }
+        $extension = [IO.Path]::GetExtension($path)
+        if ($extension -cnotin @('.rlib','.rmeta')) { continue }
         $full = [IO.Path]::GetFullPath($path)
         if (-not $full.StartsWith($target + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Cargo artifact escaped the owned target directory.' }
+        [void]$searchDirectories.Add([IO.Path]::GetDirectoryName($full))
         if ($message.target.name -ceq 'bonsai_gguf') {
             if ([IO.Path]::GetFullPath($message.manifest_path) -ine [IO.Path]::GetFullPath((Join-Path $GgufSourceDirectory 'tools/gguf/Cargo.toml'))) { throw 'Cargo compiled an unrelated GGUF source manifest.' }
-            $ggufPaths.Add($full)
-        } elseif ($message.target.name -ceq 'sha2' -and $message.package_id -cmatch '#sha2@0\.11\.1$') { $shaPaths.Add($full) }
+            if ($extension -ceq '.rmeta') { $ggufMetadata.Add($full) } else { $ggufPaths.Add($full) }
+        } elseif ($message.target.name -ceq 'sha2' -and $message.package_id -cmatch '#sha2@0\.11\.1$') {
+            if ($extension -ceq '.rmeta') { $shaMetadata.Add($full) } else { $shaPaths.Add($full) }
+        }
     }
 }
-if ($ggufPaths.Count -ne 1 -or $shaPaths.Count -ne 1) { throw 'Pinned GGUF dependency library selection is ambiguous.' }
+if ($ggufPaths.Count -ne 1 -or $shaPaths.Count -ne 1 -or $ggufMetadata.Count -ne 1 -or $shaMetadata.Count -ne 1) { throw 'Pinned GGUF dependency library selection is ambiguous.' }
 $gguf = $ggufPaths[0]
 $sha = @($shaPaths[0])
-$dependencyDirectory = [IO.Path]::GetDirectoryName($sha[0])
+$searchArguments = @(foreach ($directory in $searchDirectories) { '-L'; 'dependency=' + $directory })
 $source = Join-Path $repo 'tools/hexagon/packed_artifact.rs'
 $manifest = Join-Path $repo 'tools/hexagon/diagnostic.manifest'
 $bundle = Join-Path $output 'bundle'
 [void][IO.Directory]::CreateDirectory($bundle)
 $exe = Join-Path $bundle 'hexagon-packed-artifact.exe'
 $test = Join-Path $output 'packed-artifact-contract.exe'
-$base = @('--edition=2024','--target','aarch64-pc-windows-msvc','-C','opt-level=2','-C','overflow-checks=yes','-C',('linker=' + $linker),'-C','linker-flavor=lld-link','-D','warnings','--extern',('bonsai_gguf=' + $gguf),'--extern',('sha2=' + $sha[0]),'-L',('dependency=' + $dependencyDirectory),'-C','link-arg=/MANIFEST:EMBED','-C',('link-arg=/MANIFESTINPUT:' + $manifest))
+$base = @('--edition=2024','--target','aarch64-pc-windows-msvc','-C','opt-level=2','-C','overflow-checks=yes','-C',('linker=' + $linker),'-C','linker-flavor=lld-link','-D','warnings','--extern',('bonsai_gguf=' + $ggufMetadata[0]),'--extern',('sha2=' + $shaMetadata[0]),'-C','link-arg=/MANIFEST:EMBED','-C',('link-arg=/MANIFESTINPUT:' + $manifest)) + $searchArguments
 foreach ($case in @(@{ Name='extractor'; Arguments=@($source,'-o',$exe) },@{ Name='contract'; Arguments=@('--test',$source,'-o',$test) })) {
     $built = Invoke-BonsaiNativeProcess -Executable $rustc -ArgumentList ($base + $case.Arguments) -WorkingDirectory $output -TimeoutSeconds 120 -OwnDescendants -LogPath (Join-Path $output ($case.Name + '-build.txt'))
     if ($built.ExitCode -ne 0) { throw 'The narrow projection extractor did not compile.' }
@@ -103,6 +110,8 @@ $receipt = [ordered]@{
     CompilerIdentitySha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler.StandardOutput))).ToLowerInvariant()
     SourceSha256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
     ManifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+    GgufMetadataSha256 = (Get-FileHash -LiteralPath $ggufMetadata[0] -Algorithm SHA256).Hash.ToLowerInvariant()
+    Sha2MetadataSha256 = (Get-FileHash -LiteralPath $shaMetadata[0] -Algorithm SHA256).Hash.ToLowerInvariant()
     GgufLibrarySha256 = (Get-FileHash -LiteralPath $gguf -Algorithm SHA256).Hash.ToLowerInvariant()
     Sha2LibrarySha256 = (Get-FileHash -LiteralPath $sha[0] -Algorithm SHA256).Hash.ToLowerInvariant()
     DependencyCargoLockSha256 = (Get-FileHash -LiteralPath (Join-Path $GgufSourceDirectory 'Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
