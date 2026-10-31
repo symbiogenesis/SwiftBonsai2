@@ -1,0 +1,230 @@
+{
+  "schemaVersion": 1,
+  "kind": "native-Rust-X2-default-session-module-open-observation",
+  "reviewDateLocal": "2026-10-30",
+  "hostedRun": {
+    "attempt": 1,
+    "conclusion": "success",
+    "event": "push",
+    "headBranch": "codex/hexagon-delivery-next-1030",
+    "headSha": "bc847a7cf17fe888e68fa1e22b5d7ea330045988",
+    "status": "completed",
+    "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41163991030"
+  },
+  "prismHostedControls": {
+    "id": 41163992512,
+    "headSha": "c58ba46e3dc848b984a8306da2a5f98971dd5889",
+    "conclusion": "success",
+    "url": "https://github.com/symbiogenesis/prism-inference/actions/runs/41163992512"
+  },
+  "build": {
+    "SchemaVersion": 1,
+    "RunnerRevision": "bc847a7cf17fe888e68fa1e22b5d7ea330045988",
+    "RunId": "41163991030",
+    "RunAttempt": "1",
+    "RustToolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+    "Target": "aarch64-pc-windows-msvc",
+    "HostedBuild": true,
+    "CompilerIdentitySha256": "3d03c3c0e97a9e6a04bb31d7194e26147d4c2ef2fd6528725d47f94a21f32b23",
+    "SourceFiles": [
+      {
+        "Name": "lib.rs",
+        "Sha256": "edd2e9ac5b95294e0ac5ee9824e3f17fb276d452f16099d8aee602dca7534575"
+      },
+      {
+        "Name": "windows.rs",
+        "Sha256": "ad0f2ca384b63352ca2e0ea8b687956bafad6f308f80ca5bf8a57434d0f9c710"
+      },
+      {
+        "Name": "mapping.rs",
+        "Sha256": "c640c756f293b844fcf16b595606631047b1bff09365ef531ea15f258e4f97f6"
+      },
+      {
+        "Name": "session.rs",
+        "Sha256": "1c62d21b73c74283607989211fd2eada0a134c54af69cb1bb8cffb5da3f39bec"
+      },
+      {
+        "Name": "session_native.rs",
+        "Sha256": "aa203e09148a07c3c51a326518bd377b27b314a4a231bdadce513a56a7a347d7"
+      },
+      {
+        "Name": "session_mapping.rs",
+        "Sha256": "fad41301bbd89f0f2b84bf3caf3d0459af80540d0aac0dc0372983b1e81c4ef3"
+      },
+      {
+        "Name": "session_mapping_native.rs",
+        "Sha256": "580838d52d99cc89f2a0a6f38fdde3382420fdfadfe01979fd95657577063514"
+      },
+      {
+        "Name": "query.rs",
+        "Sha256": "eb49c0ebd47efdcc0755e6c891203a0875708cc21e1da803a855b7448c02e1cd"
+      },
+      {
+        "Name": "sources.json",
+        "Sha256": "1ef79518617ff05089badcf02bb3499ec00f2367db393922ba968f337ed64ccc"
+      }
+    ],
+    "ManifestSha256": "66640ccb8231409d1f1a13348a325ae6e4c06b740a82c34855de742f806017be",
+    "LockSha256": "6d4e5d5378591a60cbcc22d3bfbfeb07b16fe77adbb2d6853548e4f81ba7acfc",
+    "Executable": {
+      "Name": "native-hexagon-query.exe",
+      "Bytes": 205312,
+      "Sha256": "4367fad283ebbc6f03eee905fe2f2c20915ce2e490eb2873d6ba127f849bf409"
+    },
+    "ExecutableSha256": "4367fad283ebbc6f03eee905fe2f2c20915ce2e490eb2873d6ba127f849bf409",
+    "DeviceCodeLoaded": false,
+    "DspCodeLoaded": false,
+    "ProfileEligible": false
+  },
+  "observation": {
+    "SchemaVersion": 1,
+    "Kind": "runner-hexagon-session",
+    "Outcome": "pending",
+    "Failure": "native-session-mapping-incomplete",
+    "ExpectedRunnerRevision": "bc847a7cf17fe888e68fa1e22b5d7ea330045988",
+    "MaximumSeconds": 120,
+    "CleanupReserveSeconds": 75,
+    "WorkerAllowanceSeconds": 44,
+    "ElapsedMilliseconds": 1957,
+    "WorkerAttempted": true,
+    "OwnedJobTeardown": "confirmed-empty",
+    "Worker": {
+      "SchemaVersion": 1,
+      "Kind": "runner-hexagon-session-worker",
+      "SourceRevision": "bc847a7cf17fe888e68fa1e22b5d7ea330045988",
+      "Outcome": "pending",
+      "Stage": "session-mapping",
+      "Failure": "native-session-mapping-incomplete",
+      "LastNativeStage": "module-open-entered",
+      "SignedPackageVerified": true,
+      "RuntimeFilesVerified": 16,
+      "DriverIdentityVerified": true,
+      "DriverIdentity": {
+        "Path": "C:\\WINDOWS\\System32\\DriverStore\\FileRepository\\qcnspmcdm8480.inf_arm64_4feba84cfc7ee278\\libcdsprpc.dll",
+        "Bytes": 593472,
+        "Sha256": "5cf6aa86670cceb84461050ad00b012662e4859d15be2a1cf147d98d5002f37d",
+        "SignatureStatus": "Valid",
+        "Publisher": "Microsoft Windows Hardware Compatibility Publisher",
+        "SignerThumbprint": "32b4e7ce92a59c722b8bdf7ae3e66520cfb9de21",
+        "FileHeldAgainstMutation": true
+      },
+      "MappingCycleVerified": false,
+      "NativeResult": {
+        "schemaVersion": 1,
+        "kind": "native-fastrpc-session-mapping-probe",
+        "driverDll": "C:\\WINDOWS\\System32\\DriverStore\\FileRepository\\qcnspmcdm8480.inf_arm64_4feba84cfc7ee278\\libcdsprpc.dll",
+        "passed": false,
+        "stage": "module-open-refused-pinned",
+        "metadataPrepared": true,
+        "metadataStage": "session-metadata-prepared",
+        "architectureRaw": 32897,
+        "architecture": 81,
+        "sessionId": 0,
+        "domainRequestId": 14,
+        "domainResult": 0,
+        "effectiveDomain": 3,
+        "uriRequestId": 15,
+        "uriResult": 0,
+        "uriVerified": true,
+        "moduleOpenResult": 14,
+        "handleObserved": false,
+        "remoteModuleOpened": false,
+        "bytes": 4096,
+        "heapId": 25,
+        "allocationFlags": 1,
+        "mapFlags": 2,
+        "allocationSucceeded": false,
+        "descriptorObserved": false,
+        "descriptorError": null,
+        "cpuRoundtripVerified": false,
+        "mappingAttempted": false,
+        "mappingResult": null,
+        "unmappingResult": null,
+        "freeCompleted": false,
+        "poisoned": false,
+        "moduleCloseResult": null,
+        "moduleCloseCompleted": false,
+        "ownerPinnedUntilExit": true,
+        "driverLoaded": true,
+        "signedDeploymentVerified": false,
+        "computeExecuted": false,
+        "dmaExecuted": false,
+        "unsignedProcessRequested": false,
+        "sessionTeardownVerified": false,
+        "profileEligible": false
+      },
+      "ExecutableSha256": "4367fad283ebbc6f03eee905fe2f2c20915ce2e490eb2873d6ba127f849bf409",
+      "BuildReceiptSha256": "fb172e3a72b60230fade4cc88e51020ff83f4b92fe3129adf5bec5de57cb8033",
+      "ManifestSha256": "66640ccb8231409d1f1a13348a325ae6e4c06b740a82c34855de742f806017be",
+      "LockSha256": "6d4e5d5378591a60cbcc22d3bfbfeb07b16fe77adbb2d6853548e4f81ba7acfc",
+      "ModelLoaded": false,
+      "SwiftQualified": false,
+      "ProfileEligible": false,
+      "DriverInstalled": false,
+      "TrustChanged": false,
+      "ComputeExecuted": false
+    },
+    "MappingCycleVerified": false,
+    "ModelLoaded": false,
+    "SwiftQualified": false,
+    "ProfileEligible": false,
+    "DriverInstalled": false,
+    "TrustChanged": false
+  },
+  "ownerBudgetAtObservation": {
+    "SchemaVersion": 1,
+    "TotalMaximumSeconds": 300,
+    "PriorFormattingAndPreparationAllowanceMilliseconds": 30000,
+    "DiagnosticElapsedMilliseconds": 8167,
+    "AggregateChargedMilliseconds": 38168,
+    "FullSuitesExecuted": false,
+    "DriverLoaded": true,
+    "FocusedChecksLoadedDriver": false,
+    "ModelInferenceExecuted": false,
+    "NativeProbeAttempts": 1
+  },
+  "rawSelectionDigests": {
+    "nativeBuild": {
+      "filename": "native-build.json",
+      "sha256": "fb172e3a72b60230fade4cc88e51020ff83f4b92fe3129adf5bec5de57cb8033",
+      "bytes": 2093
+    },
+    "session": {
+      "filename": "session.json",
+      "sha256": "0be6134a9bb33c3368bb1f135ba14ce895942498e2825fa6e5f6ad64335dcd73",
+      "bytes": 3562
+    },
+    "worker": {
+      "filename": "worker.json",
+      "sha256": "1ad553ffa82429048a91dd5522818485687aa507b4dceb4f23cfd322dc14122b",
+      "bytes": 2821
+    },
+    "budgetAtObservation": {
+      "filename": "budget.json",
+      "sha256": "9157134f4838d4d3f454e20f701daf976107fdd185e45fe5e4317506973987c5",
+      "bytes": 356
+    },
+    "hostedRun": {
+      "filename": "hosted-native-run.json",
+      "sha256": "1b7019175beb6f4bb2af49d2f1797df6de43323c44737cb5515e3a78cfc24479",
+      "bytes": 259
+    }
+  },
+  "interpretation": {
+    "packageCatalogAndGuardedDriverVerified": true,
+    "sessionMetadataPrepared": true,
+    "remoteModuleOpenResult": 14,
+    "moduleOpened": false,
+    "allocationAttempted": false,
+    "mappingAttempted": false,
+    "computeExecuted": false,
+    "unsignedProcessControlRequested": false,
+    "ownedJobConfirmedEmpty": true,
+    "errorCause": "not-established-by-this-observation",
+    "fdMappingSupport": "not-tested-because-module-open-refused",
+    "priorStaticRefusal": "separate-scoped-observation",
+    "profileEligible": false,
+    "modelQualified": false,
+    "durableOwnerManagedRawArchive": "pending"
+  }
+}

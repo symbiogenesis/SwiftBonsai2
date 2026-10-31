@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "purpose": "source-review-and-model-free-access-candidate-only",
+  "purpose": "source-reviewed-native-access-and-bound-projection-candidate-only",
   "reviewDate": "2026-10-30",
   "admission": "disabled",
   "automaticSelection": false,
@@ -34,8 +34,18 @@
       "digestSource": "https://api.github.com/repos/qualcomm/GenieX/releases/tags/v0.8.0",
       "downloadedOrExecutedBySourceAudit": false
     },
-    "signatureEvidence": "all-four-bundled-catalog-members-verified; generic-X2-numeric-dispatch-passed; native-capability-and-session-metadata-observed; exact-loaded-driver-DSP-tuple-and-native-mapping-pending",
-    "supportedMatmulWeightsAtBundledSource": ["Q4_0", "Q4_1", "Q8_0", "IQ4_NL", "MXFP4", "Q4_K", "Q6_K", "F16", "F32"],
+    "signatureEvidence": "all-four-bundled-catalog-members-verified; generic-X2-numeric-dispatch-and-independent-loaded-driver-observed; native-reference-FD-cycle-passed; exact-loaded-DSP-bytes-and-compute-pending",
+    "supportedMatmulWeightsAtBundledSource": [
+      "Q4_0",
+      "Q4_1",
+      "Q8_0",
+      "IQ4_NL",
+      "MXFP4",
+      "Q4_K",
+      "Q6_K",
+      "F16",
+      "F32"
+    ],
     "swiftPackedTypesAtBundledSource": "unsupported",
     "modelFreeTestExecutable": "LLAMA_BUILD_TESTS-OFF; standalone-Rust-fixture-hosted-build-and-X2-two-graph-dispatch-passed; docs/evidence/hexagon-advance-controls.json",
     "qualification": "device-access-only; not-a-Swift-runtime"
@@ -57,6 +67,14 @@
       "purpose": "PQ2-PTQ1-tile-and-HVX-source-research",
       "swiftQualification": "pending; hinted-Hadamard-matmul-is-explicitly-refused",
       "signedWindowsCoverage": "not-established"
+    },
+    {
+      "repository": "https://github.com/qualcomm/GenieX",
+      "tag": "v0.10.0",
+      "commit": "071f609995470bdb0e0769ab964754adfaab7e47",
+      "purpose": "separate-signed-Q2-Q8_1-integer-primitive-candidate",
+      "candidateLock": "config/hexagon-signed-q2-candidate.lock.json",
+      "qualification": "archive-and-catalog-verified-as-data; queue-ABI-and-device-arithmetic-pending; no-repin"
     }
   ],
   "prototype": {
@@ -68,10 +86,12 @@
     "packedWeightBytes": 23674880,
     "activationContract": "exact-pinned-Q8_K-preparation-and-scale-reduction-order",
     "inputTransform": "explicit-sign-normalized-1024-Sylvester-Walsh-Hadamard-on-input-last-dimension",
-    "execution": "CPU-only-tiled-operation-control-hosted-tests-passed; signed-packed-device-kernel-and-actual-artifact-parity-pending",
+    "execution": "CPU-only-operation-and-wire-controls-hosted; actual-first-projection-and-signs-bound; signed-device-arithmetic-and-model-parity-pending",
     "stateOwner": "CPU-until-full-state-qualification",
     "sessionLimit": 1,
-    "wholeModelExpansion": false
+    "wholeModelExpansion": false,
+    "artifactBinding": "docs/evidence/hexagon-swift-projection-binding.json",
+    "nativeFdObservation": "docs/evidence/hexagon-x2-native-fd-cycle.json"
   },
   "budgets": {
     "ownerDeviceAggregateSeconds": 300,

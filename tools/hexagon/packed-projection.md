@@ -150,8 +150,10 @@ buffer retention after submission, full-state parity and benefit remain pending.
 [`packed_artifact.rs`](packed_artifact.rs) is a narrow Rust export tool using
 the existing `bonsai_gguf::VerifiedModel` API from exact Prism revision
 `7aca2251f09acb345d4afb53d5ce411f81017745`. It adds no GGUF parser, inference
-dependency or alternate model admission. Hosted preparation must verify that
-source checkout and link its `bonsai_gguf` and `sha2` libraries. The tool's
+dependency or alternate model admission. Hosted preparation verifies that
+source checkout and builds the exact extractor as a temporary Cargo example,
+using its `bonsai_gguf` and `sha2` dependencies with default features disabled.
+Tracked dependency source remains unchanged; Cargo owns metadata/link resolution. The tool's
 model-free `--self-test` checks width selection, complete-array sign validation
 and packed-scale rejection without opening a model or device. Building or
 executing the candidate alone does not establish actual artifact evidence.
@@ -159,7 +161,7 @@ executing the candidate alone does not establish actual artifact evidence.
 The only extraction invocation is:
 
 ```powershell
-& ABSOLUTE_HOSTED_BUILD/packed-artifact.exe --model ABSOLUTE_SWIFT_GGUF --output-directory NEW_EXTERNAL_DIRECTORY
+& ABSOLUTE_HOSTED_BUILD/hexagon-packed-artifact.exe --model ABSOLUTE_SWIFT_GGUF --output-directory NEW_EXTERNAL_DIRECTORY
 ```
 
 An owned supervisor must enforce the remaining aggregate owner-device deadline

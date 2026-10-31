@@ -1,0 +1,17 @@
+{
+  "SchemaVersion": 1,
+  "TotalMaximumSeconds": 300,
+  "PriorFormattingAndPreparationAllowanceMilliseconds": 30000,
+  "DiagnosticElapsedMilliseconds": 49856,
+  "AggregateChargedMilliseconds": 139863,
+  "FullSuitesExecuted": false,
+  "DriverLoaded": true,
+  "FocusedChecksLoadedDriver": false,
+  "ModelInferenceExecuted": false,
+  "NativeProbeAttempts": 3,
+  "GenericDispatchAttempts": 1,
+  "AdministrativeIntakeAndAdditionalPreparationAllowanceMilliseconds": 60000,
+  "ArtifactBindingAttempts": 1,
+  "SignedQ2PackageAuditAttempts": 1,
+  "SignedQ2CatalogFollowupChecks": 1
+}

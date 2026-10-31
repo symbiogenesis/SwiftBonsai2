@@ -1,0 +1,567 @@
+{
+  "schemaVersion": 1,
+  "reviewDateLocal": "2026-10-30",
+  "profileEligible": false,
+  "independentWorkloadReview": "pending",
+  "durableRawArchive": "pending-local-selection-copy",
+  "kind": "native-Rust-X2-reference-FD-registration-cycle",
+  "hostedRun": {
+    "attempt": 1,
+    "conclusion": "failure",
+    "event": "push",
+    "headBranch": "codex/hexagon-delivery-next-1030",
+    "headSha": "3cf4f129f082e2b43a86d3d5a39ee1676de5cea5",
+    "jobs": [
+      {
+        "completedAt": "2026-10-31T03:48:53Z",
+        "conclusion": "success",
+        "databaseId": 124433210337,
+        "name": "artifact-binder",
+        "startedAt": "2026-10-31T03:47:37Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-31T03:47:39Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-31T03:47:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:53Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-31T03:47:39Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:08Z",
+            "conclusion": "success",
+            "name": "Run ./.github/actions/rust-toolchain",
+            "number": 3,
+            "startedAt": "2026-10-31T03:47:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:18Z",
+            "conclusion": "success",
+            "name": "Check out the exact Rust GGUF reader for the narrow artifact binder",
+            "number": 4,
+            "startedAt": "2026-10-31T03:48:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:41Z",
+            "conclusion": "success",
+            "name": "Prepare the verified projection and sign-array binder without a model",
+            "number": 5,
+            "startedAt": "2026-10-31T03:48:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:42Z",
+            "conclusion": "success",
+            "name": "Retain the source-bound artifact binder bundle",
+            "number": 6,
+            "startedAt": "2026-10-31T03:48:41Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:43Z",
+            "conclusion": "success",
+            "name": "Retain hosted artifact-binder controls",
+            "number": 7,
+            "startedAt": "2026-10-31T03:48:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:47Z",
+            "conclusion": "success",
+            "name": "Post Check out the exact Rust GGUF reader for the narrow artifact binder",
+            "number": 12,
+            "startedAt": "2026-10-31T03:48:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:48Z",
+            "conclusion": "success",
+            "name": "Post Run ./.github/actions/rust-toolchain",
+            "number": 13,
+            "startedAt": "2026-10-31T03:48:47Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:52Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 14,
+            "startedAt": "2026-10-31T03:48:48Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:52Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-31T03:48:52Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433210337"
+      },
+      {
+        "completedAt": "2026-10-31T03:48:32Z",
+        "conclusion": "failure",
+        "databaseId": 124433210532,
+        "name": "standards",
+        "startedAt": "2026-10-31T03:47:38Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-31T03:47:40Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-31T03:47:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:52Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-31T03:47:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:55Z",
+            "conclusion": "success",
+            "name": "Install the C# analyzer SDK",
+            "number": 3,
+            "startedAt": "2026-10-31T03:47:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:57Z",
+            "conclusion": "success",
+            "name": "Reuse the pinned PowerShell analyzer",
+            "number": 4,
+            "startedAt": "2026-10-31T03:47:55Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:57Z",
+            "conclusion": "skipped",
+            "name": "Save the pinned PowerShell analyzer on a cache miss",
+            "number": 5,
+            "startedAt": "2026-10-31T03:47:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:27Z",
+            "conclusion": "failure",
+            "name": "Enforce PowerShell and C# standards",
+            "number": 6,
+            "startedAt": "2026-10-31T03:47:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:27Z",
+            "conclusion": "skipped",
+            "name": "Post Reuse the pinned PowerShell analyzer",
+            "number": 10,
+            "startedAt": "2026-10-31T03:48:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:27Z",
+            "conclusion": "skipped",
+            "name": "Post Install the C# analyzer SDK",
+            "number": 11,
+            "startedAt": "2026-10-31T03:48:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:31Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 12,
+            "startedAt": "2026-10-31T03:48:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:31Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 13,
+            "startedAt": "2026-10-31T03:48:31Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433210532"
+      },
+      {
+        "completedAt": "2026-10-31T03:49:56Z",
+        "conclusion": "success",
+        "databaseId": 124433210641,
+        "name": "controls",
+        "startedAt": "2026-10-31T03:47:38Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-31T03:47:42Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-31T03:47:39Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:57Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-31T03:47:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:18Z",
+            "conclusion": "success",
+            "name": "Run ./.github/actions/rust-toolchain",
+            "number": 3,
+            "startedAt": "2026-10-31T03:47:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:18Z",
+            "conclusion": "skipped",
+            "name": "Require one owner operation within the shared device budget",
+            "number": 4,
+            "startedAt": "2026-10-31T03:48:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:34Z",
+            "conclusion": "success",
+            "name": "Validate packed layout and bounded inventory supervision without models",
+            "number": 5,
+            "startedAt": "2026-10-31T03:48:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:35Z",
+            "conclusion": "success",
+            "name": "Validate comparative CPU GPU NPU ranking without opening a device",
+            "number": 6,
+            "startedAt": "2026-10-31T03:48:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:47Z",
+            "conclusion": "success",
+            "name": "Prepare source-bound native Rust diagnostics without a device",
+            "number": 7,
+            "startedAt": "2026-10-31T03:49:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:48Z",
+            "conclusion": "success",
+            "name": "Retain this run's exact two-file access fixture bundle",
+            "number": 8,
+            "startedAt": "2026-10-31T03:49:47Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:49Z",
+            "conclusion": "success",
+            "name": "Retain hosted compile and model-free direct Rust controls",
+            "number": 9,
+            "startedAt": "2026-10-31T03:49:48Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:50Z",
+            "conclusion": "success",
+            "name": "Retain the source-bound native session probe bundle",
+            "number": 10,
+            "startedAt": "2026-10-31T03:49:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:51Z",
+            "conclusion": "success",
+            "name": "Post Run ./.github/actions/rust-toolchain",
+            "number": 19,
+            "startedAt": "2026-10-31T03:49:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:55Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 20,
+            "startedAt": "2026-10-31T03:49:51Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:55Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 21,
+            "startedAt": "2026-10-31T03:49:55Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433210641"
+      },
+      {
+        "completedAt": "2026-10-31T03:49:56Z",
+        "conclusion": "skipped",
+        "databaseId": 124433696455,
+        "name": "inventory",
+        "startedAt": "2026-10-31T03:49:57Z",
+        "status": "completed",
+        "steps": [],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433696455"
+      },
+      {
+        "completedAt": "2026-10-31T03:49:56Z",
+        "conclusion": "skipped",
+        "databaseId": 124433696605,
+        "name": "session-probe",
+        "startedAt": "2026-10-31T03:49:57Z",
+        "status": "completed",
+        "steps": [],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433696605"
+      },
+      {
+        "completedAt": "2026-10-31T03:49:56Z",
+        "conclusion": "skipped",
+        "databaseId": 124433696890,
+        "name": "dispatch",
+        "startedAt": "2026-10-31T03:49:57Z",
+        "status": "completed",
+        "steps": [],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433696890"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635"
+  },
+  "trustedOwningJob": {
+    "name": "controls",
+    "conclusion": "success"
+  },
+  "postFixCompleteHostedRun": {
+    "id": 41165947786,
+    "headSha": "0fb20c27063241cf40293115aaf5df74b653af94",
+    "conclusion": "success",
+    "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165947786"
+  },
+  "build": {
+    "SchemaVersion": 1,
+    "RunnerRevision": "3cf4f129f082e2b43a86d3d5a39ee1676de5cea5",
+    "RunId": "41165875635",
+    "RunAttempt": "1",
+    "RustToolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+    "Target": "aarch64-pc-windows-msvc",
+    "HostedBuild": true,
+    "CompilerIdentitySha256": "3d03c3c0e97a9e6a04bb31d7194e26147d4c2ef2fd6528725d47f94a21f32b23",
+    "SourceFiles": [
+      {
+        "Name": "lib.rs",
+        "Sha256": "c6446fd42ea9be9fc9224828d4f6f5fe09b1eb89c61748af46418a471bb6b53f"
+      },
+      {
+        "Name": "windows.rs",
+        "Sha256": "7bcf3bae77cbcc8f7f7b70b8a6465716501f555d62897de759bdf1cd2da26c10"
+      },
+      {
+        "Name": "mapping.rs",
+        "Sha256": "c640c756f293b844fcf16b595606631047b1bff09365ef531ea15f258e4f97f6"
+      },
+      {
+        "Name": "session.rs",
+        "Sha256": "1c62d21b73c74283607989211fd2eada0a134c54af69cb1bb8cffb5da3f39bec"
+      },
+      {
+        "Name": "session_native.rs",
+        "Sha256": "8fb263591bf3f76f6d43c5c520bdfb3c7d11101e66568c4da75c5127c4fa577a"
+      },
+      {
+        "Name": "session_mapping.rs",
+        "Sha256": "2b0e4987faa88ef30854b0b8c59d9cab24870c5da412b4512bcdcdb3691936fc"
+      },
+      {
+        "Name": "session_mapping_native.rs",
+        "Sha256": "e4d6c6703e326fb2e63a60bb169d9e65d3eaa25de68ccf8e287c48342c863402"
+      },
+      {
+        "Name": "query.rs",
+        "Sha256": "4fd88b50fd6b5041ce753a2647eb25586c26e9d988fc8dedcc0ab0f8798104b3"
+      },
+      {
+        "Name": "sources.json",
+        "Sha256": "7ce75b349809ec383c410d0afb2aa7da2e8d616118ef99f36c497d2bf26d6859"
+      }
+    ],
+    "ManifestSha256": "66640ccb8231409d1f1a13348a325ae6e4c06b740a82c34855de742f806017be",
+    "LockSha256": "6d4e5d5378591a60cbcc22d3bfbfeb07b16fe77adbb2d6853548e4f81ba7acfc",
+    "Executable": {
+      "Name": "native-hexagon-query.exe",
+      "Bytes": 210944,
+      "Sha256": "95d45de9ee8c563320206e6d9ce4f5d8a51a6a96fe698588d3d9d069a0056ce1"
+    },
+    "ExecutableSha256": "95d45de9ee8c563320206e6d9ce4f5d8a51a6a96fe698588d3d9d069a0056ce1",
+    "DeviceCodeLoaded": false,
+    "DspCodeLoaded": false,
+    "ProfileEligible": false
+  },
+  "observation": {
+    "SchemaVersion": 1,
+    "Kind": "runner-hexagon-session",
+    "Outcome": "passed",
+    "Failure": null,
+    "ExpectedRunnerRevision": "3cf4f129f082e2b43a86d3d5a39ee1676de5cea5",
+    "MaximumSeconds": 120,
+    "CleanupReserveSeconds": 75,
+    "WorkerAllowanceSeconds": 44,
+    "ElapsedMilliseconds": 2075,
+    "WorkerAttempted": true,
+    "OwnedJobTeardown": "confirmed-empty",
+    "Worker": {
+      "SchemaVersion": 1,
+      "Kind": "runner-hexagon-session-worker",
+      "SourceRevision": "3cf4f129f082e2b43a86d3d5a39ee1676de5cea5",
+      "Outcome": "passed",
+      "Stage": "session-mapping-complete",
+      "Failure": null,
+      "LastNativeStage": "module-close-entered",
+      "ReferenceProcessInitializationSelected": true,
+      "UnsignedProcessRequested": true,
+      "ProcessInitializationResult": 0,
+      "SignedPackageVerified": true,
+      "RuntimeFilesVerified": 16,
+      "DriverIdentityVerified": true,
+      "DriverIdentity": {
+        "Path": "C:\\WINDOWS\\System32\\DriverStore\\FileRepository\\qcnspmcdm8480.inf_arm64_4feba84cfc7ee278\\libcdsprpc.dll",
+        "Bytes": 593472,
+        "Sha256": "5cf6aa86670cceb84461050ad00b012662e4859d15be2a1cf147d98d5002f37d",
+        "SignatureStatus": "Valid",
+        "Publisher": "Microsoft Windows Hardware Compatibility Publisher",
+        "SignerThumbprint": "32b4e7ce92a59c722b8bdf7ae3e66520cfb9de21",
+        "FileHeldAgainstMutation": true
+      },
+      "MappingCycleVerified": true,
+      "NativeResult": {
+        "schemaVersion": 1,
+        "kind": "native-fastrpc-session-mapping-probe",
+        "driverDll": "C:\\WINDOWS\\System32\\DriverStore\\FileRepository\\qcnspmcdm8480.inf_arm64_4feba84cfc7ee278\\libcdsprpc.dll",
+        "passed": true,
+        "stage": "session-fd-cycle-completed-owner-pinned",
+        "metadataPrepared": true,
+        "metadataStage": "session-metadata-prepared",
+        "architectureRaw": 32897,
+        "architecture": 81,
+        "sessionId": 0,
+        "domainRequestId": 14,
+        "domainResult": 0,
+        "effectiveDomain": 3,
+        "uriRequestId": 15,
+        "uriResult": 0,
+        "uriVerified": true,
+        "moduleOpenResult": 0,
+        "handleObserved": true,
+        "remoteModuleOpened": true,
+        "bytes": 4096,
+        "heapId": 25,
+        "allocationFlags": 1,
+        "mapFlags": 2,
+        "allocationSucceeded": true,
+        "descriptorObserved": true,
+        "descriptorError": null,
+        "cpuRoundtripVerified": true,
+        "mappingAttempted": true,
+        "mappingResult": 0,
+        "unmappingResult": 0,
+        "freeCompleted": true,
+        "poisoned": false,
+        "moduleCloseResult": 0,
+        "moduleCloseCompleted": true,
+        "ownerPinnedUntilExit": true,
+        "driverLoaded": true,
+        "signedDeploymentVerified": false,
+        "computeExecuted": false,
+        "dmaExecuted": false,
+        "referenceProcessInitializationSelected": true,
+        "processInitializationRequestId": 2,
+        "processInitializationEnable": 1,
+        "processInitializationStructureBytes": 8,
+        "processInitializationResult": 0,
+        "processInitializationDomainAfter": 0,
+        "processInitializationEnableAfter": 1,
+        "unsignedProcessRequested": true,
+        "sessionTeardownVerified": false,
+        "profileEligible": false
+      },
+      "ExecutableSha256": "95d45de9ee8c563320206e6d9ce4f5d8a51a6a96fe698588d3d9d069a0056ce1",
+      "BuildReceiptSha256": "97ca488cd54aaf5553794fd2d1889ade0cbf1d9d824cb32417577a1839532454",
+      "ManifestSha256": "66640ccb8231409d1f1a13348a325ae6e4c06b740a82c34855de742f806017be",
+      "LockSha256": "6d4e5d5378591a60cbcc22d3bfbfeb07b16fe77adbb2d6853548e4f81ba7acfc",
+      "ModelLoaded": false,
+      "SwiftQualified": false,
+      "ProfileEligible": false,
+      "DriverInstalled": false,
+      "TrustChanged": false,
+      "ComputeExecuted": false
+    },
+    "MappingCycleVerified": true,
+    "ModelLoaded": false,
+    "SwiftQualified": false,
+    "ProfileEligible": false,
+    "DriverInstalled": false,
+    "TrustChanged": false,
+    "ReferenceProcessInitializationSelected": true,
+    "UnsignedProcessRequested": true,
+    "ProcessInitializationResult": 0
+  },
+  "rawSelectionDigests": {
+    "report": {
+      "filename": "session.json",
+      "bytes": 4077,
+      "sha256": "c2c2a44c475d1cc08a9253209363095b07dcc7841192cb75f16e41cfbdb59b02"
+    },
+    "worker": {
+      "filename": "worker.json",
+      "bytes": 3224,
+      "sha256": "3462284387fb5d9cb1e95cc05425e140b0758039390c8d12239021860d60669f"
+    },
+    "build": {
+      "filename": "native-build.json",
+      "bytes": 2093,
+      "sha256": "97ca488cd54aaf5553794fd2d1889ade0cbf1d9d824cb32417577a1839532454"
+    }
+  },
+  "interpretation": {
+    "moduleOpenResult": 0,
+    "fdMapResult": 0,
+    "fdUnmapResult": 0,
+    "normalFreeCompleted": true,
+    "moduleCloseResult": 0,
+    "requestedEffectiveDomain": 3,
+    "returnedProcessControlDomain": 0,
+    "returnedProcessControlEnable": 1,
+    "returnedFieldsUsedAsConfiguration": false,
+    "unsignedProcessRequested": true,
+    "effectiveProcessClass": "not-independently-observed",
+    "ownedJobConfirmedEmpty": true,
+    "dspVisibilityOrDmaProved": false,
+    "computeExecuted": false,
+    "actualSelectedDspBytesVerified": false,
+    "vendorSessionTeardownQualified": false,
+    "osTrustOrBootPolicyChanged": false
+  }
+}

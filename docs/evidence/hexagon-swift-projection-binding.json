@@ -1,0 +1,509 @@
+{
+  "schemaVersion": 1,
+  "reviewDateLocal": "2026-10-30",
+  "profileEligible": false,
+  "independentWorkloadReview": "pending",
+  "durableRawArchive": "pending-local-selection-copy",
+  "kind": "verified-Swift-first-projection-and-sign-array-binding",
+  "hostedRun": {
+    "attempt": 1,
+    "conclusion": "failure",
+    "event": "push",
+    "headBranch": "codex/hexagon-delivery-next-1030",
+    "headSha": "3cf4f129f082e2b43a86d3d5a39ee1676de5cea5",
+    "jobs": [
+      {
+        "completedAt": "2026-10-31T03:48:53Z",
+        "conclusion": "success",
+        "databaseId": 124433210337,
+        "name": "artifact-binder",
+        "startedAt": "2026-10-31T03:47:37Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-31T03:47:39Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-31T03:47:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:53Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-31T03:47:39Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:08Z",
+            "conclusion": "success",
+            "name": "Run ./.github/actions/rust-toolchain",
+            "number": 3,
+            "startedAt": "2026-10-31T03:47:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:18Z",
+            "conclusion": "success",
+            "name": "Check out the exact Rust GGUF reader for the narrow artifact binder",
+            "number": 4,
+            "startedAt": "2026-10-31T03:48:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:41Z",
+            "conclusion": "success",
+            "name": "Prepare the verified projection and sign-array binder without a model",
+            "number": 5,
+            "startedAt": "2026-10-31T03:48:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:42Z",
+            "conclusion": "success",
+            "name": "Retain the source-bound artifact binder bundle",
+            "number": 6,
+            "startedAt": "2026-10-31T03:48:41Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:43Z",
+            "conclusion": "success",
+            "name": "Retain hosted artifact-binder controls",
+            "number": 7,
+            "startedAt": "2026-10-31T03:48:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:47Z",
+            "conclusion": "success",
+            "name": "Post Check out the exact Rust GGUF reader for the narrow artifact binder",
+            "number": 12,
+            "startedAt": "2026-10-31T03:48:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:48Z",
+            "conclusion": "success",
+            "name": "Post Run ./.github/actions/rust-toolchain",
+            "number": 13,
+            "startedAt": "2026-10-31T03:48:47Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:52Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 14,
+            "startedAt": "2026-10-31T03:48:48Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:52Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-31T03:48:52Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433210337"
+      },
+      {
+        "completedAt": "2026-10-31T03:48:32Z",
+        "conclusion": "failure",
+        "databaseId": 124433210532,
+        "name": "standards",
+        "startedAt": "2026-10-31T03:47:38Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-31T03:47:40Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-31T03:47:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:52Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-31T03:47:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:55Z",
+            "conclusion": "success",
+            "name": "Install the C# analyzer SDK",
+            "number": 3,
+            "startedAt": "2026-10-31T03:47:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:57Z",
+            "conclusion": "success",
+            "name": "Reuse the pinned PowerShell analyzer",
+            "number": 4,
+            "startedAt": "2026-10-31T03:47:55Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:57Z",
+            "conclusion": "skipped",
+            "name": "Save the pinned PowerShell analyzer on a cache miss",
+            "number": 5,
+            "startedAt": "2026-10-31T03:47:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:27Z",
+            "conclusion": "failure",
+            "name": "Enforce PowerShell and C# standards",
+            "number": 6,
+            "startedAt": "2026-10-31T03:47:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:27Z",
+            "conclusion": "skipped",
+            "name": "Post Reuse the pinned PowerShell analyzer",
+            "number": 10,
+            "startedAt": "2026-10-31T03:48:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:27Z",
+            "conclusion": "skipped",
+            "name": "Post Install the C# analyzer SDK",
+            "number": 11,
+            "startedAt": "2026-10-31T03:48:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:31Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 12,
+            "startedAt": "2026-10-31T03:48:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:31Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 13,
+            "startedAt": "2026-10-31T03:48:31Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433210532"
+      },
+      {
+        "completedAt": "2026-10-31T03:49:56Z",
+        "conclusion": "success",
+        "databaseId": 124433210641,
+        "name": "controls",
+        "startedAt": "2026-10-31T03:47:38Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-31T03:47:42Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-31T03:47:39Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:47:57Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-31T03:47:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:18Z",
+            "conclusion": "success",
+            "name": "Run ./.github/actions/rust-toolchain",
+            "number": 3,
+            "startedAt": "2026-10-31T03:47:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:18Z",
+            "conclusion": "skipped",
+            "name": "Require one owner operation within the shared device budget",
+            "number": 4,
+            "startedAt": "2026-10-31T03:48:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:48:34Z",
+            "conclusion": "success",
+            "name": "Validate packed layout and bounded inventory supervision without models",
+            "number": 5,
+            "startedAt": "2026-10-31T03:48:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:35Z",
+            "conclusion": "success",
+            "name": "Validate comparative CPU GPU NPU ranking without opening a device",
+            "number": 6,
+            "startedAt": "2026-10-31T03:48:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:47Z",
+            "conclusion": "success",
+            "name": "Prepare source-bound native Rust diagnostics without a device",
+            "number": 7,
+            "startedAt": "2026-10-31T03:49:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:48Z",
+            "conclusion": "success",
+            "name": "Retain this run's exact two-file access fixture bundle",
+            "number": 8,
+            "startedAt": "2026-10-31T03:49:47Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:49Z",
+            "conclusion": "success",
+            "name": "Retain hosted compile and model-free direct Rust controls",
+            "number": 9,
+            "startedAt": "2026-10-31T03:49:48Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:50Z",
+            "conclusion": "success",
+            "name": "Retain the source-bound native session probe bundle",
+            "number": 10,
+            "startedAt": "2026-10-31T03:49:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:51Z",
+            "conclusion": "success",
+            "name": "Post Run ./.github/actions/rust-toolchain",
+            "number": 19,
+            "startedAt": "2026-10-31T03:49:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:55Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 20,
+            "startedAt": "2026-10-31T03:49:51Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:49:55Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 21,
+            "startedAt": "2026-10-31T03:49:55Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433210641"
+      },
+      {
+        "completedAt": "2026-10-31T03:49:56Z",
+        "conclusion": "skipped",
+        "databaseId": 124433696455,
+        "name": "inventory",
+        "startedAt": "2026-10-31T03:49:57Z",
+        "status": "completed",
+        "steps": [],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433696455"
+      },
+      {
+        "completedAt": "2026-10-31T03:49:56Z",
+        "conclusion": "skipped",
+        "databaseId": 124433696605,
+        "name": "session-probe",
+        "startedAt": "2026-10-31T03:49:57Z",
+        "status": "completed",
+        "steps": [],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433696605"
+      },
+      {
+        "completedAt": "2026-10-31T03:49:56Z",
+        "conclusion": "skipped",
+        "databaseId": 124433696890,
+        "name": "dispatch",
+        "startedAt": "2026-10-31T03:49:57Z",
+        "status": "completed",
+        "steps": [],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635/job/124433696890"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41165875635"
+  },
+  "trustedOwningJob": {
+    "name": "artifact-binder",
+    "conclusion": "success"
+  },
+  "build": {
+    "SchemaVersion": 1,
+    "RunnerRevision": "3cf4f129f082e2b43a86d3d5a39ee1676de5cea5",
+    "RunId": "41165875635",
+    "RunAttempt": "1",
+    "HostedBuild": true,
+    "Target": "aarch64-pc-windows-msvc",
+    "RustToolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+    "GgufRevision": "7aca2251f09acb345d4afb53d5ce411f81017745",
+    "GgufDefaultFeatures": false,
+    "LinkerFlavor": "lld-link",
+    "ToolImages": [
+      {
+        "Name": "cargo.exe",
+        "Bytes": 29226496,
+        "Sha256": "a0860fcbaa53ede19f71b2cff2d48c266aef54fdb9be9a0ebd11dd6d568637d8"
+      },
+      {
+        "Name": "rustc.exe",
+        "Bytes": 113152,
+        "Sha256": "c699eed79646b5b33a9d92245cf12087b203dc2eb86ab3c34f22a423cf7dddc7"
+      },
+      {
+        "Name": "rust-lld.exe",
+        "Bytes": 111617536,
+        "Sha256": "1a3faad685e009b25fc068b3d1b583ff3512327055896a67c35ec9def6470479"
+      }
+    ],
+    "DependencyArtifacts": [
+      {
+        "Crate": "sha2",
+        "Name": "libsha2-fc71e24cb7c4d756.rlib",
+        "Sha256": "20253f96c4aa630a7f2db53ecde9046af4c33ac093a3b129163f4df0bec3c902"
+      },
+      {
+        "Crate": "sha2",
+        "Name": "libsha2-fc71e24cb7c4d756.rmeta",
+        "Sha256": "34ba33995604d5c9ad14b64ec876383185fda0571faa48d522889b8fda0b0e79"
+      },
+      {
+        "Crate": "bonsai_gguf",
+        "Name": "libbonsai_gguf-2f17bbec79574550.rlib",
+        "Sha256": "0eea104f44d6128ead8fe462b913fd1c4835d9021b34e707588808fc2cf073c7"
+      },
+      {
+        "Crate": "bonsai_gguf",
+        "Name": "libbonsai_gguf-2f17bbec79574550.rmeta",
+        "Sha256": "72116567763ee1aab7b855a6d0daf3eb8432ecd4dbda296de4d78fdee75372b9"
+      }
+    ],
+    "CompilerIdentitySha256": "3d03c3c0e97a9e6a04bb31d7194e26147d4c2ef2fd6528725d47f94a21f32b23",
+    "SourceSha256": "58449ed5c25c8298b2884f7d322dea5c0bf4f7be66f40f438002bda34a2d17d1",
+    "AddedExampleSourceSha256": "58449ed5c25c8298b2884f7d322dea5c0bf4f7be66f40f438002bda34a2d17d1",
+    "PinnedTrackedSourceUnchanged": true,
+    "ManifestSha256": "66640ccb8231409d1f1a13348a325ae6e4c06b740a82c34855de742f806017be",
+    "DependencyCargoLockSha256": "3856671192b1255109f206b57677494c2fe7b9e82ab75f3924d2e0c90eee1ebf",
+    "Executable": {
+      "Name": "hexagon-packed-artifact.exe",
+      "Bytes": 307712,
+      "Sha256": "94425f20d84073c2b97960cd13842d985406b933777908653b45b1d649bdb5e5"
+    },
+    "ModelLoaded": false,
+    "DeviceCodeLoaded": false,
+    "ProfileEligible": false
+  },
+  "observation": {
+    "SchemaVersion": 1,
+    "Outcome": "passed",
+    "SourceRevision": "3cf4f129f082e2b43a86d3d5a39ee1676de5cea5",
+    "RunId": "41165875635",
+    "TrustedOwningHostedJob": true,
+    "OwnedJobTeardown": "confirmed-empty",
+    "IndependentOutputDigestsVerified": true,
+    "Binding": {
+      "schemaVersion": 1,
+      "kind": "swift-packed-first-projection-binding",
+      "artifactBytes": 7206168928,
+      "artifactSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+      "artifactVerification": "complete-size-and-sha256-on-retained-handle",
+      "ggufLibraryRevision": "7aca2251f09acb345d4afb53d5ce411f81017745",
+      "extractorSourceSha256": "58449ed5c25c8298b2884f7d322dea5c0bf4f7be66f40f438002bda34a2d17d1",
+      "tensor": {
+        "name": "blk.0.ffn_up.weight",
+        "typeId": 142,
+        "columns": 5120,
+        "rows": 17408,
+        "bytes": 23674880,
+        "file": "weights.pq2",
+        "sha256": "a0f21e1d4492de2496309b6383b958cba53c54f05c9de710348facdd31706354"
+      },
+      "signs": {
+        "sourceKey": "prism.hadamard.sign_values",
+        "sourceElementStart": 0,
+        "count": 5120,
+        "completeArrayElements": 28672,
+        "completeArrayCanonicalI32LeSha256": "3d1ea9136a6044cd680cc1e92cde65e9dd7238e1288fe2effabec5d201c48bed",
+        "file": "signs.i8",
+        "encoding": "twos-complement-i8",
+        "sha256": "5ab93190ef5cd4f8322d52c1006783b25a3e118453bda0d0f90b1bf301a67197"
+      },
+      "transform": {
+        "version": 1,
+        "blockSize": 1024,
+        "name": "normalized-sylvester-walsh-hadamard",
+        "axis": "input-last-dimension",
+        "signMode": "explicit",
+        "signsAppliedBeforeRotation": true,
+        "owner": "CPU"
+      },
+      "headerRetentionLimitBytes": 134217728,
+      "retainedHeaderChargeBytes": 19248870,
+      "weightPayloadLimitBytes": 23674880,
+      "maximumManifestBytes": 8192,
+      "modelInferenceExecuted": false,
+      "transformExecuted": false,
+      "deviceExecuted": false,
+      "activationParityQualified": false,
+      "logitStateParityQualified": false,
+      "profileEligible": false
+    },
+    "InferenceExecuted": false,
+    "ProfileEligible": false
+  },
+  "rawSelectionDigests": {
+    "observation": {
+      "filename": "artifact-observation.json",
+      "bytes": 2143,
+      "sha256": "0308783f4883582270751bb7c6aef61b6047b177129d094aadc3b6ab40447b47"
+    },
+    "binding": {
+      "filename": "binding.json",
+      "bytes": 1442,
+      "sha256": "e996318664e10cac421d0d19399a33e2dc74b28aa5338d55334cf7315c2b58b0"
+    },
+    "build": {
+      "filename": "artifact-build.json",
+      "bytes": 2401,
+      "sha256": "73175bdcf1bc56ef9edda0c5325667d43f21593962d03301cf6ddda1db70b549"
+    }
+  },
+  "dataRetention": {
+    "weightsAndSignBytes": "bounded-local-extraction; excluded-from-evidence-upload-selection",
+    "originalModel": "existing-pinned-owner-managed-model; unchanged",
+    "modelLicense": "Apache-2.0"
+  },
+  "remaining": {
+    "actualActivationParity": "pending",
+    "logitAndCompleteStateParity": "pending",
+    "signedPackedComputation": "pending",
+    "performance": "pending"
+  }
+}

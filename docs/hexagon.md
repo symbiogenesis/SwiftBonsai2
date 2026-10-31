@@ -22,13 +22,22 @@ The [packed projection control](../tools/hexagon/packed-projection.md) adds an
 N=1 CPU tile schedule with captured native Q8_K/FMA observations, explicit signed
 Hadamard input, bounded scratch and cancellation before output publication. Its
 VTCM/traffic ledger is a proposal, not device measurement or signed kernel support.
+The versioned tile payload keeps original PQ2 bytes and exact prepared Q8_K
+records; its strict CPU receiver checks sequence, geometry, scales and sums and
+discards provisional output on corruption or cancellation. A separately signed
+device implementation of that protocol is still required.
 [Native Rust access progress](hexagon-native-progress.md) records successful
 generic numeric X2 dispatch, native default-session metadata preparation and
 the scoped 4 KiB STATIC mapping refusal. The separate
-native boundary is prepared in an unpublished Prism workspace crate.
+native boundary is prepared in an unpublished Prism workspace crate. It now
+includes a consuming default-session module-open/FD-map probe and separate
+[source-bound supervision](../scripts/Invoke-HexagonSessionProbe.ps1), with
+independently checked package and driver identities and retained entered-stage
+evidence. Actual selected DSP bytes and vendor session teardown remain separate
+gates even if the terminal mapping cycle succeeds.
 [Hosted prerequisite CI](../.github/workflows/hexagon-qualification.yml) owns full
-regressions, source-bound fixture preparation and a main-only opt-in inventory or
-tiny numeric-dispatch job within five minutes. No startup
+regressions, source-bound fixture preparation and one main-only opt-in inventory,
+tiny numeric-dispatch or native session-mapping job within five minutes. No startup
 benchmark or family-wide accelerator choice follows from these controls.
 
 ## Device and route boundaries

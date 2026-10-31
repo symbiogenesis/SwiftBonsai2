@@ -105,6 +105,24 @@ signing/distribution route. This architecture also avoids a whole-GGUF Q2 bridge
 in the production path. GenieX is a reference for device access and deployment,
 not a proposed replacement engine or required dependency.
 
+### Custom-kernel signing boundary
+
+The pinned [GenieX operator instructions](https://github.com/qualcomm/GenieX/blob/a5c8e7fb4a364ddcccefbf187afd1bac52d88de5/notes/release.md#hexagon-htp-signing)
+describe Microsoft signing followed by a revision-selected signed-bundle overlay.
+Their operator submission uses Qualcomm's Samba/Jenkins infrastructure and a
+separate signing-storage repository; this audit establishes no access to those
+services and no public submission entitlement for Runner. The documented
+self-signed alternative requires certificate/boot trust changes, outside this
+experiment's authority. No submission, installation or trust change was made.
+
+A custom PQ2 release therefore needs an accepted signing operator, exact built
+v73/v81 ELF digests, an ABI/source/compiler manifest, binary distribution terms,
+and independent verification of the returned catalog's membership and chain.
+Changing a kernel invalidates its former catalog binding. The
+[versioned packed tile protocol](../tools/hexagon/packed-projection.md#proposed-signed-kernel-tile-protocol)
+defines work for a future kernel; neither it nor the generic signed package
+supplies that implementation or signing authority.
+
 ## Swift placement and traffic ledger
 
 The audit reads the exact pinned Rust source's `src/model/swift.rs`

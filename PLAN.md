@@ -502,41 +502,44 @@ Follow [Adreno contracts](docs/adreno.md); discovery alone changes no CPU profil
 
 Follow [Hexagon contracts](docs/hexagon.md).
 
-- Prove native signed X1/v73 and X2/v81 access independently: deployment, license and
-  installed signature identities, actual mapping/execution and a small supported-type
-  dispatch fixture built on hosted CI. Use the [pinned access source decision and
-  operation ledger](docs/hexagon-source-audit.md) and bounded inventory workflow;
-  bind the [successful tiny X2 numeric dispatch](docs/evidence/hexagon-x2-dispatch.json)
-  to independently captured loaded-driver/DSP identities and actual mapping modes,
-  and retain independent X1 evidence. Resolve a supported
-  signing/distribution route for
-  custom packed kernels: GenieX's catalog covers only its bundled generic kernels.
-  Verify DMA64, effective VTCM and low-bit Hadamard/HTP leads against matching signed
-  binaries; retain scoped no-go reasons.
-  Trust/Secure Boot changes need a separate owner decision.
+- Complete independent X1/v73 access and X2/v81 native compute, deployment,
+  license/resource and effective-placement qualification. Bind the
+  [driver-bound generic X2 dispatch](docs/evidence/hexagon-x2-driver-bound-dispatch.json)
+  and [native FD cycle](docs/evidence/hexagon-x2-native-fd-cycle.json) to independently
+  observed selected DSP bytes, mapping modes and teardown; neither identifies the
+  complete device tuple. Verify DMA64 and effective VTCM against matching signed
+  binaries. Trust/Secure Boot changes need a separate owner decision.
+- Qualify the separate [newer signed Q2 candidate](docs/hexagon-signed-q2-candidate.md)
+  before choosing a packed route. Its v0.10.0 archive, seventeen runtime files and
+  five catalog members are [verified as data](docs/evidence/hexagon-signed-q2-package.json);
+  its changed seven-argument start ABI, queue ownership, actual operation support
+  and Q8_1 numerical path remain pending. Compare the bounded guarded integer-dot
+  composition with a directly fused packed kernel; ordinary Q2/Q8_1 substitution
+  does not preserve Swift Q8_K/per-128 FMA. Custom kernels still require a supported
+  signing/distribution operator, but they are not the only signed route to research.
 - Review and release the experimental native Rust capability/terminal-buffer boundary
-  prepared in Prism, preserving the existing runtime publication boundary. Extend it
-  to session-correct FD/delayed/extended mapping, safe asynchronous ownership and
-  separately signed DSP kernels, without a C/C++ inference dependency. The local
-  4 KiB STATIC mapping probe returned generic FastRPC error 512 after allocation,
-  descriptor and host read/write success; it does not rule out the signed runtime's
-  established-session FD flow. Preserve that scoped failure and prove the next
-  supported native mapping before native computation. Bind the successful fixed
-  default-session domain/URI preparation to actual signed module loading and FD
-  mapping in that established session; metadata alone proves neither.
-  Start with `blk.0.ffn_up.weight`,
-  K=5120/M=17408/N=1, keeping transforms,
-  adapter corrections and all committed state on CPU. Implement lossless PQ2
-  tiling/fused matvec against exact Q8_K preparation/reduction, then separately qualify
-  PTQ1 canonicality and Q8_0. Extend the ledger to actual placement/fallback/transfer
-  bytes. The model-free PQ2/Q2 layout control preserves weights only and adds
-  419,840,000 bytes for a whole packed copy; bind actual transform/sign arrays and
-  prove activation/logit/state parity before timing or expanding placement.
-  Transfer the [CPU-only tiled operation control](tools/hexagon/packed-projection.md)
-  into Prism's signed device path using its hosted Q8_K/FMA, tile traversal,
-  transform and cancellation controls. Bind actual artifact/sign
-  arrays and effective VTCM; its proposed 18,752-byte double-buffer reserve excludes
-  session, queue, DMA-descriptor and mapping costs and grants no device admission.
+  prepared in Prism without changing its publication boundary. After the successful
+  fixed module-open/4 KiB FD map/unmap/free/close cycle, qualify native computation,
+  delayed/extended mapping, asynchronous ownership and complete vendor teardown.
+  The explicit reference initializer requests an unsigned DSP process class while
+  retaining Windows signed-package/catalog checks; it does not establish effective
+  process class or authorize OS trust changes. Preserve the independent STATIC512,
+  default-open14 and old mutable-input guard observations without assigning causes.
+  Implement the reviewed queue/IDL, correlated responses, bounded waits, in-use
+  buffer retention and stop/drain contract before submitting a device kernel.
+- Start with `blk.0.ffn_up.weight`, K=5120/M=17408/N=1, keeping transforms, adapter
+  corrections and committed state on CPU. Consume the [verified original projection
+  and signs](docs/evidence/hexagon-swift-projection-binding.json) through the
+  [CPU operation/wire controls](tools/hexagon/packed-projection.md), then bind signed
+  device outputs, actual activations, logits and complete state before timing or
+  expanding placement. Preserve Q8_K preparation and original per-128 FMA; qualify
+  PTQ1 canonicality/Q8_0 independently. The model-free PQ2/Q2 weight-layout control
+  adds 419,840,000 bytes for a whole packed copy and is not a production bridge.
+  Extend actual placement/fallback/transfer accounting, including the guarded
+  primitive's additional weights, activations, returned limb dots and CPU reduction.
+  Effective VTCM, DMA descriptors, session/queue/mapping costs, all host scratch and
+  resources outside Job commit remain admission charges; the proposed 18,752-byte
+  fused double-buffer reserve covers only its declared tiles.
 - Evaluate HVX packed work and HMX batched prefill with bounded VTCM, DMA and repacking
   scratch, exact fusion/recurrent basis and independent adapters. Cover ring saturation,
   partial tiles, double buffering, requested and effective VTCM, allocation refusal and

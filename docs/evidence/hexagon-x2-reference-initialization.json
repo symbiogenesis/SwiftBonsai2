@@ -1,0 +1,461 @@
+{
+  "schemaVersion": 1,
+  "reviewDateLocal": "2026-10-30",
+  "hostedRun": {
+    "attempt": 1,
+    "conclusion": "failure",
+    "event": "push",
+    "headBranch": "codex/hexagon-delivery-next-1030",
+    "headSha": "5f6bad956a7bb962658f0928c50bde3843100318",
+    "jobs": [
+      {
+        "completedAt": "2026-10-31T03:35:34Z",
+        "conclusion": "failure",
+        "databaseId": 124430346117,
+        "name": "artifact-binder",
+        "startedAt": "2026-10-31T03:34:13Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-31T03:34:17Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-31T03:34:14Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:34:31Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-31T03:34:17Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:34:43Z",
+            "conclusion": "success",
+            "name": "Run ./.github/actions/rust-toolchain",
+            "number": 3,
+            "startedAt": "2026-10-31T03:34:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:34:59Z",
+            "conclusion": "success",
+            "name": "Check out the exact Rust GGUF reader for the narrow artifact binder",
+            "number": 4,
+            "startedAt": "2026-10-31T03:34:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:35:21Z",
+            "conclusion": "failure",
+            "name": "Prepare the verified projection and sign-array binder without a model",
+            "number": 5,
+            "startedAt": "2026-10-31T03:34:59Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:35:21Z",
+            "conclusion": "skipped",
+            "name": "Retain the source-bound artifact binder bundle",
+            "number": 6,
+            "startedAt": "2026-10-31T03:35:21Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:35:22Z",
+            "conclusion": "success",
+            "name": "Retain hosted artifact-binder controls",
+            "number": 7,
+            "startedAt": "2026-10-31T03:35:21Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:35:27Z",
+            "conclusion": "success",
+            "name": "Post Check out the exact Rust GGUF reader for the narrow artifact binder",
+            "number": 12,
+            "startedAt": "2026-10-31T03:35:22Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:35:27Z",
+            "conclusion": "success",
+            "name": "Post Run ./.github/actions/rust-toolchain",
+            "number": 13,
+            "startedAt": "2026-10-31T03:35:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:35:32Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 14,
+            "startedAt": "2026-10-31T03:35:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:35:32Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-31T03:35:32Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41164935923/job/124430346117"
+      },
+      {
+        "completedAt": "2026-10-31T03:36:17Z",
+        "conclusion": "success",
+        "databaseId": 124430346404,
+        "name": "controls",
+        "startedAt": "2026-10-31T03:34:13Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-31T03:34:15Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-31T03:34:14Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:34:29Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-31T03:34:15Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:34:40Z",
+            "conclusion": "success",
+            "name": "Run ./.github/actions/rust-toolchain",
+            "number": 3,
+            "startedAt": "2026-10-31T03:34:29Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:34:40Z",
+            "conclusion": "skipped",
+            "name": "Require one owner operation within the shared device budget",
+            "number": 4,
+            "startedAt": "2026-10-31T03:34:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:34:56Z",
+            "conclusion": "success",
+            "name": "Validate packed layout and bounded inventory supervision without models",
+            "number": 5,
+            "startedAt": "2026-10-31T03:34:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:35:54Z",
+            "conclusion": "success",
+            "name": "Validate comparative CPU GPU NPU ranking without opening a device",
+            "number": 6,
+            "startedAt": "2026-10-31T03:34:56Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:36:06Z",
+            "conclusion": "success",
+            "name": "Prepare source-bound native Rust diagnostics without a device",
+            "number": 7,
+            "startedAt": "2026-10-31T03:35:54Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:36:07Z",
+            "conclusion": "success",
+            "name": "Retain this run's exact two-file access fixture bundle",
+            "number": 8,
+            "startedAt": "2026-10-31T03:36:06Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:36:09Z",
+            "conclusion": "success",
+            "name": "Retain hosted compile and model-free direct Rust controls",
+            "number": 9,
+            "startedAt": "2026-10-31T03:36:07Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:36:10Z",
+            "conclusion": "success",
+            "name": "Retain the source-bound native session probe bundle",
+            "number": 10,
+            "startedAt": "2026-10-31T03:36:09Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:36:11Z",
+            "conclusion": "success",
+            "name": "Post Run ./.github/actions/rust-toolchain",
+            "number": 19,
+            "startedAt": "2026-10-31T03:36:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:36:15Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 20,
+            "startedAt": "2026-10-31T03:36:11Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-31T03:36:15Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 21,
+            "startedAt": "2026-10-31T03:36:15Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41164935923/job/124430346404"
+      },
+      {
+        "completedAt": "2026-10-31T03:36:17Z",
+        "conclusion": "skipped",
+        "databaseId": 124430821000,
+        "name": "dispatch",
+        "startedAt": "2026-10-31T03:36:17Z",
+        "status": "completed",
+        "steps": [],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41164935923/job/124430821000"
+      },
+      {
+        "completedAt": "2026-10-31T03:36:17Z",
+        "conclusion": "skipped",
+        "databaseId": 124430821088,
+        "name": "session-probe",
+        "startedAt": "2026-10-31T03:36:17Z",
+        "status": "completed",
+        "steps": [],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41164935923/job/124430821088"
+      },
+      {
+        "completedAt": "2026-10-31T03:36:17Z",
+        "conclusion": "skipped",
+        "databaseId": 124430821286,
+        "name": "inventory",
+        "startedAt": "2026-10-31T03:36:17Z",
+        "status": "completed",
+        "steps": [],
+        "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41164935923/job/124430821286"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41164935923"
+  },
+  "trustedQualificationJob": {
+    "name": "controls",
+    "conclusion": "success"
+  },
+  "independentArtifactBinderStatus": "failed; not part of native access qualification",
+  "durableOwnerManagedRawArchive": "pending",
+  "profileEligible": false,
+  "kind": "native-reference-initialization-observation",
+  "build": {
+    "SchemaVersion": 1,
+    "RunnerRevision": "5f6bad956a7bb962658f0928c50bde3843100318",
+    "RunId": "41164935923",
+    "RunAttempt": "1",
+    "RustToolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+    "Target": "aarch64-pc-windows-msvc",
+    "HostedBuild": true,
+    "CompilerIdentitySha256": "3d03c3c0e97a9e6a04bb31d7194e26147d4c2ef2fd6528725d47f94a21f32b23",
+    "SourceFiles": [
+      {
+        "Name": "lib.rs",
+        "Sha256": "528683d265402b919253fbe21ca3231881467a8a1e005f0dac12ea5e2d89130a"
+      },
+      {
+        "Name": "windows.rs",
+        "Sha256": "7bcf3bae77cbcc8f7f7b70b8a6465716501f555d62897de759bdf1cd2da26c10"
+      },
+      {
+        "Name": "mapping.rs",
+        "Sha256": "c640c756f293b844fcf16b595606631047b1bff09365ef531ea15f258e4f97f6"
+      },
+      {
+        "Name": "session.rs",
+        "Sha256": "1c62d21b73c74283607989211fd2eada0a134c54af69cb1bb8cffb5da3f39bec"
+      },
+      {
+        "Name": "session_native.rs",
+        "Sha256": "8fb263591bf3f76f6d43c5c520bdfb3c7d11101e66568c4da75c5127c4fa577a"
+      },
+      {
+        "Name": "session_mapping.rs",
+        "Sha256": "75ad7f320d8dbd1008221bb72acfff5ef926c1dc3953c9053a2f55c4d7da6b52"
+      },
+      {
+        "Name": "session_mapping_native.rs",
+        "Sha256": "aa435aba90c69451f63d68d5b0d0f9cffa7dec7c8f884d1ff4c94ca433bfaa14"
+      },
+      {
+        "Name": "query.rs",
+        "Sha256": "cd6f4777cfc81178629f0fa79e8249a62ab6a70302f7a7c170242d1cfc5e2976"
+      },
+      {
+        "Name": "sources.json",
+        "Sha256": "445cd3cd7a906e3dfa024780fa246000d5b1c3e5b29c3096e6ab3ef453a614f2"
+      }
+    ],
+    "ManifestSha256": "66640ccb8231409d1f1a13348a325ae6e4c06b740a82c34855de742f806017be",
+    "LockSha256": "6d4e5d5378591a60cbcc22d3bfbfeb07b16fe77adbb2d6853548e4f81ba7acfc",
+    "Executable": {
+      "Name": "native-hexagon-query.exe",
+      "Bytes": 210432,
+      "Sha256": "68127f2c8fd9dfd9c2639d446266e3510ef5eff4eddc073f630287c340b5b53a"
+    },
+    "ExecutableSha256": "68127f2c8fd9dfd9c2639d446266e3510ef5eff4eddc073f630287c340b5b53a",
+    "DeviceCodeLoaded": false,
+    "DspCodeLoaded": false,
+    "ProfileEligible": false
+  },
+  "observation": {
+    "SchemaVersion": 1,
+    "Kind": "runner-hexagon-session",
+    "Outcome": "pending",
+    "Failure": "native-session-mapping-incomplete",
+    "ExpectedRunnerRevision": "5f6bad956a7bb962658f0928c50bde3843100318",
+    "MaximumSeconds": 120,
+    "CleanupReserveSeconds": 75,
+    "WorkerAllowanceSeconds": 44,
+    "ElapsedMilliseconds": 2069,
+    "WorkerAttempted": true,
+    "OwnedJobTeardown": "confirmed-empty",
+    "Worker": {
+      "SchemaVersion": 1,
+      "Kind": "runner-hexagon-session-worker",
+      "SourceRevision": "5f6bad956a7bb962658f0928c50bde3843100318",
+      "Outcome": "pending",
+      "Stage": "session-mapping",
+      "Failure": "native-session-mapping-incomplete",
+      "LastNativeStage": "reference-process-init-entered",
+      "ReferenceProcessInitializationSelected": true,
+      "UnsignedProcessRequested": true,
+      "ProcessInitializationResult": 0,
+      "SignedPackageVerified": true,
+      "RuntimeFilesVerified": 16,
+      "DriverIdentityVerified": true,
+      "DriverIdentity": {
+        "Path": "C:\\WINDOWS\\System32\\DriverStore\\FileRepository\\qcnspmcdm8480.inf_arm64_4feba84cfc7ee278\\libcdsprpc.dll",
+        "Bytes": 593472,
+        "Sha256": "5cf6aa86670cceb84461050ad00b012662e4859d15be2a1cf147d98d5002f37d",
+        "SignatureStatus": "Valid",
+        "Publisher": "Microsoft Windows Hardware Compatibility Publisher",
+        "SignerThumbprint": "32b4e7ce92a59c722b8bdf7ae3e66520cfb9de21",
+        "FileHeldAgainstMutation": true
+      },
+      "MappingCycleVerified": false,
+      "NativeResult": {
+        "schemaVersion": 1,
+        "kind": "native-fastrpc-session-mapping-probe",
+        "driverDll": "C:\\WINDOWS\\System32\\DriverStore\\FileRepository\\qcnspmcdm8480.inf_arm64_4feba84cfc7ee278\\libcdsprpc.dll",
+        "passed": false,
+        "stage": "reference-process-init-contract-changed-pinned",
+        "metadataPrepared": false,
+        "metadataStage": "effective-domain-prepared",
+        "architectureRaw": 32897,
+        "architecture": 81,
+        "sessionId": 0,
+        "domainRequestId": 14,
+        "domainResult": 0,
+        "effectiveDomain": 3,
+        "uriRequestId": 15,
+        "uriResult": null,
+        "uriVerified": false,
+        "moduleOpenResult": null,
+        "handleObserved": false,
+        "remoteModuleOpened": false,
+        "bytes": 4096,
+        "heapId": 25,
+        "allocationFlags": 1,
+        "mapFlags": 2,
+        "allocationSucceeded": false,
+        "descriptorObserved": false,
+        "descriptorError": null,
+        "cpuRoundtripVerified": false,
+        "mappingAttempted": false,
+        "mappingResult": null,
+        "unmappingResult": null,
+        "freeCompleted": false,
+        "poisoned": false,
+        "moduleCloseResult": null,
+        "moduleCloseCompleted": false,
+        "ownerPinnedUntilExit": true,
+        "driverLoaded": true,
+        "signedDeploymentVerified": false,
+        "computeExecuted": false,
+        "dmaExecuted": false,
+        "referenceProcessInitializationSelected": true,
+        "processInitializationRequestId": 2,
+        "processInitializationEnable": 1,
+        "processInitializationStructureBytes": 8,
+        "processInitializationResult": 0,
+        "unsignedProcessRequested": true,
+        "sessionTeardownVerified": false,
+        "profileEligible": false
+      },
+      "ExecutableSha256": "68127f2c8fd9dfd9c2639d446266e3510ef5eff4eddc073f630287c340b5b53a",
+      "BuildReceiptSha256": "0b022138b44db8b2a042df9a80ca4473491420010e7193b69179dceadda78fc5",
+      "ManifestSha256": "66640ccb8231409d1f1a13348a325ae6e4c06b740a82c34855de742f806017be",
+      "LockSha256": "6d4e5d5378591a60cbcc22d3bfbfeb07b16fe77adbb2d6853548e4f81ba7acfc",
+      "ModelLoaded": false,
+      "SwiftQualified": false,
+      "ProfileEligible": false,
+      "DriverInstalled": false,
+      "TrustChanged": false,
+      "ComputeExecuted": false
+    },
+    "MappingCycleVerified": false,
+    "ModelLoaded": false,
+    "SwiftQualified": false,
+    "ProfileEligible": false,
+    "DriverInstalled": false,
+    "TrustChanged": false,
+    "ReferenceProcessInitializationSelected": true,
+    "UnsignedProcessRequested": true,
+    "ProcessInitializationResult": 0
+  },
+  "rawSelectionDigests": {
+    "report": {
+      "filename": "session.json",
+      "bytes": 4085,
+      "sha256": "be1b21a56f1e6ba86421f614bad9aab412d71138b6a158be6f70bda3d739135d"
+    },
+    "worker": {
+      "filename": "worker.json",
+      "bytes": 3203,
+      "sha256": "131d1fe88c65026147a3e85bfa3e5e7061739a101790414e0b96a709be77d5e2"
+    },
+    "build": {
+      "filename": "native-build.json",
+      "bytes": 2093,
+      "sha256": "0b022138b44db8b2a042df9a80ca4473491420010e7193b69179dceadda78fc5"
+    }
+  },
+  "interpretation": {
+    "fixedProcessInitializationReturned": 0,
+    "driverChangedMutableRequestFields": true,
+    "oldSourceEqualityGuardStoppedBeforeUriAndOpen": true,
+    "returnedFieldValuesWereNotCapturedByThisOldSource": true,
+    "vendorInitializationRefused": false,
+    "effectiveProcessClass": "not-independently-established",
+    "mappingAttempted": false,
+    "computeExecuted": false,
+    "ownedJobConfirmedEmpty": true,
+    "osTrustOrBootPolicyChanged": false
+  }
+}
