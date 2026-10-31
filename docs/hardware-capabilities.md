@@ -129,8 +129,10 @@ the X2 failure cause remain unqualified.
 After an instance-creation failure, `graphics_adapter_count` makes one independent
 count-only [`D3DKMTEnumAdapters2`][graphics-count] call in that same child, after
 the module snapshots. It acquires/releases one reference to an already loaded
-`gdi32.dll` and resolves only that fixed export; it loads no additional DLL. A
-null adapter array requests no adapter handles. The report retains the raw
+`gdi32.dll` and resolves only that fixed export, without calling `LoadLibrary`
+or selecting alternate loaders. Windows may resolve an export forwarder internally;
+this observation does not audit that resolution. A null adapter array requests no
+adapter handles. The report retains the raw
 `NTSTATUS` and reports a count only for `STATUS_SUCCESS`; Microsoft defines the
 output count as undefined on error. Missing module/export remains unknown. The
 existing ten-second Job deadline bounds this call too; there is no second Vulkan
