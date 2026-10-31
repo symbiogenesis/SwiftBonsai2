@@ -455,8 +455,9 @@
         "ownerArchiveDownloaded": false,
         "ownerArchiveDigestVerified": false,
         "sdkContentsExtracted": false,
-        "observation": "docs/evidence/hexagon-sdk-inventory-41168872514/provenance.json",
-        "priorObservation": "docs/evidence/hexagon-sdk-inventory-41168523349/provenance.json"
+        "observation": "docs/evidence/hexagon-sdk-functional-41171339745/provenance.json",
+        "priorObservation": "docs/evidence/hexagon-sdk-inventory-41168523349/provenance.json",
+        "priorRecipeObservation": "docs/evidence/hexagon-sdk-inventory-41168872514/provenance.json"
       },
       "qaicExecutableIdentity": {
         "archivePath": "6.7.0.0/ipc/fastrpc/qaic/bin/qaic.exe",
@@ -488,7 +489,32 @@
           }
         ],
         "effectiveImportClosureReviewed": false,
-        "publicImportEquivalenceQualified": false
+        "publicImportEquivalenceQualified": false,
+        "lexicalComparisonObservation": "docs/evidence/hexagon-sdk-functional-41171339745/provenance.json",
+        "normalizedTokenComparisons": [
+          {
+            "sdkPath": "6.7.0.0/incs/remote.idl",
+            "publicSource": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/idl/remote.idl",
+            "sdkRawSha256": "7c934edc9185adb26878e9e5e7d5df0ba179e7ee87158c4734e6c5b7910a1bb8",
+            "publicRawSha256": "43b4130d14dc4152b9b3cafc7899d781e2e3546076383a65159774000275021e",
+            "rawBytesEqual": false,
+            "normalizedTokenStreamsEqual": true,
+            "normalizedTokenCount": 25,
+            "normalizedTokenSha256": "94869ab8f9be6aa7dbada5bf3ad9fc58a2f495e45c683479c4442b9799511c24",
+            "scope": "unpreprocessed-lexical-tokens-only; not-generator-import-resolution-or-ABI-equivalence"
+          },
+          {
+            "sdkPath": "6.7.0.0/incs/stddef/AEEStdDef.idl",
+            "publicSource": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/idl/AEEStdDef.idl",
+            "sdkRawSha256": "0779a289a081b67dccaf48a9403bf33215017b3d6f4cc636318bd584072e1835",
+            "publicRawSha256": "dda9bee2163b148be27365c101c11356cbefa691c3687a34586e705c074c7ddc",
+            "rawBytesEqual": false,
+            "normalizedTokenStreamsEqual": true,
+            "normalizedTokenCount": 42,
+            "normalizedTokenSha256": "4cb2c5eb21c5daf698a1ff72efe8439a9dfd6d7b62985b244e6f88f9193cc0a9",
+            "scope": "unpreprocessed-lexical-tokens-only; not-generator-import-resolution-or-ABI-equivalence"
+          }
+        ]
       },
       "generatedHostStubIdentity": null,
       "independentWireCaptureIdentity": null,
@@ -685,7 +711,7 @@
             "identitySource": "digest-verified-SDK-archive-data-only"
           }
         ],
-        "relevantNoticeEncoding": "not-UTF8-in-first-decoder; actual-encoding-and-clauses-not-reviewed",
+        "relevantNoticeEncoding": "Windows-1252-fallback-no-BOM; uncertain; strict-UTF8-failed",
         "relevantNoticeScope": "Hexagon-tools-NOTICE; applicability-to-QAIC-not-established",
         "remainingMatchesScope": "five-bundled-Python-package-licenses; not-an-SDK-or-QAIC-license-grant",
         "sdkHeaderNoticeMarkers": "dspqueue-and-remote-header-confidential/proprietary-markers; text-metadata-does-not-establish-effective-license",
@@ -693,7 +719,26 @@
         "publicProductPage": "https://www.qualcomm.com/developer/software/hexagon-npu-sdk",
         "publicCatalogPage": "https://softwarecenter.qualcomm.com/catalog/item/Hexagon_SDK",
         "productTermsRenderedInReviewedPublicPages": false,
-        "nextRoute": "independent-pinned-public-BSD-QAIC-source-build-and-public-import-control; SDK-equivalence-still-pending"
+        "nextRoute": "independent-pinned-public-BSD-QAIC-source-build-and-public-import-control; SDK-equivalence-still-pending",
+        "encodingAwareNoticeObservation": {
+          "observation": "docs/evidence/hexagon-sdk-functional-41171339745/provenance.json",
+          "encodingObservation": {
+            "encoding": "cp1252",
+            "basis": "Windows-1252-fallback-no-BOM",
+            "uncertain": true,
+            "priorAttempts": [
+              "strict-UTF8-failed"
+            ]
+          },
+          "nonTextControlCharacters": 0,
+          "qaicNameOccurrences": 0,
+          "idlCompilerPhraseOccurrences": 0,
+          "sdkPhraseOccurrences": 0,
+          "sdkToolTermsQualified": false,
+          "generatedOutputRightsQualified": false,
+          "absenceOfTermsEstablished": false,
+          "keywordMatchesEstablishGrant": false
+        }
       },
       "sdkCommandTemplateReview": {
         "status": "source-derived-command-template-reviewed; no-CMake-expansion-or-generator-execution",
@@ -752,7 +797,38 @@
         "generatorCommandAuthorized": false
       },
       "sdkGeneratorExecutionQualified": false,
-      "publicSourceGenerationStatus": "passed-independent-public-QAIC-build-and-generation-only"
+      "publicSourceGenerationStatus": "passed-independent-public-QAIC-build-and-generation-only",
+      "sdkFunctionalComparisonObservation": {
+        "observation": "docs/evidence/hexagon-sdk-functional-41171339745/provenance.json",
+        "status": "two-IDL-normalized-streams-match; queue-and-remote-header-streams-differ",
+        "normalization": "C-phase2-line-splices; comment-aware-C-IDL-lexing; canonical-JSON-ASCII-token-array; explicit-preprocessor-boundaries-and-macro-adjacency; literal-include-header-names",
+        "conditionalPreprocessorEvaluated": false,
+        "queueCoreDeclarationTokenMatches": [
+          "dspqueue_t",
+          "dspqueue_callback_t",
+          "dspqueue_buffer",
+          "dspqueue_buffer_flags",
+          "dspqueue_create",
+          "dspqueue_close",
+          "dspqueue_read",
+          "dspqueue_read_noblock"
+        ],
+        "queueDifferences": "SDK adds FRAMEWORK packet flag/derived reserved mask and dspqueue_mdq_callback_t; matching existing declarations do not establish conditional ABI or callback lifetimes",
+        "sdkRemoteIncludesUnreviewed": [
+          "remote_work.h"
+        ],
+        "publicWindowsRemoteIncludesUnpinned": [
+          "remote_ext.h"
+        ],
+        "sdkRemoteWorkPresentInSelectedInventory": false,
+        "effectiveConditionalAndTransitiveHeaderClosureReviewed": false,
+        "matchingNamesOrTokensProveABIEquivalence": false,
+        "WindowsRuntimeCompatibilityQualified": false,
+        "callbackLifetimeQualified": false,
+        "cacheAndBufferOwnershipQualified": false,
+        "installedDriverAbiQualified": false,
+        "deviceInvocationAuthorized": false
+      }
     }
   },
   "budgets": {

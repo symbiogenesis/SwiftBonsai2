@@ -181,6 +181,7 @@ by themselves prove incompatible semantics.
 | --- | ---: | ---: |
 | `qaic.exe` | 35,301,888 | Independent Linux source-built control: 12,077,520; no SDK equivalence |
 | `dspqueue.h` | 37,079 | 24,632 |
+| `remote.h` | 67,004 | 65,625 |
 | `remote.idl` | 1,387 | 1,498 |
 | `AEEStdDef.idl` | 3,448 | 1,793 |
 | `AEEStdErr.idl` | 7,253 | No candidate import pin |
@@ -200,13 +201,41 @@ duplicate includes. This function adds no `-rf` or external-preprocessor option.
 The helper predicts the header, stub and skeleton filenames. Actual import
 resolution, generated output and wire compatibility remain unqualified.
 
+The [third retained data-only review](evidence/hexagon-sdk-functional-41171339745/provenance.json)
+binds run 41171339745 at `5feae0d6ac2152692001f8ffcc8b3f13d2cdcf08`
+to the same checked archive and four exact SDK/public input pairs. Its receipt
+hash, all four hosted source/pin hashes and all seven reviewed input pins match.
+Independent review also recomputed the 235 retained declaration-token hashes.
+After comment-aware lexical normalization, SDK/public `remote.idl` have the same
+25 tokens and `AEEStdDef.idl` the same 42 tokens, despite different raw hashes.
+The lexer preserves preprocessor boundaries but does not evaluate conditionals,
+resolve imports, check types or establish generator or ABI equivalence.
+
+The queue and remote header token streams differ. Selected queue declarations
+match as tokens: the queue handle, buffer structure, buffer flags, existing
+callback type, and create/close/read/read-noblock prototypes. The SDK additionally
+declares `dspqueue_mdq_callback_t` and a framework packet flag with a different
+reserved-mask expression. A shared identifier can occur in several declarations;
+different identifier-associated hash sets alone do not prove a changed existing
+prototype. The SDK `remote.h` includes `remote_work.h`, which this inventory did
+not select. The public header's Windows `remote_ext.h` also lacks an established
+pin, so that public header alone cannot serve as a Windows comparison control.
+Close the actual SDK transitive inputs and review the effective Windows conditionals,
+layout, calling convention and installed driver binding before adding a callable
+Rust boundary. Matching declaration tokens leave callback lifetime, FD/cache
+ownership, import/close completion and safe teardown unqualified.
+
 The SDK generator's PE machine is `8664` (Windows x64), so running this binary on
 hosted Windows ARM64 would involve emulation. The broader legal-filename scan
 found six files: a Hexagon-tools `NOTICE.txt` and five bundled Python-package
 licenses. The notice is 118,826 bytes, SHA-256
 `39af9dbb366f4bbbd28c6d07a411a400bd4b33ad4b7d745287820a9cdcac359a`;
-the first UTF-8 decoder did not decode it. That does not identify its encoding,
-make it a binary file or establish its applicability to QAIC. Header
+the first UTF-8 decoder did not decode it. The third data review applies an
+explicit, uncertain Windows-1252 fallback with no BOM and observes no non-text
+control characters. That decoded view has no matches for the bounded QAIC-name,
+IDL-compiler or SDK-phrase searches; it does contain license/agreement,
+redistribution and patent words. Neither the fallback nor keyword presence or
+absence establishes encoding certainty, applicability to QAIC or a grant. Header
 confidential/proprietary markers, import redistribution words and binary BSD
 strings likewise do not establish the applicable tool/output terms. The
 [official product page](https://www.qualcomm.com/developer/software/hexagon-npu-sdk)
@@ -214,8 +243,9 @@ names a product license agreement, but the reviewed public response and
 [catalog page](https://softwarecenter.qualcomm.com/catalog/item/Hexagon_SDK)
 do not expose the exact SDK 6.7 agreement. SDK-generator execution and generated
 source redistribution remain unqualified by this evidence; this is not a finding
-that the SDK has no license. SDK queue declarations and imports also remain
-distinct from the public controls until compared. All further preparation stays
+that the SDK has no license. The matching IDL token streams and selected queue
+declarations narrow the source review; effective Windows inputs and semantics
+remain pending. All further preparation stays
 on hosted CI, outside the owner-device trial allowance.
 
 An independent public source control is also obtainable. Qualcomm's

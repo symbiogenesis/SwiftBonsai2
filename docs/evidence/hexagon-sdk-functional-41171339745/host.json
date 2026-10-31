@@ -1,0 +1,76 @@
+{
+  "SchemaVersion": 1,
+  "Kind": "hexagon-hosted-sdk-inventory",
+  "RunnerRevision": "5feae0d6ac2152692001f8ffcc8b3f13d2cdcf08",
+  "RunId": "41171339745",
+  "RunAttempt": "1",
+  "HostedOnly": true,
+  "Outcome": "inventoried-generation-pending",
+  "Stage": "sdk-data-only-inventory-complete",
+  "ElapsedMilliseconds": 86212,
+  "SourceSha256": "7bf85d7c10e027c072653df2e4f57ccb954c6c647cbafff9021d00fa87255d42",
+  "SupervisorSha256": "c9178c8a252256627445184defedc0d1cdab3c456e1b6bf90cdaa35dd2c7f608",
+  "PinSha256": "ede9c5d2f8fc36a92603330c2882c3d2fc6997aa2eebde5f1d65f4c54225f19d",
+  "FunctionalReviewSourceSha256": "5796428931e3213f705b1770bf9030a5de8cea2a8a7619620943c4277590ade5",
+  "ReviewedInputs": [
+    {
+      "Name": "setup-snapdragon-sdks.action.yml",
+      "Url": "https://raw.githubusercontent.com/qualcomm/GenieX/071f609995470bdb0e0769ab964754adfaab7e47/.github/actions/setup-snapdragon-sdks/action.yml",
+      "Bytes": 9081,
+      "Sha256": "6b2bce57917917afaacbb00abee6f739f7c6f827aaa299adc8f02c7dd257f97a"
+    },
+    {
+      "Name": "sdk-repackage.sh",
+      "Url": "https://raw.githubusercontent.com/snapdragon-toolchain/hexagon-sdk/167d1465556718b9cea521ec0a19277f91e94eb7/repackage.sh",
+      "Bytes": 3009,
+      "Sha256": "42bdc3c200c80fef96f06ce3b6fc047c5d77259fde204d9ecd9217fa30a258fa"
+    },
+    {
+      "Name": "htp_iface.idl",
+      "Url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp/htp_iface.idl",
+      "Bytes": 718,
+      "Sha256": "196448f5166f300c572172b83a51e128e71e4471f13e30d0c5f88d6ce0cfe8bc"
+    },
+    {
+      "Name": "public-dspqueue.h",
+      "Url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/dspqueue.h",
+      "Bytes": 24632,
+      "Sha256": "571c74ce3651042873b0e93eb53baa7d9ec0963665355933d4a8518272e1e2a3"
+    },
+    {
+      "Name": "public-remote.h",
+      "Url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/remote.h",
+      "Bytes": 65625,
+      "Sha256": "f9d0690cfd8953697d6fc3163c2be448a7b5b801148808c9b1b360857aeabc44"
+    },
+    {
+      "Name": "public-remote.idl",
+      "Url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/idl/remote.idl",
+      "Bytes": 1498,
+      "Sha256": "43b4130d14dc4152b9b3cafc7899d781e2e3546076383a65159774000275021e"
+    },
+    {
+      "Name": "public-AEEStdDef.idl",
+      "Url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/idl/AEEStdDef.idl",
+      "Bytes": 1793,
+      "Sha256": "dda9bee2163b148be27365c101c11356cbefa691c3687a34586e705c074c7ddc"
+    }
+  ],
+  "Archive": {
+    "id": 657669213,
+    "filename": "hexagon-sdk-v6.7.0.0-arm64-wos.tar.xz",
+    "bytes": 900461020,
+    "sha256": "9eb256cc7b102f721365151a470a33980069a18b9209e1d56a6d2fa430369759",
+    "url": "https://github.com/snapdragon-toolchain/hexagon-sdk/releases/download/v6.7.0.0/hexagon-sdk-v6.7.0.0-arm64-wos.tar.xz"
+  },
+  "InventoryReceiptSha256": "6e088acb1eb97623732516672258424f7d4e50c05084c56255e75413e3225207",
+  "PythonExecutableSha256": "46851212e3a4fc1846086dc9c7be10aeb156320b1f68dfbd86eafa56a4b0d8b4",
+  "SdkCodeExecuted": false,
+  "GeneratorExecuted": false,
+  "GeneratedSourceUploaded": false,
+  "ModelLoaded": false,
+  "DeviceCodeLoaded": false,
+  "ProfileEligible": false,
+  "LicenseReview": "pending",
+  "GeneratorInvocationReviewed": false
+}

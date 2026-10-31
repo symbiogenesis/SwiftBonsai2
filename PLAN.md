@@ -561,9 +561,13 @@ Follow [Hexagon contracts](docs/hexagon.md).
   Bind generated QAIC host marshalling/wire controls to exact SDK/tool and imported
   IDL identities under the [queue provenance gate](docs/hexagon-signed-q2-candidate.md#native-rust-computation-requires-another-reviewed-boundary).
   The [hosted SDK recipe review](docs/evidence/hexagon-sdk-inventory-41168872514/provenance.json)
-  retains the host command template and different SDK queue/import bytes. Establish
-  applicable SDK tool/output terms and compare actual declarations/import closure
-  before Rust invocation. Bind the [captured public-source QAIC header/stub/skeleton](docs/evidence/hexagon-public-qaic-41169481882/provenance.json)
+  retains the host command template. The [third data review](docs/evidence/hexagon-sdk-functional-41171339745/provenance.json)
+  observes matching normalized remote/AEEStdDef IDL tokens and selected queue
+  declarations, while whole queue/remote headers differ. Bind the SDK's unreviewed
+  `remote_work.h` and effective Windows conditionals/layout/calling conventions
+  and import closure before Rust invocation; the public Windows `remote_ext.h`
+  input also remains unpinned. Establish applicable SDK tool/output terms; the uncertain NOTICE
+  decoding and keyword observations establish no grant. Bind the [captured public-source QAIC header/stub/skeleton](docs/evidence/hexagon-public-qaic-41169481882/provenance.json)
   to independent mock-RPC wire observations and Rust replay. Reproduce the captured
   dependency resolution and complete compiler identity; public generation alone
   does not qualify SDK/public marshalling equivalence or the signed device ABI.
