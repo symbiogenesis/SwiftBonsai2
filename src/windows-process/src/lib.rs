@@ -41,6 +41,22 @@ pub struct VulkanQueryFailure {
     pub application_api_version: Option<u32>,
     /// Optional current-process module observations around instance creation.
     pub instance_modules: Option<VulkanInstanceModules>,
+    /// Independent count-only graphics query after failed instance creation.
+    pub graphics_adapter_count: Option<WindowsGraphicsAdapterCount>,
+}
+
+/// One count-only `D3DKMTEnumAdapters2` observation in the current worker.
+///
+/// No adapter array or handles are requested. A failed call leaves its output
+/// count undefined; it cannot prove that the computer has no graphics devices.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WindowsGraphicsAdapterCount {
+    /// Fixed stage: existing module, exported entry point, or count query.
+    pub stage: &'static str,
+    /// Raw `NTSTATUS` from the count query, unknown before the call.
+    pub ntstatus: Option<i32>,
+    /// Reported count only when the query returned `STATUS_SUCCESS`.
+    pub adapter_count: Option<u32>,
 }
 
 impl std::fmt::Display for VulkanQueryFailure {

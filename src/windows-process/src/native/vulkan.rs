@@ -9,7 +9,7 @@ use ash::{Entry, vk};
 
 use crate::{
     VulkanAdapter, VulkanInstanceModules, VulkanInventory, VulkanModuleFileCandidate,
-    VulkanQueryFailure,
+    VulkanQueryFailure, WindowsGraphicsAdapterCount,
 };
 
 const MAX_ADAPTERS: usize = 16;
@@ -37,6 +37,7 @@ fn failure(
             loader_api_version,
             application_api_version,
             instance_modules: None,
+            graphics_adapter_count: None,
         },
     )
 }
@@ -198,6 +199,67 @@ fn loader() -> io::Result<Entry> {
 
 struct Instance(ash::Instance);
 
+const fn graphics_count_result(status: i32, count: u32) -> WindowsGraphicsAdapterCount {
+    WindowsGraphicsAdapterCount {
+        stage: "count-query",
+        ntstatus: Some(status),
+        // Microsoft specifies that NumAdapters is undefined on error. Retain
+        // no output count unless the call returned exactly STATUS_SUCCESS.
+        adapter_count: if status == 0 { Some(count) } else { None },
+    }
+}
+
+fn graphics_adapter_count() -> WindowsGraphicsAdapterCount {
+    use windows_sys::{
+        Wdk::Graphics::Direct3D::D3DKMT_ENUMADAPTERS2,
+        Win32::{
+            Foundation::{FreeLibrary, HMODULE},
+            System::LibraryLoader::{GetModuleHandleExW, GetProcAddress},
+        },
+    };
+
+    type Count = unsafe extern "system" fn(*mut D3DKMT_ENUMADAPTERS2) -> i32;
+    struct ExistingModule(HMODULE);
+    impl Drop for ExistingModule {
+        fn drop(&mut self) {
+            // SAFETY: GetModuleHandleExW acquired exactly this one reference;
+            // the count function pointer is no longer used when it is released.
+            let _ = unsafe { FreeLibrary(self.0) };
+        }
+    }
+
+    let mut report = WindowsGraphicsAdapterCount {
+        stage: "existing-gdi32-module",
+        ntstatus: None,
+        adapter_count: None,
+    };
+    let mut handle = std::ptr::null_mut();
+    // SAFETY: The fixed name is NUL terminated and the handle output is live.
+    // This takes a reference only to an existing module, without loading one.
+    if unsafe { GetModuleHandleExW(0, windows_sys::w!("gdi32.dll"), &raw mut handle) } == 0 {
+        return report;
+    }
+    let module = ExistingModule(handle);
+    report.stage = "enum-adapters-entry-point";
+    // SAFETY: The acquired reference keeps the existing module live; the fixed
+    // symbol is NUL terminated and used only before that reference is released.
+    let Some(function) =
+        (unsafe { GetProcAddress(module.0, c"D3DKMTEnumAdapters2".as_ptr().cast()) })
+    else {
+        return report;
+    };
+    // SAFETY: The fixed Windows export has this documented system ABI, using
+    // the generated SDK structure and the NTSTATUS i32 return representation.
+    let count =
+        unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, Count>(function) };
+    let mut request = D3DKMT_ENUMADAPTERS2::default();
+    // SAFETY: This live writable structure has a null pAdapters field: only
+    // the supported count is requested, without an adapter array or handles.
+    // One call is made under the same owning child deadline and mitigations.
+    let status = unsafe { count(&raw mut request) };
+    graphics_count_result(status, request.NumAdapters)
+}
+
 impl Drop for Instance {
     fn drop(&mut self) {
         // SAFETY: This wrapper uniquely owns the instance, creates no children,
@@ -235,6 +297,7 @@ fn create_instance(
             loader_api_version: Some(loader_api),
             application_api_version: Some(application_api),
             instance_modules: Some(modules.clone()),
+            graphics_adapter_count: Some(graphics_adapter_count()),
         })
     })?);
     Ok((instance, modules))
@@ -567,12 +630,27 @@ mod tests {
         assert_eq!(context.vulkan_result, Some(-9));
         assert_eq!(context.loader_api_version, None);
         assert_eq!(context.application_api_version, None);
+        assert_eq!(context.graphics_adapter_count, None);
         assert_eq!(error.kind(), io::ErrorKind::Other);
         assert_eq!(
             error.to_string(),
             "Vulkan inventory failed at device-query (VkResult -9)"
         );
         Ok(())
+    }
+
+    #[test]
+    fn graphics_count_failure_never_exposes_undefined_adapter_count() {
+        let success = graphics_count_result(0, 2);
+        assert_eq!(success.ntstatus, Some(0));
+        assert_eq!(success.adapter_count, Some(2));
+        assert_eq!(graphics_count_result(0, 0).adapter_count, Some(0));
+        for status in [-1, i32::MIN, 1] {
+            let failure = graphics_count_result(status, u32::MAX);
+            assert_eq!(failure.stage, "count-query");
+            assert_eq!(failure.ntstatus, Some(status));
+            assert_eq!(failure.adapter_count, None);
+        }
     }
 
     #[test]

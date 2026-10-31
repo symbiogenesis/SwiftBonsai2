@@ -19,6 +19,7 @@ fn unknown() -> Value {
         "architecture": std::env::consts::ARCH, "loader_api_version": null,
         "application_api_version": null,
         "instance_modules": null,
+        "graphics_adapter_count": null,
         "required_execution_policy": "headless-worker", "failure": null,
         "adapters": null, "qualification": "unqualified",
         "backend_ready": false, "error": "native-vulkan-query-unavailable"})
@@ -69,6 +70,17 @@ fn failed_query(error: &std::io::Error) -> Value {
     report["instance_modules"] = failure
         .and_then(|failure| failure.instance_modules.as_ref())
         .map_or(Value::Null, instance_modules);
+    report["graphics_adapter_count"] = failure
+        .and_then(|failure| failure.graphics_adapter_count.as_ref())
+        .map_or(Value::Null, |count| {
+            json!({
+                "scope": "current-worker-post-instance-failure-count-only",
+                "stage": count.stage, "ntstatus": count.ntstatus,
+                "adapter_count": count.adapter_count,
+                "adapter_handles_requested": false,
+                "failure_cause_verified": false,
+            })
+        });
     report
 }
 
@@ -129,6 +141,7 @@ pub fn query(request: &Value) -> crate::Result<Value> {
             "loader_api_version": inventory.loader_api_version, "adapters": adapters,
             "application_api_version": inventory.application_api_version,
             "instance_modules": instance_modules(&inventory.instance_modules),
+            "graphics_adapter_count": null,
             "qualification": "unqualified", "backend_ready": false, "error": null}),
         )
     }
@@ -249,6 +262,11 @@ mod tests {
                 after: Some(vec!["driver.dll".into(), "vulkan-1.dll".into()]),
                 file_candidates: None,
             }),
+            graphics_adapter_count: Some(bonsai_windows_process::WindowsGraphicsAdapterCount {
+                stage: "count-query",
+                ntstatus: Some(-1),
+                adapter_count: None,
+            }),
         });
         let report = failed_query(&error);
         assert_eq!(report["status"], "unknown");
@@ -263,6 +281,16 @@ mod tests {
             json!(["driver.dll"])
         );
         assert_eq!(report["instance_modules"]["dependencies_verified"], false);
+        assert_eq!(report["graphics_adapter_count"]["ntstatus"], -1);
+        assert!(report["graphics_adapter_count"]["adapter_count"].is_null());
+        assert_eq!(
+            report["graphics_adapter_count"]["adapter_handles_requested"],
+            false
+        );
+        assert_eq!(
+            report["graphics_adapter_count"]["failure_cause_verified"],
+            false
+        );
         assert!(report["adapters"].is_null());
         assert_eq!(report["backend_ready"], false);
 
@@ -271,6 +299,7 @@ mod tests {
         assert!(report["failure"]["vulkan_result"].is_null());
         assert!(report["loader_api_version"].is_null());
         assert!(report["instance_modules"].is_null());
+        assert!(report["graphics_adapter_count"].is_null());
         assert!(!report.to_string().contains("sensitive"));
     }
 

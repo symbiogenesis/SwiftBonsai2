@@ -126,6 +126,23 @@ exclude an attempted ICD or layer. No additional layer/extension, loader overrid
 alternate policy or second instance attempt is introduced. Loader/ICD provenance and
 the X2 failure cause remain unqualified.
 
+After an instance-creation failure, `graphics_adapter_count` makes one independent
+count-only [`D3DKMTEnumAdapters2`][graphics-count] call in that same child, after
+the module snapshots. It acquires/releases one reference to an already loaded
+`gdi32.dll` and resolves only that fixed export; it loads no additional DLL. A
+null adapter array requests no adapter handles. The report retains the raw
+`NTSTATUS` and reports a count only for `STATUS_SUCCESS`; Microsoft defines the
+output count as undefined on error. Missing module/export remains unknown. The
+existing ten-second Job deadline bounds this call too; there is no second Vulkan
+attempt or weaker-policy retry.
+
+The [Khronos Windows loader source][loader-windows] uses this API while discovering
+driver manifests. That moving source is a diagnostic lead, not provenance for the
+installed loader's 1.3.301 bytes. A failed protected count query narrows which
+graphics-discovery operation is unavailable; it does not identify an attempted ICD,
+prove that the loader reached this call, establish the cause of `VkResult -9`, or
+qualify worker access. A successful count does not identify a Vulkan-capable device.
+
 Retained **2026-10-29 X2** observations remain distinct:
 
 | Policy | Result | Retained evidence and limit |
@@ -362,6 +379,8 @@ strict wire parsing, identity invalidation and output reservation. Full suites/b
 [x2-specs]: https://www.qualcomm.com/content/dam/qcomm-martech/dm-assets/documents/Snapdragon-X2-Elite-Product-Brief.pdf
 [process-modules]: https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-enumprocessmodules
 [module-basename]: https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getmodulebasenamew
+[graphics-count]: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/d3dkmthk/nf-d3dkmthk-d3dkmtenumadapters2
+[loader-windows]: https://github.com/KhronosGroup/Vulkan-Loader/blob/main/loader/loader_windows.c
 [dma64]: https://github.com/ggml-org/llama.cpp/pull/29197
 [q2-hadamard]: https://github.com/ggml-org/llama.cpp/pull/30627
 [prism]: https://github.com/symbiogenesis/prism-inference
