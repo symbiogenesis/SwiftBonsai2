@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "purpose": "hosted-independent-public-source-QAIC-marshalling-oracle-only",
-  "generationReviewOnly": true,
-  "generationMode": "documented-standard-types; review-new-output-before-mock-compilation",
+  "generationReviewOnly": false,
+  "generationMode": "reviewed-standard-types; public-hosted-mock-only",
   "qaicRepository": "https://github.com/qualcomm/QAIC",
   "qaicCommit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
   "setupAction": "haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d",
@@ -187,7 +187,24 @@
         "url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/HAP_debug.h"
       }
     ],
-    "reviewedGeneratedFiles": [],
+    "reviewedGeneratedFiles": [
+      {
+        "name": "htp_iface.h",
+        "bytes": 7920,
+        "sha256": "84e34d52796581fd2e6ebe236e65e4980bd3c6633325f6a81774f24924baa038"
+      },
+      {
+        "name": "htp_iface_stub.c",
+        "bytes": 16963,
+        "sha256": "3ea8854291ef82fa5e87e4a0d1cdec45b558941774b157995e085a6e1560fe92"
+      },
+      {
+        "name": "htp_iface_skel.c",
+        "bytes": 20248,
+        "sha256": "b517ef6f7b895bc42133cac2b97258bd1d0618c1b47b84c878d10d616f6e541d"
+      }
+    ],
+    "standardTypeReviewedGenerationRun": "41171073546",
     "priorLegacyGeneratedFiles": [
       {
         "name": "htp_iface.h",
