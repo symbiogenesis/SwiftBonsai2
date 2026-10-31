@@ -271,6 +271,19 @@ retain stable as an isolated control. Release overflow checks stay enabled and
 debug assertions disabled to preserve
 [subtle's release contract](https://github.com/dalek-cryptography/subtle/blob/2.6.1/src/lib.rs#L50-L53).
 
+The lending-storage refactor passes owning broker and speech-service Release
+Clippy checks with all targets. Its bounded local screen passes 42 source-bound
+model-free regressions: HTTP/SSE/PCM framing and borrowing, cache ownership,
+packed replay, broker buffered caps/deadlines, speech request/storage reuse and
+waveform-owner cleanup. Transcript/Find test sources also type-check and pass
+focused Clippy checks; their executable build exceeded its local allowance.
+Source-bound harnesses retain production logic while isolating native linkage;
+these checks do not replace owning UI execution, native ASR/TTS build/link,
+rustdoc, actual-model acceptance or performance measurement. The initial broader
+analyzer capture failed draining compiler output, and linked broker test
+compilation also exceeded its bounded allowance. [PLAN.md](../PLAN.md) retains
+the remaining hosted gates.
+
 Shared `doc` planning uses `cargo doc --no-deps -Z unstable-options --output-format json`
 for selected packages/features in Release, locally through `Test-Rust.ps1` and in
 Foundation. Missing docs, intra-doc links, markup and Rust-block lints still fail.

@@ -67,8 +67,9 @@ bounded local attempt timed out draining output.
 Run hosted owning-UI Release analyzer/documentation checks and native ASR/TTS
 build/link checks after the lending-cache, in-place Find, borrowed HTTP/SSE/PCM,
 bounded speech scratch, concrete waveform-owner and source-owned packed-payload
-changes. Focused source-bound HTTP/SSE/PCM, speech-cache, packed replay and broker
-borrowed-payload/header regressions pass locally, and the transcript/Find test
+changes. Focused source-bound HTTP/SSE/PCM, speech-cache, speech-request/storage/
+waveform-owner, packed replay and broker borrowed-payload/header regressions pass
+locally, and the transcript/Find test
 sources type-check. Native owning UI and linked broker/service test runs remain
 pending after bounded local compilation. Retain hosted
 coverage for layout/Find invalidation and speech scratch/error/owner release;
