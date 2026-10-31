@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
+Import-Module (Join-Path $PSScriptRoot 'Bonsai.HexagonIdentity.psm1')
 
 function Get-BonsaiHexagonDispatchPlan {
     <# .SYNOPSIS
@@ -180,6 +181,14 @@ function Get-BonsaiHexagonDispatchWorkerResult {
         $record.SelectedDspArchitecture -isnot [string] -or $record.SelectedDspArchitecture -cne 'unknown') {
         throw 'Invalid dispatch worker identity or stage.'
     }
+    if ($record.LoadedDriverObservation -isnot [string] -or
+        $record.LoadedDriverObservation -cnotin @('not-started', 'not-observed', 'observed-verified', 'observation-rejected')) {
+        throw 'Invalid loaded-driver observation stage.'
+    }
+    if ($record.LoadedDriverObservation -ceq 'observed-verified') {
+        if ($record.LoadedDriverIdentity -isnot [Collections.IDictionary]) { throw 'Loaded driver observation omitted its identity.' }
+        Assert-BonsaiHexagonDriverIdentity -Identity $record.LoadedDriverIdentity
+    } elseif ($null -ne $record.LoadedDriverIdentity) { throw 'Unverified loaded driver identity was retained.' }
     foreach ($field in @('ModelLoaded', 'SwiftQualified', 'ProfileEligible', 'DriverInstalled', 'TrustChanged')) {
         if ($record[$field] -isnot [bool] -or $record[$field]) { throw 'Dispatch worker claimed an independent qualification or deployment gate.' }
     }
@@ -280,7 +289,9 @@ function Invoke-BonsaiHexagonBoundedCapture {
         [AllowEmptyCollection()][string[]]$ArgumentList = @(),
         [Parameter(Mandatory)][string]$WorkingDirectory,
         [Collections.IDictionary]$ProgressReceipt,
-        [string]$ProgressPath)
+        [string]$ProgressPath,
+        [ValidateSet('Fixture','Session')][string]$ProgressKind = 'Fixture',
+        [switch]$ObserveLoadedDriver)
     if (($null -ne $ProgressReceipt) -ne (-not [string]::IsNullOrEmpty($ProgressPath))) { throw 'Progress receipt and path must be supplied together.' }
     $start = [Diagnostics.ProcessStartInfo]::new($Executable)
     $start.UseShellExecute = $false
@@ -294,6 +305,8 @@ function Invoke-BonsaiHexagonBoundedCapture {
     $child.StartInfo = $start
     $started = $false
     $channels = @()
+    $driverGuard = $null
+    $driverObservation = 'not-observed'
     try {
         if (-not $child.Start()) { throw 'The fixed fixture failed to start.' }
         $started = $true
@@ -316,17 +329,43 @@ function Invoke-BonsaiHexagonBoundedCapture {
                             # vendor stderr, local paths or credential text. A later
                             # abort/hang must not erase the last entered fixture stage.
                             $progress = [Text.Encoding]::UTF8.GetString($channel.Store.ToArray())
-                            $markers = [regex]::Matches($progress, '(?m)^hexagon-fixture:stage=(load|registry|backend-init|context|allocation|transfer|dispatch|readback)\r?\n')
+                            $pattern = if ($ProgressKind -ceq 'Session') {
+                                '(?m)^hexagon-session:stage=(reference-process-init-entered|module-open-entered|allocation-entered|descriptor-entered|fd-mapping-entered|fd-unmapping-entered|free-entered|module-close-entered)\r?\n'
+                            } else { '(?m)^hexagon-fixture:stage=(load|registry|backend-init|context|allocation|transfer|dispatch|readback)\r?\n' }
+                            $markers = [regex]::Matches($progress, $pattern)
                             if ($markers.Count) {
                                 $stage = $markers[$markers.Count - 1].Groups[1].Value
-                                if ($ProgressReceipt.LastFixtureStage -cne $stage) {
-                                    $ProgressReceipt.LastFixtureStage = $stage
+                                $stageField = if ($ProgressKind -ceq 'Session') { 'LastNativeStage' } else { 'LastFixtureStage' }
+                                if ($ProgressReceipt[$stageField] -cne $stage) {
+                                    $ProgressReceipt[$stageField] = $stage
                                     Save-BonsaiHexagonDispatchWorkerReceipt -Report $ProgressReceipt -Path $ProgressPath
                                 }
                             }
                         }
                         $channel.Pending = $channel.Stream.ReadAsync($channel.Bytes, 0, $channel.Bytes.Length)
                     }
+                }
+            }
+            if ($ObserveLoadedDriver -and $driverObservation -ceq 'not-observed' -and -not $child.HasExited) {
+                try {
+                    $child.Refresh()
+                    $loadedDriverMatches = @($child.Modules | Where-Object { $_.ModuleName -ieq 'libcdsprpc.dll' })
+                    if ($loadedDriverMatches.Count -gt 1) { throw 'Ambiguous loaded FastRPC driver.' }
+                    if ($loadedDriverMatches.Count -eq 1) {
+                        # This path comes from the live child's actual module list,
+                        # independently of the installed-driver inventory or its JSON.
+                        $driverGuard = Get-BonsaiHexagonDriverGuard -Path $loadedDriverMatches[0].FileName
+                        $driverObservation = 'observed-verified'
+                    }
+                } catch {
+                    # Exit can race observation. It supplies no loaded identity;
+                    # numeric access remains separate from this pending gate.
+                    $driverObservation = 'observation-rejected'
+                }
+                if ($null -ne $ProgressReceipt -and $driverObservation -cne 'not-observed') {
+                    $ProgressReceipt.LoadedDriverObservation = $driverObservation
+                    $ProgressReceipt.LoadedDriverIdentity = if ($null -ne $driverGuard) { $driverGuard.Identity } else { $null }
+                    Save-BonsaiHexagonDispatchWorkerReceipt -Report $ProgressReceipt -Path $ProgressPath
                 }
             }
             if ($channels[0].Ended -and $channels[1].Ended -and $child.HasExited) { break }
@@ -339,6 +378,8 @@ function Invoke-BonsaiHexagonBoundedCapture {
             ExitCode = $child.ExitCode
             StandardOutput = $utf8.GetString($channels[0].Store.ToArray())
             StandardError = $utf8.GetString($channels[1].Store.ToArray())
+            LoadedDriverObservation = $driverObservation
+            LoadedDriverIdentity = if ($null -ne $driverGuard) { $driverGuard.Identity } else { $null }
         }
     } finally {
         if ($started) {
@@ -351,6 +392,7 @@ function Invoke-BonsaiHexagonBoundedCapture {
             while (-not $child.WaitForExit(1000)) { }
         }
         foreach ($channel in $channels) { $channel.Stream.Dispose(); $channel.Store.Dispose() }
+        if ($null -ne $driverGuard) { $driverGuard.Stream.Dispose() }
         $child.Dispose()
     }
 }
@@ -367,6 +409,7 @@ function Invoke-BonsaiHexagonDispatchWorker {
         SchemaVersion = 1; Kind = 'runner-hexagon-dispatch-worker'; Outcome = 'pending'; Stage = 'source-identity'
         Failure = $null; CatalogMemberVerified = $false; CatalogMembersVerified = 0; CatalogMemberNames = @()
         SelectedDspArchitecture = 'unknown'; LastFixtureStage = 'not-started'; DeviceDispatchVerified = $false; FixtureResult = $null
+        LoadedDriverObservation = 'not-started'; LoadedDriverIdentity = $null
         FixtureSha256 = $null; FixtureSourceSha256 = $null; ManifestSha256 = $null; LockSha256 = $null; SigntoolSha256 = $null
         RuntimeFilesVerified = 0; SourceRevision = $Request.ExpectedRunnerRevision
         ModelLoaded = $false; SwiftQualified = $false; ProfileEligible = $false; DriverInstalled = $false; TrustChanged = $false
@@ -484,7 +527,10 @@ function Invoke-BonsaiHexagonDispatchWorker {
         Save-BonsaiHexagonDispatchWorkerReceipt -Report $report -Path $Request.WorkerReceiptPath
         # The surrounding worker already belongs to the owner's kill-on-close
         # Job. The fixture inherits it before any DSP/runtime code can execute.
-        $fixture = Invoke-BonsaiHexagonBoundedCapture -Executable $fixturePath -ArgumentList @('--runtime-directory', $Request.PackageDirectory) -WorkingDirectory $Request.PackageDirectory -ProgressReceipt $report -ProgressPath $Request.WorkerReceiptPath
+        $report.LoadedDriverObservation = 'not-observed'
+        $fixture = Invoke-BonsaiHexagonBoundedCapture -Executable $fixturePath -ArgumentList @('--runtime-directory', $Request.PackageDirectory) -WorkingDirectory $Request.PackageDirectory -ProgressReceipt $report -ProgressPath $Request.WorkerReceiptPath -ObserveLoadedDriver
+        $report.LoadedDriverObservation = $fixture.LoadedDriverObservation
+        $report.LoadedDriverIdentity = $fixture.LoadedDriverIdentity
         $numeric = Get-BonsaiHexagonDispatchFixtureResult -Json $fixture.StandardOutput -ExitCode $fixture.ExitCode
         $report.FixtureResult = $numeric
         $report.Outcome = $numeric.Outcome
@@ -503,4 +549,4 @@ function Invoke-BonsaiHexagonDispatchWorker {
     return $report
 }
 
-Export-ModuleMember -Function Get-BonsaiHexagonDispatchPlan, Assert-BonsaiHexagonDispatchBuild, Get-BonsaiHexagonDispatchEnvironment, Get-BonsaiHexagonDispatchFixtureResult, Get-BonsaiHexagonDispatchWorkerResult, Invoke-BonsaiHexagonDispatchWorker
+Export-ModuleMember -Function Get-BonsaiHexagonDispatchPlan, Assert-BonsaiHexagonDispatchBuild, Get-BonsaiHexagonDispatchEnvironment, Get-BonsaiHexagonDispatchFixtureResult, Get-BonsaiHexagonDispatchWorkerResult, Invoke-BonsaiHexagonDispatchWorker, ConvertFrom-BonsaiHexagonDispatchJson, Get-BonsaiHexagonDispatchFile, Read-BonsaiHexagonDispatchJson, Save-BonsaiHexagonDispatchWorkerReceipt, Invoke-BonsaiHexagonBoundedCapture

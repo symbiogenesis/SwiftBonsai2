@@ -63,6 +63,8 @@ if (@([IO.Directory]::EnumerateFileSystemEntries($bundle)).Count -ne 2) { throw 
 # Keep compilation evidence and the separate direct-driver controls outside it.
 $nativeOutput = Join-Path $output 'native-rpc'
 [void][IO.Directory]::CreateDirectory($nativeOutput)
+$nativeBundle = Join-Path $output 'native-rpc-bundle'
+[void][IO.Directory]::CreateDirectory($nativeBundle)
 $nativeSource = Join-Path $repo 'tools/hexagon/native_rpc'
 $nativeLibrary = Join-Path $nativeOutput 'libhexagon_native_rpc.rlib'
 $nativeExe = Join-Path $nativeOutput 'native-hexagon-query.exe'
@@ -82,17 +84,24 @@ if ($nativeCheck.ExitCode -ne 0) { throw 'Direct Rust model-free capability self
 $contractCheck = Invoke-BonsaiNativeProcess -Executable $nativeTest -WorkingDirectory $output -TimeoutSeconds 15 -OwnDescendants
 [IO.File]::WriteAllText((Join-Path $nativeOutput 'contract-tests.txt'),$contractCheck.StandardOutput + $contractCheck.StandardError)
 if ($contractCheck.ExitCode -ne 0) { throw 'Direct Rust capability contract regressions failed.' }
-$nativeInputs = @(foreach ($name in @('lib.rs','windows.rs','mapping.rs','session.rs','session_native.rs','query.rs','sources.json')) {
+$nativeInputs = @(foreach ($name in @('lib.rs','windows.rs','mapping.rs','session.rs','session_native.rs','session_mapping.rs','session_mapping_native.rs','query.rs','sources.json')) {
     $inputPath = Join-Path $nativeSource $name
     [ordered]@{ Name = $name; Sha256 = (Get-FileHash -LiteralPath $inputPath -Algorithm SHA256).Hash.ToLowerInvariant() }
 })
 [ordered]@{
     SchemaVersion = 1; RunnerRevision = $env:GITHUB_SHA
-    RunId = $env:GITHUB_RUN_ID; RustToolchain = $toolchain; Target = 'aarch64-pc-windows-msvc'
+    RunId = $env:GITHUB_RUN_ID; RunAttempt = $env:GITHUB_RUN_ATTEMPT
+    RustToolchain = $toolchain; Target = 'aarch64-pc-windows-msvc'; HostedBuild = $true
     CompilerIdentitySha256 = $compilerDigest; SourceFiles = $nativeInputs
+    ManifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+    LockSha256 = (Get-FileHash -LiteralPath $lock -Algorithm SHA256).Hash.ToLowerInvariant()
+    Executable = [ordered]@{ Name = 'native-hexagon-query.exe'; Bytes = ([IO.FileInfo]$nativeExe).Length; Sha256 = (Get-FileHash -LiteralPath $nativeExe -Algorithm SHA256).Hash.ToLowerInvariant() }
     ExecutableSha256 = (Get-FileHash -LiteralPath $nativeExe -Algorithm SHA256).Hash.ToLowerInvariant()
     DeviceCodeLoaded = $false; DspCodeLoaded = $false; ProfileEligible = $false
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $nativeOutput 'native-build.json') -Encoding utf8NoBOM
+Copy-Item -LiteralPath $nativeExe -Destination (Join-Path $nativeBundle 'native-hexagon-query.exe')
+Copy-Item -LiteralPath (Join-Path $nativeOutput 'native-build.json') -Destination (Join-Path $nativeBundle 'native-build.json')
+if (@([IO.Directory]::EnumerateFileSystemEntries($nativeBundle)).Count -ne 2) { throw 'The native probe bundle must contain exactly its executable and build receipt.' }
 $packedOutput = Join-Path $output 'packed-projection'
 [void][IO.Directory]::CreateDirectory($packedOutput)
 $packedSource = Join-Path $repo 'tools/hexagon/packed_projection.rs'
@@ -102,7 +111,7 @@ if ($packedBuild.ExitCode -ne 0) { throw 'The CPU packed-projection control fail
 $packedCheck = Invoke-BonsaiNativeProcess -Executable $packedTest -WorkingDirectory $output -TimeoutSeconds 30 -OwnDescendants
 [IO.File]::WriteAllText((Join-Path $packedOutput 'contract-tests.txt'),$packedCheck.StandardOutput + $packedCheck.StandardError)
 if ($packedCheck.ExitCode -ne 0) { throw 'The CPU packed-projection contract regressions failed.' }
-$packedInputs = @(foreach ($name in @('packed_projection.rs','packed-sources.json','verify_packed_fixture.py','fixtures/swift-q8k-parity.bin','fixtures/swift-q8k-parity.json')) {
+$packedInputs = @(foreach ($name in @('packed_projection.rs','packed_tiles.rs','packed-sources.json','verify_packed_fixture.py','fixtures/swift-q8k-parity.bin','fixtures/swift-q8k-parity.json')) {
     [ordered]@{ Name = $name; Sha256 = (Get-FileHash -LiteralPath (Join-Path $repo ('tools/hexagon/' + $name)) -Algorithm SHA256).Hash.ToLowerInvariant() }
 })
 [ordered]@{

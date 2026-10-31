@@ -94,3 +94,107 @@ of `popcount(i & 37)` to bind interior butterfly ordering across separate blocks
 Actual packed/sign arrays, independent transform/activation/logit/full-state
 parity, signed custom kernels, DMA64, mapping, ownership/failure recovery,
 resources and measured whole-request benefit remain open.
+
+## Proposed signed-kernel tile protocol
+
+[`packed_tiles.rs`](packed_tiles.rs) defines an application-owned version 1
+payload contract and a strict **CPU-only** receiver. This is not a Qualcomm
+RPC ABI or a supported operation in the signed GenieX bundle. A future separately
+reviewed and signed packed kernel must implement the protocol before device
+submission can use it. No native submission or asynchronous buffer lifetime is
+implemented by this control.
+
+Each little-endian payload consists of a 64-byte header, complete original PQ2
+row fragments and complete pinned prepared Q8_K records. The eight-byte magic is
+`PQ2Q8K01`. Fourteen u32 fields follow: version (1), header bytes (64), projection
+columns and rows, maximum tile rows and Q8_K groups, starting row and group,
+active rows and groups, zero-based sequence, flags, packed weight bytes and
+activation bytes. Flags are bit 0 for the first column tile of a row tile, bit 1
+for its last column tile and bit 2 for the final projection tile. Other bits
+reject. Packed weights remain row-major; each Q8_K group consumes two original
+PQ2 blocks. Q8_K records follow weights with their original scale, 256 codes and
+sixteen signed i16 sums. No native struct layout or padding crosses this boundary.
+
+`TileSource` prepares activations once and replaces one caller-owned staging
+vector per work unit. Its input has already passed the graph's CPU transform.
+The receiver derives the exact expected tile from the admitted geometry and
+sequence, compares every header byte and checks exact payload length before
+accessing records. Unknown versions, changed flags or geometry, duplicates,
+reordering, truncation and trailing bytes reject. It verifies finite scales and
+Q8_K sums, retains one CPU copy of prepared activations to reject changes across
+row tiles, and carries per-row FMA reduction across column tiles. Any arithmetic,
+protocol or cancellation error terminally discards provisional output. The
+consuming final commit requires every tile and a final cancellation/deadline
+check. No partial result is exposed.
+
+For the first projection's 32-row/four-group schedule, there are 2720 payloads,
+each at most **9936 bytes**, with **174,080 header bytes** and **27,025,920 total
+payload bytes**. Those totals include repeated activation traffic and the
+original 23,674,880 packed weight bytes. Vendor RPC, queue and DMA-descriptor
+framing, padding, mapping and output-return costs are additional. These are
+derived wire extents, not observed transfers. CPU replay additionally retains
+5840 bytes of activation identity, its complete private output and caller-owned
+staging capacity. It does not change the proposed VTCM reservation or prove
+device-resident activation reuse.
+
+The payload carries neither authenticated artifact identity nor trust authority.
+The trusted session owner must bind model, sign arrays, prepared input, custom
+kernel version/signature, geometry, mapping and resources before submission.
+Tests retain byte/traffic parity, awkward final tiles, independent native FMA
+bits, changed headers, malformed arithmetic, sequence faults and cancellation.
+They replay on CPU; actual artifact binding, signed execution, DMA completion,
+buffer retention after submission, full-state parity and benefit remain pending.
+
+## Actual artifact extraction candidate
+
+[`packed_artifact.rs`](packed_artifact.rs) is a narrow Rust export tool using
+the existing `bonsai_gguf::VerifiedModel` API from exact Prism revision
+`7aca2251f09acb345d4afb53d5ce411f81017745`. It adds no GGUF parser, inference
+dependency or alternate model admission. Hosted preparation must verify that
+source checkout and link its `bonsai_gguf` and `sha2` libraries. The tool's
+model-free `--self-test` checks width selection, complete-array sign validation
+and packed-scale rejection without opening a model or device. Building or
+executing the candidate alone does not establish actual artifact evidence.
+
+The only extraction invocation is:
+
+```powershell
+& ABSOLUTE_HOSTED_BUILD/packed-artifact.exe --model ABSOLUTE_SWIFT_GGUF --output-directory NEW_EXTERNAL_DIRECTORY
+```
+
+An owned supervisor must enforce the remaining aggregate owner-device deadline
+around the entire invocation. The command hashes all **7,206,168,928 bytes** of
+the fixed Swift artifact against SHA-256
+`5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5`.
+There is no cached verification receipt or caller-supplied identity override.
+The verified handle denies writes/deletion on Windows and remains alive through
+descriptor, metadata and payload access. Parsing uses the existing bounded
+reader with a 128 MiB retained-header allowance. Payload retention adds the
+23,674,880-byte projection and a 5120-byte extracted sign vector; parser/hash
+buffers and allocator overhead remain separate charges.
+
+The command requires original PQ2 type 142 and `[5120,17408]` geometry for
+`blk.0.ffn_up.weight`, checks all raw half scales and retains original packed
+bytes. It requires the exact version-1 forward input transform declaration,
+block size 1024, explicit signs and widths `[5120,6144,17408]`. All 28,672 sign
+values must be integer +1/-1 and their canonical little-endian i32 SHA-256 must
+match Prism's existing `3d1ea9136a6044cd680cc1e92cde65e9dd7238e1288fe2effabec5d201c48bed`
+control. The first 5120 entries are therefore the exact width-5120 sign vector,
+exported losslessly as two's-complement i8 bytes. It does not generate signs,
+execute the transform or infer a basis from dimensions alone.
+
+The new external directory receives `weights.pq2`, `signs.i8` and an at-most
+8192-byte `binding.json` recording the full artifact, library revision, extractor
+source digest, separate output digests, geometry and transform/sign definition.
+Existing directories, linked/reparse storage and Git ancestors reject. Files
+use exclusive creation and remain held against mutation through final manifest
+creation. Failures can retain bounded partial files; only a successful owned
+process receipt plus independently verified output digests permits intake.
+The tool reads no other tensor and writes no complete-model conversion.
+
+Actual extraction, independently retained output digests and consumption through
+the CPU operation control remain pending until an authorized bounded run. The
+binding establishes original weights and signs only; activations, logits,
+complete state, adapters, signed DSP computation and performance need their
+separate evidence. Any insufficient shared time allowance leaves extraction
+pending rather than splitting its full-file verification across runs.

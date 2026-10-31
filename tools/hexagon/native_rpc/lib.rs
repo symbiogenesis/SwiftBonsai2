@@ -14,9 +14,11 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 mod session;
+mod session_mapping;
 pub use session::{
     GET_EFFECTIVE_DOMAIN_ID, GET_URI, MAP_FD, MAP_FD_DELAYED, SessionPreparationReport,
 };
+pub use session_mapping::SessionMappingReport;
 
 #[cfg(all(windows, target_arch = "aarch64"))]
 #[allow(
@@ -352,6 +354,69 @@ impl Driver {
         }
     }
 
+    /// Consume this driver in one fixed signed-module/session FD mapping diagnostic.
+    ///
+    /// The trusted supervisor must independently verify and retain the exact
+    /// pinned package/catalog membership and driver identity before calling.
+    /// `ADSP_LIBRARY_PATH` must equal `package_directory` exactly; no other vendor
+    /// override is supported. Only the fixed v73/v81 module, session zero and FD=2
+    /// mapping are used. No unsigned-process control or computation is requested.
+    /// Progress snapshots distinguish entered from completed native operations.
+    /// After a module-open attempt all driver/module/catalog owners stay pinned
+    /// until supervised process exit, including after explicit handle close.
+    ///
+    /// # Errors
+    /// Rejects malformed paths, missing exports, inherited overrides and metadata
+    /// failures before opening a module. Native refusals remain exact report codes.
+    /// This terminal diagnostic requires external deadlines and verified teardown.
+    pub fn session_mapping_probe(
+        self,
+        package_directory: &Path,
+        progress: impl FnMut(&SessionMappingReport),
+    ) -> Result<SessionMappingReport, Error> {
+        #[cfg(all(windows, target_arch = "aarch64"))]
+        {
+            windows::session_mapping_probe(self.inner, package_directory, progress)
+        }
+        #[cfg(not(all(windows, target_arch = "aarch64")))]
+        {
+            let _ = (self, package_directory, progress);
+            Err(Error::UnsupportedPlatform)
+        }
+    }
+
+    /// Run the fixed signed-package reference process initialization and FD probe.
+    ///
+    /// This separately selected diagnostic additionally issues the reference's
+    /// `DSPRPC_CONTROL_UNSIGNED_MODULE` request with enable=1 for the validated
+    /// effective default-CDSP domain before `GET_URI` and module open. This requests an
+    /// unsigned DSP process class; it is not a signed-PD-only control and cannot
+    /// authorize arbitrary DSP bytes. The supervisor must still independently
+    /// verify and retain the pinned signed package/catalog and driver identities.
+    /// It changes no OS certificate store, test-signing or boot policy. Exact
+    /// closed Windows-driver implementation semantics remain vendor-dependent.
+    /// There is no fallback or retry from `session_mapping_probe`; choosing this
+    /// method is explicit. All owners stay pinned after the initialization attempt.
+    ///
+    /// # Errors
+    /// Uses the same path/environment, process deadline, guarded package and
+    /// verified cleanup prerequisites as `session_mapping_probe`. Native refusal
+    /// remains an exact code in the terminal receipt; no weaker path follows it.
+    pub fn reference_session_mapping_probe(
+        self,
+        package_directory: &Path,
+        progress: impl FnMut(&SessionMappingReport),
+    ) -> Result<SessionMappingReport, Error> {
+        #[cfg(all(windows, target_arch = "aarch64"))]
+        {
+            windows::reference_session_mapping_probe(self.inner, package_directory, progress)
+        }
+        #[cfg(not(all(windows, target_arch = "aarch64")))]
+        {
+            let _ = (self, package_directory, progress);
+            Err(Error::UnsupportedPlatform)
+        }
+    }
     /// Consume this driver in one fixed 4KiB allocation/registration/unmap probe.
     ///
     /// The documented registration call may implicitly open a domain session;
