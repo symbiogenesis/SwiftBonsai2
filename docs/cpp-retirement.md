@@ -51,23 +51,31 @@ Missing captures or unimplemented assertions remain visible pending/red outcomes
 
 ## Runner checked-in native files
 
-Paths below are relative to Runner. Nine C++ source/header files remain from an
-initial eleven; the first two rows record removed controls and retained evidence.
+Paths below are relative to Runner. Two C++ source/header files remain from an
+initial eleven; removed controls retain their identities and observations as data.
 Generated private-source C++ and external dependencies are tracked separately.
 
 | File | Replacement and exit condition |
 | --- | --- |
 | `src/speech-tts/tests/reference/philox.h` | Source removed: normalized-source SHA-256 replaces the anchor. Licensed provenance, 4,411 ordered scalar observations and independent block/rounding answers remain. Hosted owning-crate integration remains pending. |
 | `src/speech-tts/tests/philox_oracle.cpp` | Source removed: Rust validates immutable records and fixture identity. Its compilation/launch and indirect sampler-oracle inclusion are removed; provenance is retained as data. |
-| `src/speech-tts/tests/reference/sampling.h` | Freeze existing suppression/repetition bit cases; qualify the remaining probability pipeline separately, replace source anchoring with identity metadata, then remove header use. |
-| `src/speech-tts/tests/sampling_oracle.cpp` | Replay complete ordered logits/history/parameter/output records in Rust, preserving duplicate/invalid IDs, signed zero and exceptional floats. Remove native compilation. |
-| `src/speech-tts/tests/reference/bpe.h` | Freeze scanner chunks, encoded IDs, metadata/special precedence and actual pinned vocabulary captures; retain exact source/license identity as data and qualify the Rust tokenizer consumer. |
-| `src/speech-tts/tests/tokenizer_oracle.cpp` | Preserve complete fixture and capture identities plus scanner/merge/fallback/EOS assertions in Rust; remove compile/run path. |
-| `src/speech-tts/tests/tokenizer-gguf.h` | Replace model-free GGUF metadata handoff observations with Rust-owned loader/boundary checks when the generated tokenizer shim retires. |
-| `src/speech-tts/tests/tokenizer-error.h` | Preserve registration/encode failure and cleanup observations without a generated C++ exception/logging fixture. |
-| `src/speech-tts/tests/tokenizer_lifecycle.cpp` | Move metadata intake, replacement, failure cleanup and result ownership checks onto the final Rust loading path; preserve all existing RAII assertions. |
-| `src/speech-tts/tests/decode_graph_cache.cpp` | Move decode-workspace selection/eviction into the Rust engine and preserve allocation, batch/window changes, failure cleanup and completed-work lifetime checks. |
-| `tools/native-reference/swift_ptq1_reference.cpp` | Preserve pinned logits/state/control captures and artifact/adapter identities; qualify a Rust collector/engine replacement, then retire native DLL collection and its build workflow. |
+| `src/speech-tts/tests/reference/sampling.h` | Source removed after normalized length/SHA guard replacement. Immutable observations retain all 722 masking/penalty cases and 714 nonempty greedy cases; the downloaded stochastic probability pipeline remains native and separately pending. |
+| `src/speech-tts/tests/sampling_oracle.cpp` | Source and compilation/launch removed after complete ordered input/output replay passes in Rust, including duplicate/invalid IDs, signed zero and exceptional floats. Original and executed-driver identities, compiler/target configuration and fixture digests remain in `sampling-v1.provenance.json`. |
+| `src/speech-tts/tests/reference/bpe.h` | Source removed: normalized length/SHA guard and licensed source identity replace the anchor. Complete scanner/ID captures retain the original five model-free vocabularies; actual pinned vocabulary/model qualification remains pending. |
+| `src/speech-tts/tests/tokenizer_oracle.cpp` | Source and compile/run path removed after Rust replay of all 1,810 requests, complete ordered input bytes and scanner/merge/fallback/EOS outputs. Metadata observations and exact source/compiler/fixture identities remain in `tokenizer-v1.provenance.json`. |
+| `src/speech-tts/tests/tokenizer-gguf.h` | Source removed after the production Rust GGUF adapter/loader passes exact intake-index, duplicate/rank, missing/null/oversized/type, failed replacement and balanced-release checks. A tiny real GGUF file also runs through the pinned reader without weights. The external GGUF parser itself remains native. |
+| `src/speech-tts/tests/tokenizer-error.h` | Logging/exception fixture removed. Rust reports registration/encoding failure and owns result cleanup, with copy refusal and safe-Rust unwind checks. The remaining native callback catches allocation exceptions before returning failure to Rust. |
+| `src/speech-tts/tests/tokenizer_lifecycle.cpp` | Source and compile/launch path removed after its assertions move to the production Rust loader, actual Box replacement and result ownership path. Exact original identities and assertion mapping remain in `tokenizer-lifecycle-v1.provenance.json`. The thin generated holder retains no-copy/no-move static assertions; bridge compilation, full hosted linkage and actual-model acceptance remain distinct checks. |
+| `src/speech-tts/tests/decode_graph_cache.cpp` | Selection/rebuild policy is Rust; the native lifetime fixture calls the actual Rust exports and preserves allocation, batch/window changes and failed replacement recovery. Retain it until the native vector and GGML resource ownership move to Rust. |
+| `tools/native-reference/swift_ptq1_reference.cpp` | Before a Rust dynamic-ABI collector replaces it, capture exact pinned structure sizes/alignments/field offsets, enum/default values and returned-by-value controls. Preserve DLL/model/adapter identities, cleanup order, create-new/sharing semantics and bounded complete logits/state capture; require hosted build, pinned-DLL ABI probe and actual-model numerical comparison. A Rust collector would still call the native reference engine; its retirement is a separate gate. |
+
+[Scoped local evidence](evidence/cpp-retirement-model-free.json) binds the tested
+source revision and file identities to 30 passing model-free checks, strict
+production/test lint checks, bridge compilation and the real pinned GGUF reader.
+It covers the complete retained capture schedules and assertion mappings above;
+it is a standalone focused harness, not the full owning-crate build or a model
+qualification. Hosted integration and actual-model gates remain pending in
+[PLAN.md](../PLAN.md).
 
 ## Prism checked-in native files
 
@@ -129,7 +137,7 @@ quality and actual-device resource acceptance. Reusing a C++ library's Rust bind
 does not satisfy this milestone.
 
 Expand each external family to exact files from its pinned source manifest before
-porting it. Current boundaries include Qwen `src/bpe.h`'s remaining GGUF shim,
+porting it. Current boundaries include Qwen `src/bpe.h`'s remaining native holder/output adapter,
 `src/prompt-builder.h`, both sampling headers, pipeline/codec/speaker graphs and
 audio transforms. A Rust policy callback or removed test oracle does not retire
 the downloaded header, generated shim or linked engine that still contains it.

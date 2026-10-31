@@ -46,9 +46,12 @@ matching and speech-runner policy. Local compilation exhausted its bounded
 allowance before those cases could execute; formatting and the focused PowerShell
 speech-policy check do not replace them.
 
-The Rust speech tokenizer and captured Philox control/source guard also need the
-hosted full Qwen build/link and owning-crate checks. Local model-free token/bit
-parity does not close those integration gates.
+The Rust speech tokenizer and GGUF loading/ownership path, greedy sampler and
+decode-workspace policy, together with captured Philox/sampling/tokenizer controls
+and source identity guards, need
+the hosted full Qwen build/link and owning-crate checks. Local model-free token/bit
+parity does not close those integration gates. Preserve the captured Windows
+ARM64 MSVC exceptional-float behavior when qualifying other compiler versions.
 
 - Qualify startup, supplied-history streaming, full 8K context and 4K output, long
   conversations, speech, offline restart and recovery. Cover Stop, abandonment,
@@ -217,12 +220,16 @@ Use the [retirement contract](docs/cpp-retirement.md) to track each file's behav
 replacement evidence, source identity and remaining consumers. Source deletion does
 not close pending hosted integration or full-model acceptance.
 
-- Replace remaining Runner sampling and tokenizer native oracles with complete,
-  immutable observations plus independent Rust/mathematical controls. Preserve every
-  existing input, exceptional bit pattern, scanner/ID and failure assertion; retire
-  source anchors, fixture stubs and compile/launch references together. Move native
-  ownership and graph-cache checks onto the Rust loading/execution path before
-  removing their last generated-code controls.
+- Replace the remaining native stochastic sampling pipeline and CodePredictor's
+  separate GGML sampling graph with qualified Rust execution. Preserve target-specific
+  top-p tie ordering, sequential `expf` arithmetic and accumulation, Philox draws,
+  exceptional floats and the captured masking/penalty/greedy controls. Qualify actual
+  pinned tokenizer vocabularies as well as the complete model-free scanner/ID captures.
+  Move graph-cache resource ownership onto the Rust execution path before removing
+  its last native allocation/lifetime control; Rust selection policy alone is
+  insufficient. Qualify the Rust tokenizer loading/ownership boundary in the full
+  hosted consumer and actual-model speech lifecycle; model-free metadata and
+  callback checks do not close those integration gates.
 - Retire Prism's native reference families file by file after matching hosted replay
   of their source-level assertions. Preserve all approved green IDs, full geometry
   schedules, corrections, unsupported outcomes and numerical/target boundaries.

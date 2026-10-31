@@ -169,12 +169,22 @@ fresh execution of the retired reference.
 the reserved interval and preserves the selected EOS token. Repetition applies
 the penalty to each valid history token at most once, preserving the sign test and f32
 multiply/divide order. The native caller retains its reusable seen-token buffer;
-the Rust helpers allocate nothing. The private build overlay replaces both
-complete helper bodies and checks the entire original `sampling.h` against
-`tests/reference/sampling.h`. That unmodified header remains an independent
-model-free C++ oracle for 722 bit-comparison cases, including duplicate/invalid
-token IDs, signed zero and exceptional float inputs. Focused checks also compile
-the generated native header and exercise empty/no-op ABI calls and source drift.
+the Rust helpers allocate nothing. Greedy selection also runs in Rust and
+preserves the captured Windows ARM64 MSVC 14.51 vector-prefix/scalar-tail behavior,
+including NaNs; a conventional first-maximum loop differs on exceptional inputs.
+The private overlay validates the downloaded `sampling.h` by exact normalized
+length/SHA-256. Historical captures retain every input and both output bit vectors
+for all 722 masking/penalty cases, plus 714 nonempty greedy cases. Rust replay
+checks complete schedule identity, fixture digests and consumption, duplicate/invalid
+token IDs, signed zero and exceptional floats. The duplicate header and native
+oracle are removed. A minimal generated declaration scaffold checks compilation;
+the full pinned probability pipeline still needs hosted owning-crate integration.
+
+Decode-window selection and rebuild decisions use pointer-free Rust exports.
+The native lifetime fixture invokes those actual exports and verifies every window,
+same-window reuse, fresh-request rewind, batch-width changes and allocation-failure
+recovery. GGML allocation/free and the graph vector remain native; that ownership
+control stays until the Rust execution path owns those resources.
 
 The source audit retains the probability pipeline, mel constants
 and resampler upstream. Top-k/top-p ordering and mel changes need separate
@@ -200,27 +210,38 @@ leftmost merge ties, duplicate-spelling overwrites and raw encoded-byte fallback
 This is the pinned speech tokenizer; the Prism Qwen35 tokenizer has a different
 contract and is not substituted.
 
-The native overlay retains GGUF access and a small RAII wrapper around one opaque
-Rust owner. It streams metadata into that owner without retaining native copies
-of the tokenizer tables. Initialization failure releases the candidate and its
-GGUF context. The context releases its tokenizer after joining the compute worker.
-Encoding produces an independently owned Rust ID vector; the native prompt builder
-copies those IDs into its existing vector, then releases the Rust result even if
-the copy throws. Prompt framing, token slicing, embedding projections and GGML
+Rust owns GGUF metadata context lifetime, typed table intake, special-key loading
+and transactional tokenizer replacement through the pinned reader's primitive C
+API. Failed intake releases the candidate and metadata while preserving the old
+owner. Native allocation exceptions abort the owned worker at a guarded unwind
+boundary. The remaining native holder releases its opaque Rust owner after joining
+the compute worker and retains compile-time no-copy/no-move assertions.
+Rust also owns encoded IDs until a synchronous native callback copies them into
+the prompt builder's vector. That callback catches allocation exceptions and
+returns failure before Rust releases the result. No result handle or borrowed
+ID span escapes. Prompt framing, token slicing, embedding projections and GGML
 graphs remain native.
 
 The supported subset rejects invalid UTF-8, input beyond 64 KiB, spellings beyond
 4 KiB, table IDs/ranks of one million or greater, more than one million entries
-in either table, ambiguous reverse IDs, more than 64 MiB
+in either metadata array, non-string token/merge arrays, non-UINT32 special IDs,
+more than 64 requested special keys, ambiguous reverse IDs, more than 64 MiB
 of unique table spelling bytes, more than 64 special tokens and more than
 64 million merge-pair probes per encoding. These spelling limits do not describe
 total process memory: maps, reverse lookup and scratch have additional storage.
 Errors reject the request or initialization without publishing partial token IDs.
-The full unmodified `tests/reference/bpe.h` anchors the build overlay and supplies
-the independent model-free C++ oracle. The focused tests compare 1,835 inputs
-across five synthetic metadata fixtures through the safe core and actual Rust ABI,
-and exercise initialization faults, independent results, malformed input and the
-generated native wrapper's metadata access and RAII. Source drift rejects a build.
+The downloaded `bpe.h` is guarded by exact normalized length/SHA-256; its duplicate
+reference header and native oracle are removed. Immutable independent captures
+retain all 1,810 requests across five synthetic metadata fixtures, complete
+metadata/request/EOS input bytes, scanner chunks and encoded IDs, with source,
+compiler and fixture identities. Rust replay compares the safe core and actual Rust ABI,
+and exercise initialization faults, independent results and malformed input.
+The three native loading/lifecycle fixtures are removed after the actual Rust
+loading and callback path passes metadata/registration fault injection,
+transactional replacement, result cleanup, native bridge compilation and a tiny
+real GGUF reload/recovery check without model weights. Their exact identities and
+assertion mapping remain in `tokenizer-lifecycle-v1.provenance.json`.
+Source drift rejects a build.
 Full native builds remain hosted checks. Actual-model VoiceDesign/Base conditioning,
 speech output and resource qualification
 remain pending under `PLAN.md`; model-free token parity makes no speedup claim.

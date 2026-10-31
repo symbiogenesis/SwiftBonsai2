@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "scope": "focused-model-free-cpp-retirement",
+  "source_revision": "f7edb17eb4ec2046ebc26f31e39946f3b9631d9d",
+  "target": "aarch64-pc-windows-msvc",
+  "rust_toolchain": "nightly-2026-10-22-aarch64-pc-windows-msvc",
+  "native_compiler": {
+    "compiler_version": "clang version 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5)\nTarget: aarch64-pc-windows-msvc\nThread model: posix\nInstalledDir: C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\tools\\llvm-23.1.4-arm64\\clang+llvm-23.1.4-aarch64-pc-windows-msvc\\bin\nBuild config: +alloc:rpmalloc",
+    "compiler_executable_sha256": "d5487944bbd56cea6ac4fdde2496f58b32802a3276c24b32e231e0d72e2122c9",
+    "msvc_tools": "14.51.36231",
+    "windows_sdk": "10.0.26100.0"
+  },
+  "linked_native_reader": {
+    "library": "pinned-Qwen ggml-base.lib",
+    "bytes": 1897574,
+    "sha256": "169e5730000ee12061c1801677212e8f2e3aa8f16ea8b1c0b89f1eb5f4cb63dd",
+    "scope": "real GGUF metadata parsing only; no model weights"
+  },
+  "validation": {
+    "harness": "Standalone offline Cargo harness includes the exact production modules and focused tests directly. It is not the full bonsai-speech-tts owning crate.",
+    "tests": {
+      "passed": 30,
+      "failed": 0,
+      "ignored": 0,
+      "post_source_removal": true
+    },
+    "clippy": {
+      "passed": true,
+      "configurations": [
+        "production library",
+        "library tests"
+      ],
+      "lints": "Full workspace Rust/rustdoc/Clippy policy, warnings denied"
+    },
+    "native_compile": "Actual generated tokenizer holder/callback plus minimal sampler declaration scaffold; tokenizer no-copy/no-move assertions compile.",
+    "native_graph_lifetime": "Generated assertion-enabled DLL invokes actual Rust selection/rebuild exports.",
+    "source_guards": "Both new normalized length/SHA guards independently match the provisioned pinned original headers.",
+    "models_loaded": false,
+    "benchmarks_run": false,
+    "owner_device_budget_seconds": 300,
+    "bounded_local_validation_within_budget": true
+  },
+  "retained_capture_cases": {
+    "sampling": 722,
+    "sampling_output_words": 36540,
+    "greedy_nonempty": 714,
+    "tokenizer_requests": 1810,
+    "tokenizer_vocabularies": 5
+  },
+  "source_files": {
+    "src/speech-tts/build_overlay.rs": {
+      "bytes_normalized_lf": 28431,
+      "sha256_normalized_lf": "952f6eaf8ee1af1a0e189bf0f58b92d0de0c9871a03d4416f21d3bc86835e96e"
+    },
+    "src/speech-tts/build_tokenizer.rs": {
+      "bytes_normalized_lf": 3233,
+      "sha256_normalized_lf": "27f55cca91d2a02c7b35ce15a00bdbd1cc01c217aa3a5cbf999091ecfcf100f0"
+    },
+    "src/speech-tts/build.rs": {
+      "bytes_normalized_lf": 8655,
+      "sha256_normalized_lf": "8038e8bbd7fe1b3689e4890b81e234feedcfa41456d062b151850bb297946321"
+    },
+    "src/speech-tts/src/sampling.rs": {
+      "bytes_normalized_lf": 8679,
+      "sha256_normalized_lf": "f00c7742ffdeac313ee80dc5ccfb12f6d9e05818829c445b801f9ab94b1839fa"
+    },
+    "src/speech-tts/src/native/sampling.rs": {
+      "bytes_normalized_lf": 3967,
+      "sha256_normalized_lf": "b140885705048329eea845f2b233ede37499c1fdf8893ee500641af5ab2cf060"
+    },
+    "src/speech-tts/src/native/sampling_tests.rs": {
+      "bytes_normalized_lf": 8328,
+      "sha256_normalized_lf": "55de1229e38174dbd28e7f81cbfe679cbb94b16311182d0271a90192289a1e51"
+    },
+    "src/speech-tts/src/decode_graph.rs": {
+      "bytes_normalized_lf": 2935,
+      "sha256_normalized_lf": "799de340a80b2a095aefa87ab98b8f3499df6a648ef1f806d9cab8380c947ea3"
+    },
+    "src/speech-tts/src/native/decode_graph.rs": {
+      "bytes_normalized_lf": 963,
+      "sha256_normalized_lf": "0cef083eb15845e2e9bbcd71de19dd5b907a4fcedd85afa2b54f0c5b421a1ede"
+    },
+    "src/speech-tts/src/native/decode_graph_tests.rs": {
+      "bytes_normalized_lf": 3892,
+      "sha256_normalized_lf": "26f283f2c5d70cdac791f2b55f6a394b6a9dc5a66c8fe1e55d866e522f56ba13"
+    },
+    "src/speech-tts/src/native/tokenizer.rs": {
+      "bytes_normalized_lf": 12291,
+      "sha256_normalized_lf": "0e56bc241437bbb65a1dada36a3c0d468a830ef215be82724691e350e19a2466"
+    },
+    "src/speech-tts/src/native/tokenizer_loading.rs": {
+      "bytes_normalized_lf": 11865,
+      "sha256_normalized_lf": "cde1cb2cce9c17fae73224b6f4eb21fdb4628adfbdbf17bc754e1ed61689a536"
+    },
+    "src/speech-tts/src/native/tokenizer_loading_tests.rs": {
+      "bytes_normalized_lf": 14890,
+      "sha256_normalized_lf": "8affc988f77c8082baee4557ccf75abb6afd880b9c22ae6eddba3a837dce6f71"
+    },
+    "src/speech-tts/src/native/tokenizer_tests.rs": {
+      "bytes_normalized_lf": 17468,
+      "sha256_normalized_lf": "f7fcd2b00463a7698d6962768aed44dfb7059cb6587cfe23ccdb09bda35724ec"
+    }
+  },
+  "remaining_checked_in_cpp": [
+    "src/speech-tts/tests/decode_graph_cache.cpp",
+    "tools/native-reference/swift_ptq1_reference.cpp"
+  ],
+  "pending": [
+    "Hosted full Qwen build/link and owning-crate checks",
+    "Actual pinned tokenizer vocabulary/model and full speech lifecycle/quality/resource acceptance",
+    "Native graph vector/GGML resource ownership replacement",
+    "Independent native collector ABI/layout/default controls and Rust replacement qualification",
+    "External inference engines, generated C++ glue and compiler/build retirement"
+  ]
+}
