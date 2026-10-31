@@ -6,6 +6,8 @@ on:
       - .github/workflows/hexagon-sdk-inventory.yml
       - scripts/Invoke-HexagonSdkInventory.ps1
       - tools/hexagon/sdk_inventory.py
+      - tools/hexagon/sdk_functional_review.py
+      - tools/hexagon/test_sdk_functional_review.py
       - tools/hexagon/sdk-inventory.lock.json
   workflow_dispatch:
 permissions:
@@ -27,6 +29,7 @@ jobs:
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
+          python -B (Join-Path $env:GITHUB_WORKSPACE 'tools/hexagon/test_sdk_functional_review.py')
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-HexagonSdkInventory.ps1') -OutputDirectory (Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Hexagon-SDK-Inventory') | ConvertTo-Json -Depth 12
       - name: Retain bounded identities and necessary review excerpts
         if: always()

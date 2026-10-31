@@ -64,6 +64,7 @@ $report = [ordered]@{
     SourceSha256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
     SupervisorSha256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
     PinSha256 = (Get-FileHash -LiteralPath $pinPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    FunctionalReviewSourceSha256 = (Get-FileHash -LiteralPath (Join-Path $repo 'tools/hexagon/sdk_functional_review.py') -Algorithm SHA256).Hash.ToLowerInvariant()
     ReviewedInputs = @(); Archive = $pin.asset; InventoryReceiptSha256 = $null
     PythonExecutableSha256 = $null; SdkCodeExecuted = $false; GeneratorExecuted = $false
     GeneratedSourceUploaded = $false; ModelLoaded = $false; DeviceCodeLoaded = $false; ProfileEligible = $false
@@ -72,7 +73,7 @@ $report = [ordered]@{
 try {
     foreach ($entry in $pin.reviewedInputs) {
         if ($entry.name -isnot [string] -or $entry.name -cnotmatch '^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$' -or
-            $entry.bytes -le 0 -or $entry.bytes -gt 65536 -or $entry.sha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid bounded reviewed SDK source input.' }
+            $entry.bytes -le 0 -or $entry.bytes -gt 1MB -or $entry.sha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid bounded reviewed SDK source input.' }
         $path = Receive-LockedArtifact -Uri $entry.url -Path (Join-Path $output $entry.name) -Bytes $entry.bytes -Sha256 $entry.sha256 -TimeoutSeconds 30
         $stream = [IO.FileStream]::new($path, 'Open', 'Read', 'Read')
         $holds.Add($stream)
@@ -90,7 +91,7 @@ try {
     $report.PythonExecutableSha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($pythonGuard)).ToLowerInvariant()
     $report.Stage = 'sdk-data-only-inventory'
     $inventoryPath = Join-Path $review 'sdk-inventory.json'
-    $result = Invoke-BonsaiNativeProcess -Executable $python -ArgumentList @('-B',$source,'--archive',$archive,'--pin',$pinPath,'--output',$inventoryPath) -WorkingDirectory $output -TimeoutSeconds $pin.limits.inventorySeconds -OwnDescendants
+    $result = Invoke-BonsaiNativeProcess -Executable $python -ArgumentList @('-B',$source,'--archive',$archive,'--pin',$pinPath,'--output',$inventoryPath,'--public-input-directory',$output) -WorkingDirectory $output -TimeoutSeconds $pin.limits.inventorySeconds -OwnDescendants
     if ($result.ExitCode -ne 0 -or $result.StandardOutput.Length -gt 4096 -or $result.StandardError.Length -gt 65536) {
         throw 'SDK data-only inventory failed its fixed process/output contract; no SDK tool was executed.'
     }

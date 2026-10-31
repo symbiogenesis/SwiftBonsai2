@@ -13,6 +13,8 @@ import struct
 import tarfile
 from pathlib import Path, PurePosixPath
 
+from sdk_functional_review import compare_functional, decoded_text, functional_metadata, legal_review
+
 
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
@@ -50,12 +52,12 @@ def category(name, pin):
 def review(data, kind, words):
     if kind not in {"build-idl-recipe", "license-review"}:
         return None
+    if kind == "license-review":
+        return legal_review(data, words)
     try:
         text = data.decode("utf-8-sig")
     except UnicodeError:
         return {"textEncoding": "not-UTF8", "excerpt": None}
-    if kind == "license-review":
-        return {"textEncoding": "UTF8", "excerpt": " ".join(text.split()[:words])}
     lines = text.splitlines()
     qaic = [(index + 1, line.strip()) for index, line in enumerate(lines) if "qaic" in line.lower()]
     # Limited source excerpts help locate the exact recipe. Flag spellings are
@@ -89,13 +91,17 @@ def notice_metadata(data):
         "apache-name": b"apache",
         "gpl-name": b"general public license",
     }
-    try:
-        text = data.decode("utf-8-sig")
-    except UnicodeError:
+    if pe_metadata(data)["validPeHeader"]:
         text = None
+        encoding = {"encoding": None, "basis": "validated-PE-header; text-decoding-not-attempted", "uncertain": False}
+    else:
+        text, encoding = decoded_text(data)
+    if text is not None:
+        lower = text.lower().encode("utf-8")
     result = {
         "markersPresent": [name for name, marker in markers.items() if marker in lower],
         "licenseRightsInterpretationReviewed": False,
+        "encodingObservation": encoding,
     }
     if text is not None:
         spdx = re.findall(r"SPDX-License-Identifier:\s*([^\r\n*]{1,128})", text)
@@ -105,7 +111,7 @@ def notice_metadata(data):
         ][:32]
         result["classificationScope"] = "text-markers-only-not-a-license-grant"
     else:
-        result["classificationScope"] = "binary-byte-markers-only-not-a-license-grant"
+        result["classificationScope"] = "raw-byte-markers-only-not-a-license-grant; no-binary-classification-from-decode-failure"
     return result
 
 
@@ -295,10 +301,11 @@ def recipe_metadata(recipes, pin):
     }
 
 
-def inventory(archive, pin):
+def inventory(archive, pin, public_input_directory):
     limits = pin["limits"]
     selected = []
     recipes = {}
+    comparison_bytes = {}
     names = set()
     declared = selected_bytes = entries = links = 0
     with archive.open("rb") as source:
@@ -352,6 +359,17 @@ def inventory(archive, pin):
                 ):
                     raise ValueError("the observed CMake recipe differs from its newly reviewed identity")
                 entry["noticeClassification"] = notice_metadata(data)
+                if kind in {"sdk-idl-input-candidate", "sdk-rpc-header-candidate"}:
+                    entry["functionalMetadata"] = functional_metadata(data, limits)
+                for comparison in pin["functionalComparisons"]:
+                    if name == comparison["sdkPath"]:
+                        if member.size != comparison["sdkBytes"] or entry["sha256"] != comparison["sdkSha256"]:
+                            raise ValueError("SDK functional-comparison input differs from its independently observed identity")
+                        comparison_bytes[name] = data
+                if name == pin["requiredNotice"]["path"] and (
+                    member.size != pin["requiredNotice"]["bytes"] or entry["sha256"] != pin["requiredNotice"]["sha256"]
+                ):
+                    raise ValueError("SDK NOTICE differs from its independently observed identity")
                 if kind == "qaic-generator":
                     entry["peHeader"] = pe_metadata(data)
                 if kind in {"build-idl-recipe", "build-recipe-helper"}:
@@ -364,6 +382,8 @@ def inventory(archive, pin):
         raise ValueError("the intended QAIC executable is absent from the checked archive")
     if not any(item["path"] == pin["requiredRecipePath"] for item in selected):
         raise ValueError("the required build_idl recipe is absent from the checked archive")
+    if not any(item["path"] == pin["requiredNotice"]["path"] for item in selected):
+        raise ValueError("the independently observed SDK NOTICE is absent")
     try:
         recipe = recipe_metadata(recipes, pin)
     except ValueError as error:
@@ -375,6 +395,18 @@ def inventory(archive, pin):
             "variableExpansionExecuted": False,
             "generatorCommandAuthorized": False,
         }
+    comparisons = []
+    for comparison in pin["functionalComparisons"]:
+        sdk = comparison_bytes.get(comparison["sdkPath"])
+        public_path = public_input_directory / comparison["publicName"]
+        if sdk is None or not public_path.is_file() or public_path.is_symlink():
+            raise ValueError("SDK/public declaration comparison omitted a fixed input")
+        public = public_path.read_bytes()
+        if len(public) != comparison["publicBytes"] or sha256(public) != comparison["publicSha256"]:
+            raise ValueError("public declaration comparison input differs from its source pin")
+        comparisons.append({"sdkPath": comparison["sdkPath"], "publicName": comparison["publicName"],
+                            "sdkRawSha256": sha256(sdk), "publicRawSha256": sha256(public),
+                            "comparison": compare_functional(sdk, public, limits)})
     return {
         "schemaVersion": 1,
         "kind": "hexagon-SDK-data-only-inventory",
@@ -385,6 +417,9 @@ def inventory(archive, pin):
         "selectedBytesRead": selected_bytes,
         "selectedFiles": sorted(selected, key=lambda item: item["path"]),
         "buildIdlRecipe": recipe,
+        "sdkPublicFunctionalComparisons": comparisons,
+        "functionalComparisonScope": "unpreprocessed-lexical-token-and-declaration-candidates-only; no-ABI-layout-or-runtime-equivalence",
+        "WindowsExtensionDeclarationsQualified": False,
         "licenseFilenameSearch": {
             "scope": "all-regular-archive-entry-leaf-names-without-depth-or-prefix-restrictions",
             "substringIndicators": ["license", "licence", "eula", "notice", "copyright", "terms", "agreement", "copying"],
@@ -406,13 +441,15 @@ def main():
     parser.add_argument("--archive", required=True, type=Path)
     parser.add_argument("--pin", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--public-input-directory", required=True, type=Path)
     args = parser.parse_args()
     pin = json.loads(args.pin.read_text(encoding="utf-8-sig"))
     if pin["schemaVersion"] != 1 or pin["generatorExecutionAllowed"] or pin["deviceExecutionAllowed"]:
         raise ValueError("the SDK inventory pin does not authorize this operation")
-    result = inventory(args.archive, pin)
+    result = inventory(args.archive, pin, args.public_input_directory)
     result["inventorySourceSha256"] = sha256(Path(__file__).read_bytes())
     result["inventoryPinSha256"] = sha256(args.pin.read_bytes())
+    result["functionalReviewSourceSha256"] = sha256(Path(__file__).with_name("sdk_functional_review.py").read_bytes())
     output = (json.dumps(result, ensure_ascii=True, indent=2) + "\n").encode("ascii")
     if len(output) > pin["limits"]["receiptBytes"]:
         raise ValueError("SDK inventory receipt exceeds its byte bound")
