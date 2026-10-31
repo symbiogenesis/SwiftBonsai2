@@ -37,24 +37,58 @@ $rustup = (Get-Command rustup.exe -CommandType Application -ErrorAction Stop | S
 $toolchain = 'nightly-2026-10-22-aarch64-pc-windows-msvc'
 $compiler = Invoke-BonsaiNativeProcess -Executable $rustup -ArgumentList @('run',$toolchain,'rustc','-vV') -WorkingDirectory $output -TimeoutSeconds 20 -OwnDescendants
 if ($compiler.ExitCode -ne 0 -or $compiler.StandardOutput -cnotmatch '(?m)^host: aarch64-pc-windows-msvc\r?$') { throw 'Compiler identity differs from the pinned ARM64 target.' }
+$resolvedCargo = Invoke-BonsaiNativeProcess -Executable $rustup -ArgumentList @('which','--toolchain',$toolchain,'cargo') -WorkingDirectory $output -TimeoutSeconds 20 -OwnDescendants
+$resolvedRustc = Invoke-BonsaiNativeProcess -Executable $rustup -ArgumentList @('which','--toolchain',$toolchain,'rustc') -WorkingDirectory $output -TimeoutSeconds 20 -OwnDescendants
+if ($resolvedCargo.ExitCode -ne 0 -or $resolvedRustc.ExitCode -ne 0) { throw 'Pinned toolchain images are unavailable.' }
+$cargo = Resolve-ExternalPath ($resolvedCargo.StandardOutput.Trim())
+$rustc = Resolve-ExternalPath ($resolvedRustc.StandardOutput.Trim())
+$toolchainBin = [IO.Path]::GetDirectoryName($rustc)
+if ($cargo -cne (Join-Path $toolchainBin 'cargo.exe')) { throw 'Cargo and rustc must belong to the same pinned toolchain.' }
+$linker = Join-Path ([IO.Path]::GetDirectoryName($toolchainBin)) 'lib/rustlib/aarch64-pc-windows-msvc/bin/rust-lld.exe'
+$images = @(foreach ($path in @($cargo,$rustc,$linker)) {
+    Assert-Arm64PE $path
+    [ordered]@{ Name=[IO.Path]::GetFileName($path); Bytes=([IO.FileInfo]$path).Length; Sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
+})
 $target = Join-Path $output 'target'
-$library = Invoke-BonsaiNativeProcess -Executable $rustup -ArgumentList @('run',$toolchain,'cargo','build','--locked','--release','--target','aarch64-pc-windows-msvc','--manifest-path',(Join-Path $GgufSourceDirectory 'Cargo.toml'),'--target-dir',$target,'-p','bonsai-gguf','--lib') -WorkingDirectory $output -TimeoutSeconds 180 -OwnDescendants -LogPath (Join-Path $output 'gguf-build.txt')
+# Use the same owned LLD build convention as the hosted native-row tooling.
+# MSVC's reusable PDB server must not outlive an otherwise completed compiler.
+$rustFlags = @('-C',('linker=' + $linker),'-C','linker-flavor=lld-link')
+$library = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList @('build','--locked','--release','--no-default-features','--message-format=json-render-diagnostics','--manifest-path',(Join-Path $GgufSourceDirectory 'Cargo.toml'),'--target-dir',$target,'-p','bonsai-gguf','--lib') -WorkingDirectory $output -TimeoutSeconds 180 -OwnDescendants -LogPath (Join-Path $output 'gguf-build.txt') -Environment @{
+    RUSTC=$rustc; RUSTC_WRAPPER=''; RUSTC_WORKSPACE_WRAPPER=''
+    CARGO_ENCODED_RUSTFLAGS=$rustFlags -join [char]0x1f
+    CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER=$linker
+}
 if ($library.ExitCode -ne 0) { throw 'The pinned GGUF library did not build.' }
-$release = Join-Path $target 'aarch64-pc-windows-msvc/release'
-$dependencyDirectory = Join-Path $release 'deps'
-$gguf = Join-Path $release 'bonsai_gguf.rlib'
-if (-not (Test-Path -LiteralPath $gguf)) { $gguf = Join-Path $release 'libbonsai_gguf.rlib' }
-$sha = @([IO.Directory]::EnumerateFiles($dependencyDirectory, 'libsha2-*.rlib'))
-if (-not [IO.File]::Exists($gguf) -or $sha.Count -ne 1) { throw 'Pinned GGUF dependency library selection is ambiguous.' }
+# Bind Cargo's actual artifact paths instead of guessing host/target subdirectories.
+$ggufPaths = [Collections.Generic.List[string]]::new()
+$shaPaths = [Collections.Generic.List[string]]::new()
+foreach ($line in $library.StandardOutput -split '\r?\n') {
+    if (-not $line) { continue }
+    $message = ConvertFrom-Json -InputObject $line -AsHashtable -NoEnumerate -Depth 32
+    if ($message.reason -cne 'compiler-artifact' -or $message.target.kind -cnotcontains 'lib') { continue }
+    foreach ($path in $message.filenames) {
+        if ([IO.Path]::GetExtension($path) -cne '.rlib') { continue }
+        $full = [IO.Path]::GetFullPath($path)
+        if (-not $full.StartsWith($target + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Cargo artifact escaped the owned target directory.' }
+        if ($message.target.name -ceq 'bonsai_gguf') {
+            if ([IO.Path]::GetFullPath($message.manifest_path) -ine [IO.Path]::GetFullPath((Join-Path $GgufSourceDirectory 'tools/gguf/Cargo.toml'))) { throw 'Cargo compiled an unrelated GGUF source manifest.' }
+            $ggufPaths.Add($full)
+        } elseif ($message.target.name -ceq 'sha2' -and $message.package_id -cmatch '#sha2@0\.11\.1$') { $shaPaths.Add($full) }
+    }
+}
+if ($ggufPaths.Count -ne 1 -or $shaPaths.Count -ne 1) { throw 'Pinned GGUF dependency library selection is ambiguous.' }
+$gguf = $ggufPaths[0]
+$sha = @($shaPaths[0])
+$dependencyDirectory = [IO.Path]::GetDirectoryName($sha[0])
 $source = Join-Path $repo 'tools/hexagon/packed_artifact.rs'
 $manifest = Join-Path $repo 'tools/hexagon/diagnostic.manifest'
 $bundle = Join-Path $output 'bundle'
 [void][IO.Directory]::CreateDirectory($bundle)
 $exe = Join-Path $bundle 'hexagon-packed-artifact.exe'
 $test = Join-Path $output 'packed-artifact-contract.exe'
-$base = @('run',$toolchain,'rustc','--edition=2024','--target','aarch64-pc-windows-msvc','-C','opt-level=2','-C','overflow-checks=yes','-D','warnings','--extern',('bonsai_gguf=' + $gguf),'--extern',('sha2=' + $sha[0]),'-L',('dependency=' + $dependencyDirectory),'-C','link-arg=/MANIFEST:EMBED','-C',('link-arg=/MANIFESTINPUT:' + $manifest))
+$base = @('--edition=2024','--target','aarch64-pc-windows-msvc','-C','opt-level=2','-C','overflow-checks=yes','-C',('linker=' + $linker),'-C','linker-flavor=lld-link','-D','warnings','--extern',('bonsai_gguf=' + $gguf),'--extern',('sha2=' + $sha[0]),'-L',('dependency=' + $dependencyDirectory),'-C','link-arg=/MANIFEST:EMBED','-C',('link-arg=/MANIFESTINPUT:' + $manifest))
 foreach ($case in @(@{ Name='extractor'; Arguments=@($source,'-o',$exe) },@{ Name='contract'; Arguments=@('--test',$source,'-o',$test) })) {
-    $built = Invoke-BonsaiNativeProcess -Executable $rustup -ArgumentList ($base + $case.Arguments) -WorkingDirectory $output -TimeoutSeconds 120 -OwnDescendants -LogPath (Join-Path $output ($case.Name + '-build.txt'))
+    $built = Invoke-BonsaiNativeProcess -Executable $rustc -ArgumentList ($base + $case.Arguments) -WorkingDirectory $output -TimeoutSeconds 120 -OwnDescendants -LogPath (Join-Path $output ($case.Name + '-build.txt'))
     if ($built.ExitCode -ne 0) { throw 'The narrow projection extractor did not compile.' }
 }
 foreach ($case in @(@{ Name='self-test'; Executable=$exe; Arguments=@('--self-test') },@{ Name='contract-tests'; Executable=$test; Arguments=@() })) {
@@ -65,6 +99,7 @@ foreach ($case in @(@{ Name='self-test'; Executable=$exe; Arguments=@('--self-te
 $receipt = [ordered]@{
     SchemaVersion = 1; RunnerRevision = $env:GITHUB_SHA; RunId = $env:GITHUB_RUN_ID; RunAttempt = $env:GITHUB_RUN_ATTEMPT
     HostedBuild = $true; Target = 'aarch64-pc-windows-msvc'; RustToolchain = $toolchain; GgufRevision = $pin
+    GgufDefaultFeatures = $false; LinkerFlavor = 'lld-link'; ToolImages = $images
     CompilerIdentitySha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler.StandardOutput))).ToLowerInvariant()
     SourceSha256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
     ManifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
