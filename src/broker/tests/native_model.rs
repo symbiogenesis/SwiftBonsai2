@@ -318,7 +318,22 @@ fn bounded_history_request() -> Value {
     short_request(extended_history(BOUNDED_HISTORY_REPETITIONS), true)
 }
 
-async fn extended_acceptance(port: u16, credential: &str) -> Value {
+async fn extended_acceptance(port: u16, credential: &str, evidence: &Path, report: &mut Value) {
+    report["extendedWorkload"] = json!({
+        "enabled":true, "requested":true, "status":"pending",
+        "phase":"context-rejection",
+        "scope":"bounded-supplied-history-and-same-owner-reuse",
+        "rejectedHistoryRepetitions":4500,
+        "rejectedRequestedCompletionCap":EXTENDED_COMPLETION_CAP,
+        "admittedHistoryRepetitions":BOUNDED_HISTORY_REPETITIONS,
+        "requestedCompletionCap":SHORT_COMPLETION_CAP,
+        "thinkingEnabled":false,
+        "contextRejectionPassed":false, "historyStreamPassed":false,
+        "postCompletionRequestPassed":false,
+        "exactPromptTokenCountKnown":false, "fullContextQualified":false,
+        "fullOutputQualified":false
+    });
+    save_acceptance_report(evidence, report);
     // Tokenization is deliberately exercised through ordinary public admission.
     // These are fixed fixture sizes, never bytes/characters relabeled as tokens.
     let rejected = exchange(
@@ -331,29 +346,31 @@ async fn extended_acceptance(port: u16, credential: &str) -> Value {
         json_response(&rejected, "HTTP/1.1 413 Content Too Large")["error"]["code"],
         "context_length_exceeded"
     );
+    report["extendedWorkload"]["contextRejectionPassed"] = json!(true);
+    report["extendedWorkload"]["phase"] = json!("bounded-history-stream");
+    save_acceptance_report(evidence, report);
     let summary = streamed_response(&exchange(port, credential, &bounded_history_request()).await);
-    assert!(
-        summary
-            .completion_tokens
-            .is_none_or(|count| count <= u64::from(SHORT_COMPLETION_CAP))
-    );
+    // Validate before recording success, and persist it before a later request
+    // can fail or consume the remaining aggregate allowance.
+    let observation = stream_observation(&summary, SHORT_COMPLETION_CAP);
+    let workload = &mut report["extendedWorkload"];
+    workload["historyStreamPassed"] = json!(true);
+    workload["historyStream"] = observation;
+    workload["finishReason"] = json!(summary.finish_reason);
+    workload["visibleContentBytes"] = json!(summary.content_bytes);
+    workload["reportedCompletionTokens"] = json!(summary.completion_tokens);
+    workload["phase"] = json!("same-owner-reuse");
+    save_acceptance_report(evidence, report);
     // A bounded supplied-history request must leave the same instance usable.
     let reused = short_request(json!([{"role":"user", "content":"Name a bird."}]), true);
-    streamed_response(&exchange(port, credential, &reused).await);
-    json!({
-        "enabled":true, "requested":true, "status":"passed",
-        "scope":"bounded-supplied-history-and-same-owner-reuse",
-        "rejectedHistoryRepetitions":4500,
-        "rejectedRequestedCompletionCap":EXTENDED_COMPLETION_CAP,
-        "admittedHistoryRepetitions":BOUNDED_HISTORY_REPETITIONS,
-        "requestedCompletionCap":SHORT_COMPLETION_CAP,
-        "thinkingEnabled":false,
-        "finishReason":summary.finish_reason, "visibleContentBytes":summary.content_bytes,
-        "reportedCompletionTokens":summary.completion_tokens,
-        "postCompletionRequestPassed":true,
-        "exactPromptTokenCountKnown":false, "fullContextQualified":false,
-        "fullOutputQualified":false
-    })
+    report["extendedWorkload"]["postCompletionStream"] = stream_observation(
+        &streamed_response(&exchange(port, credential, &reused).await),
+        SHORT_COMPLETION_CAP,
+    );
+    report["extendedWorkload"]["postCompletionRequestPassed"] = json!(true);
+    report["extendedWorkload"]["phase"] = json!("completed");
+    report["extendedWorkload"]["status"] = json!("passed");
+    save_acceptance_report(evidence, report);
 }
 
 async fn prefix_line(reader: &mut BufReader<TcpStream>, limit: usize) -> String {
@@ -420,6 +437,21 @@ async fn read_until_content(client: TcpStream) -> (BufReader<TcpStream>, usize) 
             }
         }
     }
+}
+
+fn stalled_prefix_observation(content_bytes: usize) -> Value {
+    assert!(content_bytes > 0);
+    json!({
+        "enabled":true, "requested":true, "status":"pending",
+        "phase":"awaiting-owned-stop",
+        "requestedCompletionCap":EXTENDED_COMPLETION_CAP,
+        "thinkingEnabled":false, "observedVisiblePrefixBytes":content_bytes,
+        "nonreadingPauseMilliseconds":STALLED_CONSUMER_PAUSE.as_millis(),
+        "brokerOperationInterrupted":false, "ownedJobStopped":false,
+        "freshRestartAfterStopPassed":false,
+        "backendGeneratingAtStopKnown":false, "socketBackpressureQualified":false,
+        "performanceQualified":false
+    })
 }
 
 fn stalled_stop_summary(
@@ -550,14 +582,13 @@ async fn acceptance(
         workloads.extended_history,
         deadline.saturating_duration_since(tokio::time::Instant::now()),
     );
-    let extended_report = if extended_enabled {
+    if extended_enabled {
         report["phase"] = json!("bounded-history-and-same-owner-reuse");
         save_acceptance_report(evidence, report);
-        extended_acceptance(port, &credential).await
+        extended_acceptance(port, &credential, evidence, report).await;
     } else {
-        skipped_workload(workloads.extended_history)
-    };
-    report["extendedWorkload"] = extended_report;
+        report["extendedWorkload"] = skipped_workload(workloads.extended_history);
+    }
     save_acceptance_report(evidence, report);
     let stalled_enabled = optional_workload_enabled(
         workloads.stalled_consumer,
@@ -566,7 +597,10 @@ async fn acceptance(
     let stalled = if stalled_enabled {
         report["phase"] = json!("stalled-consumer-first-content-and-pause");
         save_acceptance_report(evidence, report);
-        Some(nonreading_prefix(port, &credential).await)
+        let observed = nonreading_prefix(port, &credential).await;
+        report["stalledConsumerWorkload"] = stalled_prefix_observation(observed.1);
+        save_acceptance_report(evidence, report);
+        Some(observed)
     } else {
         None
     };
@@ -734,6 +768,16 @@ fn native_stalled_consumer_rejects_error_or_unframed_stream_headers() {
 
 #[test]
 fn native_stalled_consumer_never_qualifies_natural_completion_as_interruption() {
+    let prefix = stalled_prefix_observation(5);
+    assert_eq!(prefix["status"], "pending");
+    assert_eq!(prefix["observedVisiblePrefixBytes"], 5);
+    for field in [
+        "brokerOperationInterrupted",
+        "ownedJobStopped",
+        "freshRestartAfterStopPassed",
+    ] {
+        assert_eq!(prefix[field], false);
+    }
     let interrupted = RunReport {
         exit: RunExit::Shutdown,
         completed: 2,
@@ -767,6 +811,121 @@ fn native_stalled_consumer_never_qualifies_natural_completion_as_interruption() 
         assert!(std::panic::catch_unwind(|| stalled_stop_summary(&report, 2, 1, 5)).is_err());
     }
     assert!(std::panic::catch_unwind(|| stalled_stop_summary(&interrupted, 2, 1, 0)).is_err());
+}
+
+async fn history_progress_fixture(
+    listener: tokio::net::TcpListener,
+    completed_steps: usize,
+    reached: oneshot::Sender<()>,
+) {
+    for step in 0..completed_steps {
+        let (peer, _) = listener.accept().await.unwrap();
+        let mut peer = BufReader::new(peer);
+        let mut length = None;
+        loop {
+            let line = prefix_line(&mut peer, 16 * 1024).await;
+            if let Some(value) = line.strip_prefix("Content-Length: ") {
+                length = Some(value.trim().parse::<usize>().unwrap());
+            }
+            if line == "\r\n" {
+                break;
+            }
+        }
+        let mut body = vec![0; length.unwrap()];
+        peer.read_exact(&mut body).await.unwrap();
+        let response = if step == 0 {
+            let body = r#"{"error":{"code":"context_length_exceeded"}}"#;
+            format!(
+                "HTTP/1.1 413 Content Too Large\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            )
+        } else {
+            let payload = concat!(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"cedar\"},\"finish_reason\":null}]}\n\n",
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}],\"usage\":{\"completion_tokens\":4}}\n\n",
+                "data: [DONE]\n\n"
+            );
+            format!(
+                "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:X}\r\n{payload}\r\n0\r\n\r\n",
+                payload.len()
+            )
+        };
+        peer.get_mut().write_all(response.as_bytes()).await.unwrap();
+        peer.get_mut().shutdown().await.unwrap();
+    }
+    // Hold the next operation open until the caller cancels it.
+    let (_peer, _) = listener.accept().await.unwrap();
+    reached.send(()).unwrap();
+    pending::<()>().await;
+}
+
+#[test]
+fn native_bounded_history_retains_completed_steps_when_followup_is_cancelled() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        timeout(Duration::from_secs(10), async {
+            for completed_steps in [1, 2] {
+                let evidence = env::temp_dir().join(format!(
+                    "Bonsai-History-Progress-{}-{}-{completed_steps}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos()
+                ));
+                fs::create_dir(&evidence).unwrap();
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let port = listener.local_addr().unwrap().port();
+                let (reached, waiting) = oneshot::channel();
+                let fixture =
+                    tokio::spawn(history_progress_fixture(listener, completed_steps, reached));
+                let mut report = json!({"passed":false, "allRequestedWorkloadsPassed":false});
+                let mut running = Box::pin(extended_acceptance(
+                    port,
+                    "model-free-fixture",
+                    &evidence,
+                    &mut report,
+                ));
+                let mut waiting = std::pin::pin!(waiting);
+                let completed = std::future::poll_fn(|cx| {
+                    if let std::task::Poll::Ready(result) = waiting.as_mut().poll(cx) {
+                        result.unwrap();
+                        return std::task::Poll::Ready(false);
+                    }
+                    running.as_mut().poll(cx).map(|()| true)
+                })
+                .await;
+                assert!(!completed);
+                drop(running);
+                fixture.abort();
+                assert!(fixture.await.unwrap_err().is_cancelled());
+                let saved: Value =
+                    serde_json::from_slice(&fs::read(evidence.join("acceptance.json")).unwrap())
+                        .unwrap();
+                assert_eq!(saved["passed"], false);
+                assert_eq!(saved["allRequestedWorkloadsPassed"], false);
+                let observed = &saved["extendedWorkload"];
+                assert_eq!(observed["status"], "pending");
+                assert_eq!(observed["contextRejectionPassed"], true);
+                assert_eq!(observed["historyStreamPassed"], completed_steps == 2);
+                assert_eq!(observed["postCompletionRequestPassed"], false);
+                if completed_steps == 2 {
+                    assert_eq!(observed["historyStream"]["reportedCompletionTokens"], 4);
+                    assert_eq!(observed["historyStream"]["visibleContentBytes"], 5);
+                    assert_eq!(observed["phase"], "same-owner-reuse");
+                } else {
+                    assert_eq!(observed["phase"], "bounded-history-stream");
+                }
+                fs::remove_file(evidence.join("acceptance.json")).unwrap();
+                fs::remove_dir(evidence).unwrap();
+            }
+        })
+        .await
+        .unwrap();
+    });
 }
 
 #[test]

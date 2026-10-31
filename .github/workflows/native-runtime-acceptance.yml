@@ -68,6 +68,7 @@ jobs:
               'native_bounded_history_and_stall_requests_preserve_distinct_output_limits',
               'native_extended_acceptance_distinguishes_output_usage_from_delta_count',
               'native_lifecycle_observations_separate_generation_usage_and_owned_cleanup',
+              'native_bounded_history_retains_completed_steps_when_followup_is_cancelled',
               'native_stalled_consumer_retains_fragmented_prefix_connection_until_dropped',
               'native_stalled_consumer_never_qualifies_natural_completion_as_interruption',
               'native_stalled_consumer_rejects_error_or_unframed_stream_headers',
