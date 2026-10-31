@@ -50,70 +50,65 @@ $images = @(foreach ($path in @($cargo,$rustc,$linker)) {
     [ordered]@{ Name=[IO.Path]::GetFileName($path); Bytes=([IO.FileInfo]$path).Length; Sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() }
 })
 $target = Join-Path $output 'target'
-# Use the same owned LLD build convention as the hosted native-row tooling.
-# MSVC's reusable PDB server must not outlive an otherwise completed compiler.
-$rustFlags = @('-C',('linker=' + $linker),'-C','linker-flavor=lld-link')
-$library = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList @('build','--locked','--release','--no-default-features','--message-format=json-render-diagnostics','--manifest-path',(Join-Path $GgufSourceDirectory 'Cargo.toml'),'--target-dir',$target,'-p','bonsai-gguf','--lib') -WorkingDirectory $output -TimeoutSeconds 180 -OwnDescendants -LogPath (Join-Path $output 'gguf-build.txt') -Environment @{
+$source = Join-Path $repo 'tools/hexagon/packed_artifact.rs'
+$manifest = Join-Path $repo 'tools/hexagon/diagnostic.manifest'
+# Compile the exact source as a temporary example in the clean pinned reader.
+# Cargo owns split metadata/link discovery; no tracked dependency source changes.
+$examples = Join-Path $GgufSourceDirectory 'tools/gguf/examples'
+[void][IO.Directory]::CreateDirectory($examples)
+$example = Join-Path $examples 'packed_artifact.rs'
+[IO.File]::Copy($source,$example,$false)
+$sourceDigest = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+if ((Get-FileHash -LiteralPath $example -Algorithm SHA256).Hash.ToLowerInvariant() -cne $sourceDigest) { throw 'The temporary example differs from the reviewed extractor source.' }
+# Use the same owned LLD convention as the hosted native-row tooling. MSVC's
+# reusable PDB server must not outlive an otherwise completed compiler.
+$rustFlags = @('-C',('linker=' + $linker),'-C','linker-flavor=lld-link','-C','link-arg=/MANIFEST:EMBED','-C',('link-arg=/MANIFESTINPUT:' + $manifest))
+$environment = @{
     RUSTC=$rustc; RUSTC_WRAPPER=''; RUSTC_WORKSPACE_WRAPPER=''
     CARGO_ENCODED_RUSTFLAGS=$rustFlags -join [char]0x1f
     CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_LINKER=$linker
 }
-if ($library.ExitCode -ne 0) { throw 'The pinned GGUF library did not build.' }
-# Bind Cargo's actual artifact paths instead of guessing host/target subdirectories.
-$ggufPaths = [Collections.Generic.List[string]]::new()
-$shaPaths = [Collections.Generic.List[string]]::new()
-$ggufMetadata = [Collections.Generic.List[string]]::new()
-$shaMetadata = [Collections.Generic.List[string]]::new()
-$searchDirectories = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-foreach ($line in $library.StandardOutput -split '\r?\n') {
+$arguments = @('--locked','--release','--no-default-features','--manifest-path',(Join-Path $GgufSourceDirectory 'Cargo.toml'),'--target-dir',$target,'-p','bonsai-gguf','--example','packed_artifact')
+$built = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList (@('build','--message-format=json-render-diagnostics') + $arguments) -WorkingDirectory $output -TimeoutSeconds 180 -OwnDescendants -LogPath (Join-Path $output 'extractor-build.txt') -Environment $environment
+if ($built.ExitCode -ne 0) { throw 'The source-bound projection extractor did not compile.' }
+$executables = [Collections.Generic.List[string]]::new()
+$dependencies = [Collections.Generic.List[object]]::new()
+foreach ($line in $built.StandardOutput -split '\r?\n') {
     if (-not $line) { continue }
     $message = ConvertFrom-Json -InputObject $line -AsHashtable -NoEnumerate -Depth 32
-    if ($message.reason -cne 'compiler-artifact' -or $message.target.kind -cnotcontains 'lib') { continue }
-    foreach ($path in $message.filenames) {
-        $extension = [IO.Path]::GetExtension($path)
-        if ($extension -cnotin @('.rlib','.rmeta')) { continue }
-        $full = [IO.Path]::GetFullPath($path)
-        if (-not $full.StartsWith($target + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Cargo artifact escaped the owned target directory.' }
-        [void]$searchDirectories.Add([IO.Path]::GetDirectoryName($full))
-        if ($message.target.name -ceq 'bonsai_gguf') {
-            if ([IO.Path]::GetFullPath($message.manifest_path) -ine [IO.Path]::GetFullPath((Join-Path $GgufSourceDirectory 'tools/gguf/Cargo.toml'))) { throw 'Cargo compiled an unrelated GGUF source manifest.' }
-            if ($extension -ceq '.rmeta') { $ggufMetadata.Add($full) } else { $ggufPaths.Add($full) }
-        } elseif ($message.target.name -ceq 'sha2' -and $message.package_id -cmatch '#sha2@0\.11\.1$') {
-            if ($extension -ceq '.rmeta') { $shaMetadata.Add($full) } else { $shaPaths.Add($full) }
+    if ($message.reason -cne 'compiler-artifact') { continue }
+    if ($message.target.name -ceq 'packed_artifact' -and $message.target.kind -ccontains 'example') {
+        if ([IO.Path]::GetFullPath($message.manifest_path) -ine [IO.Path]::GetFullPath((Join-Path $GgufSourceDirectory 'tools/gguf/Cargo.toml')) -or $message.executable -isnot [string]) { throw 'Cargo compiled an unrelated extractor target.' }
+        $executables.Add([IO.Path]::GetFullPath($message.executable))
+    }
+    if ($message.target.kind -ccontains 'lib' -and $message.target.name -cin @('bonsai_gguf','sha2')) {
+        foreach ($path in $message.filenames) {
+            $full = [IO.Path]::GetFullPath($path)
+            if (-not $full.StartsWith($target + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'Dependency artifact escaped the owned target directory.' }
+            $dependencies.Add([ordered]@{ Crate=$message.target.name; Name=[IO.Path]::GetFileName($full); Sha256=(Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant() })
         }
     }
 }
-if ($ggufPaths.Count -ne 1 -or $shaPaths.Count -ne 1 -or $ggufMetadata.Count -ne 1 -or $shaMetadata.Count -ne 1) { throw 'Pinned GGUF dependency library selection is ambiguous.' }
-$gguf = $ggufPaths[0]
-$sha = @($shaPaths[0])
-$searchArguments = @(foreach ($directory in $searchDirectories) { '-L'; 'dependency=' + $directory })
-$source = Join-Path $repo 'tools/hexagon/packed_artifact.rs'
-$manifest = Join-Path $repo 'tools/hexagon/diagnostic.manifest'
+if ($executables.Count -ne 1 -or -not $executables[0].StartsWith($target + [IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)) { throw 'The source-bound extractor executable is ambiguous.' }
+Assert-Arm64PE $executables[0]
 $bundle = Join-Path $output 'bundle'
 [void][IO.Directory]::CreateDirectory($bundle)
 $exe = Join-Path $bundle 'hexagon-packed-artifact.exe'
-$test = Join-Path $output 'packed-artifact-contract.exe'
-$base = @('--edition=2024','--target','aarch64-pc-windows-msvc','-C','opt-level=2','-C','overflow-checks=yes','-C',('linker=' + $linker),'-C','linker-flavor=lld-link','-D','warnings','--extern',('bonsai_gguf=' + $ggufMetadata[0]),'--extern',('sha2=' + $shaMetadata[0]),'-C','link-arg=/MANIFEST:EMBED','-C',('link-arg=/MANIFESTINPUT:' + $manifest)) + $searchArguments
-foreach ($case in @(@{ Name='extractor'; Arguments=@($source,'-o',$exe) },@{ Name='contract'; Arguments=@('--test',$source,'-o',$test) })) {
-    $built = Invoke-BonsaiNativeProcess -Executable $rustc -ArgumentList ($base + $case.Arguments) -WorkingDirectory $output -TimeoutSeconds 120 -OwnDescendants -LogPath (Join-Path $output ($case.Name + '-build.txt'))
-    if ($built.ExitCode -ne 0) { throw 'The narrow projection extractor did not compile.' }
-}
-foreach ($case in @(@{ Name='self-test'; Executable=$exe; Arguments=@('--self-test') },@{ Name='contract-tests'; Executable=$test; Arguments=@() })) {
-    $checked = Invoke-BonsaiNativeProcess -Executable $case.Executable -ArgumentList $case.Arguments -WorkingDirectory $output -TimeoutSeconds 15 -OwnDescendants
-    [IO.File]::WriteAllText((Join-Path $output ($case.Name + '.txt')), $checked.StandardOutput + $checked.StandardError)
-    if ($checked.ExitCode -ne 0) { throw 'The model-free extraction controls failed.' }
-}
+[IO.File]::Copy($executables[0],$exe,$false)
+$checked = Invoke-BonsaiNativeProcess -Executable $exe -ArgumentList @('--self-test') -WorkingDirectory $output -TimeoutSeconds 15 -OwnDescendants
+[IO.File]::WriteAllText((Join-Path $output 'self-test.txt'),$checked.StandardOutput + $checked.StandardError)
+if ($checked.ExitCode -ne 0) { throw 'The model-free extraction self-check failed.' }
+$tested = Invoke-BonsaiNativeProcess -Executable $cargo -ArgumentList (@('test') + $arguments + @('--','--exact','tests::fixed_transform_sign_selection_and_malformed_control')) -WorkingDirectory $output -TimeoutSeconds 120 -OwnDescendants -LogPath (Join-Path $output 'contract-tests.txt') -Environment $environment
+if ($tested.ExitCode -ne 0 -or $tested.StandardOutput -cnotmatch 'test result: ok\. 1 passed;') { throw 'The hosted extraction regression did not execute and pass exactly one model-free test.' }
+$unchanged = Invoke-BonsaiNativeProcess -Executable $git -ArgumentList @('-C',$GgufSourceDirectory,'diff','--exit-code') -WorkingDirectory $output -TimeoutSeconds 10 -OwnDescendants
+if ($unchanged.ExitCode -ne 0 -or (Get-FileHash -LiteralPath $example -Algorithm SHA256).Hash.ToLowerInvariant() -cne $sourceDigest) { throw 'Pinned tracked source or temporary example changed during preparation.' }
 $receipt = [ordered]@{
     SchemaVersion = 1; RunnerRevision = $env:GITHUB_SHA; RunId = $env:GITHUB_RUN_ID; RunAttempt = $env:GITHUB_RUN_ATTEMPT
     HostedBuild = $true; Target = 'aarch64-pc-windows-msvc'; RustToolchain = $toolchain; GgufRevision = $pin
-    GgufDefaultFeatures = $false; LinkerFlavor = 'lld-link'; ToolImages = $images
+    GgufDefaultFeatures = $false; LinkerFlavor = 'lld-link'; ToolImages = $images; DependencyArtifacts = $dependencies.ToArray()
     CompilerIdentitySha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler.StandardOutput))).ToLowerInvariant()
-    SourceSha256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+    SourceSha256 = $sourceDigest; AddedExampleSourceSha256 = $sourceDigest; PinnedTrackedSourceUnchanged = $true
     ManifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
-    GgufMetadataSha256 = (Get-FileHash -LiteralPath $ggufMetadata[0] -Algorithm SHA256).Hash.ToLowerInvariant()
-    Sha2MetadataSha256 = (Get-FileHash -LiteralPath $shaMetadata[0] -Algorithm SHA256).Hash.ToLowerInvariant()
-    GgufLibrarySha256 = (Get-FileHash -LiteralPath $gguf -Algorithm SHA256).Hash.ToLowerInvariant()
-    Sha2LibrarySha256 = (Get-FileHash -LiteralPath $sha[0] -Algorithm SHA256).Hash.ToLowerInvariant()
     DependencyCargoLockSha256 = (Get-FileHash -LiteralPath (Join-Path $GgufSourceDirectory 'Cargo.lock') -Algorithm SHA256).Hash.ToLowerInvariant()
     Executable = [ordered]@{ Name='hexagon-packed-artifact.exe'; Bytes=([IO.FileInfo]$exe).Length; Sha256=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() }
     ModelLoaded = $false; DeviceCodeLoaded = $false; ProfileEligible = $false
