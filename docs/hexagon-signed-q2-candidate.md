@@ -28,7 +28,7 @@ v0.9.1 and v0.9.3 releases use `e467e5b5e5ba43071d6151b3d881deb9300d000e`.
 The stable candidate is sufficient for this source decision; no automatic latest-tag
 selection follows from this inventory.
 
-All fourteen reviewed source files have exact repository, revision, path, byte
+All eighteen reviewed source files have exact repository, revision, path, byte
 extent, SHA-256 and URL entries in the candidate lock. They include the release
 pipeline, package installation rules, host solver/repack/queue implementation,
 DSP operation types, matmul arithmetic and IDL. The reviewed host/DSP source is
@@ -50,8 +50,8 @@ For ordinary matmul, the
 requires F32 output, F32/F16 activation and contiguous, nonview, nonpermuted Q2
 weights with K divisible by the format block size. Static eligibility is not a
 successful VTCM solution or device observation. The solver retains resource and
-layout checks; N=2 avoids its HMX minimum-row predicate but still needs effective
-HVX placement evidence.
+layout checks; N=2 is excluded by its HMX minimum-row predicate and still needs
+effective HVX placement evidence.
 
 The [Q2 repack](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp-repack.cpp#L666-L707)
 uses 64-weight blocks and 32-row tiles: 512 code bytes plus 64 FP16-scale bytes,
@@ -100,6 +100,39 @@ releasing resources. Those controls need a separately reviewed Rust implementati
 copying a function-pointer signature or old five-argument wire layout is insufficient.
 The old catalog cannot identify or authorize the newer DSP bytes or changed ABI.
 
+The pinned [public queue declaration](https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/dspqueue.h#L104-L117)
+is 24,632 bytes, SHA-256
+`571c74ce3651042873b0e93eb53baa7d9ec0963665355933d4a8518272e1e2a3`.
+Its buffer record places four u32 fields before a pointer/u64 union. Ordinary
+64-bit C layout derives offsets 0/4/8/12/16, extent24 and alignment8. These are
+source-derived expectations, not an independently executed Windows ARM64 ABI
+probe or proof that the installed driver/SDK use the same declaration. The header
+also distinguishes queue export/import and buffer references: successful host
+queue creation does not establish remote import or safe buffer release. Bind
+matching Windows declarations, native layouts, flags/cache semantics and driver
+identity before adding a callable Rust queue boundary.
+
+Generated host marshalling is a concrete prerequisite. The exact build compiles
+`htp_iface_stub.c` and invokes the SDK's `build_idl`; the
+[DSP build recipe](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp/CMakeLists.txt#L17-L56)
+also generates its skeleton. The reviewed official repositories did not expose
+that generated host stub as source. Before device invocation, retain the exact
+QAIC executable identity, command/flags, imported `remote.idl`/`AEEStdDef.idl`,
+generated host stub/header digests and an independent model-free wire capture.
+That capture must bind inherited method indices, scalar tags, buffer extents and
+packing to this seven-argument IDL; declarations alone do not prove that wire ABI.
+Keep any temporary native reference outside the production Rust inference path.
+
+The toolchain is obtainable as a separate hosted intake lead. Qualcomm's
+[exact SDK setup action](https://github.com/qualcomm/GenieX/blob/071f609995470bdb0e0769ab964754adfaab7e47/.github/actions/setup-snapdragon-sdks/action.yml#L9-L37)
+selects Hexagon SDK6.7.0.0 and tools21.0.04 and references
+[the SDK release](https://github.com/snapdragon-toolchain/hexagon-sdk/releases/tag/v6.7.0.0).
+Its ARM64-WoS archive metadata gives 900,461,020 bytes and SHA-256
+`9eb256cc7b102f721365151a470a33980069a18b9209e1d56a6d2fa430369759`.
+This audit did not download or execute that archive. The metadata does not identify
+its actual QAIC bytes or imported IDLs, establish their license terms or reproduce
+the generated stub. Resolve those through checked hosted intake and source-bound
+capture; this large SDK preparation is outside the owner-device trial allowance.
 A tiny old-package F32 compute fixture is a feasible development target after
 that queue/lifetime boundary is built; its passing generic C++ fixture remains
 separate evidence. The newer Q2 candidate additionally needs source-bound native intake of its

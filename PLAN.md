@@ -540,6 +540,8 @@ Follow [Hexagon contracts](docs/hexagon.md).
   retaining Windows signed-package/catalog checks; it does not establish effective
   process class or authorize OS trust changes. Preserve the independent STATIC512,
   default-open14 and old mutable-input guard observations without assigning causes.
+  Bind generated QAIC host marshalling/wire controls to exact SDK/tool and imported
+  IDL identities under the [queue provenance gate](docs/hexagon-signed-q2-candidate.md#native-rust-computation-requires-another-reviewed-boundary).
   Implement the reviewed queue/IDL, correlated responses, bounded waits, in-use
   buffer retention and stop/drain contract before submitting a device kernel.
 - Start with `blk.0.ffn_up.weight`, K=5120/M=17408/N=1, keeping transforms, adapter
