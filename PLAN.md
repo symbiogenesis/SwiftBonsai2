@@ -11,6 +11,11 @@ changes or compatible drafters. Bounded GPU/NPU access discovery can run in para
 Automatic profiles require device qualification; broader Prism work needs a Swift
 dependency or chosen milestone.
 
+The chosen parallel accelerator milestone is native Rust Prism Hexagon support:
+signed device access followed by a same-artifact packed X2 projection, then
+measured CPU/GPU/NPU selection. Qualify X1 independently when competitive; neither
+family names nor nominal TOPS choose a backend or displace the CPU gates below.
+
 The next delivery milestone is an accepted daily-use Swift PQ2 CPU profile on the
 owner-managed hardware. Close the application, isolation, creative-quality, resource
 and installation gates below with reproducible evidence before expanding that profile.
@@ -456,14 +461,24 @@ Follow [Adreno contracts](docs/adreno.md); discovery alone changes no CPU profil
 Follow [Hexagon contracts](docs/hexagon.md).
 
 - Prove native signed X1/v73 and X2/v81 access independently: deployment, license and
-  signature identities, actual mapping/execution and a small supported-type dispatch
-  fixture. Audit DMA64, low-bit Hadamard and HTP leads; retain scoped no-go reasons.
+  installed signature identities, actual mapping/execution and a small supported-type
+  dispatch fixture built on hosted CI. Use the [pinned access source decision and
+  operation ledger](docs/hexagon-source-audit.md) and bounded inventory workflow;
+  extend the [local X2 driver/catalog observation](docs/evidence/hexagon-x2-inventory.json)
+  to actual mapping/dispatch and retain independent X1 evidence. Resolve a supported signing/distribution route for
+  custom packed kernels: GenieX's catalog covers only its bundled generic kernels.
+  Verify DMA64, effective VTCM and low-bit Hadamard/HTP leads against matching signed
+  binaries; retain scoped no-go reasons.
   Trust/Secure Boot changes need a separate owner decision.
-- Map operations, layouts, transforms, basis, complete state, placement, fallback and
-  bytes; choose one prototype region. Generic Q2/Q4/Q8 is insufficient; implement
-  lossless PQ2 tiling/fused matvec and separately qualify PTQ1 canonicality and Q8_0.
-  Audit PQ2-to-Q2 metadata and storage before timing under [arithmetic/state
-  rules](docs/hexagon.md#packed-arithmetic-and-graph-state).
+- Implement the audited native Rust driver/RPC/mapping boundary in Prism, with safe
+  asynchronous ownership and separately signed DSP kernels, without a C/C++ inference
+  dependency. Start with `blk.0.ffn_up.weight`, K=5120/M=17408/N=1, keeping transforms,
+  adapter corrections and all committed state on CPU. Implement lossless PQ2
+  tiling/fused matvec against exact Q8_K preparation/reduction, then separately qualify
+  PTQ1 canonicality and Q8_0. Extend the ledger to actual placement/fallback/transfer
+  bytes. The model-free PQ2/Q2 layout control preserves weights only and adds
+  419,840,000 bytes for a whole packed copy; bind actual transform/sign arrays and
+  prove activation/logit/state parity before timing or expanding placement.
 - Evaluate HVX packed work and HMX batched prefill with bounded VTCM, DMA and repacking
   scratch, exact fusion/recurrent basis and independent adapters. Cover ring saturation,
   partial tiles, double buffering, requested and effective VTCM, allocation refusal and
@@ -479,6 +494,13 @@ Follow [Hexagon contracts](docs/hexagon.md).
   startup, migration, traffic, RPC, synchronization, contention and sustained power;
   attribute queues, quantization, DMA, HVX/HMX, wake and waits. Phone rankings and
   unavailable root/DVFS controls do not choose Windows profiles.
+- Connect the offline Rust comparison policy to independently verified archived
+  captures and safe request-boundary selection only after qualification. Bind metrics,
+  effective phase placement and common comparison digest to the same trusted evidence;
+  recheck signed readiness and complete resource admission. Use device/workload and
+  interactive/battery results to choose CPU, GPU or NPU dynamically, with independent
+  X1/X2 scope, strict-backend rejection and unchanged CPU fallback. Ordinary startup
+  must not benchmark, infer eligibility from TOPS or stitch unrelated phase timings.
 - Integrate a locked experimental profile with checked placement and readiness,
   child-only environment and helper teardown, authentication, counting, one-slot,
   deadline and cancellation policy. Reject overrides and qualify isolation and resources

@@ -5,6 +5,23 @@ Hexagon execution remains unqualified on X1/X2; automatic selection is not imple
 [PLAN.md](../PLAN.md#hexagon-npu) owns outstanding work; shared [profile policy](hardware-capabilities.md#automatic-profile-selection)
 governs device/workload eligibility and interactive/battery objectives.
 
+The [pinned source audit and placement ledger](hexagon-source-audit.md) choose
+native Rust Prism as the integration path and one stateless FFN projection as
+the first prototype. The [experimental lock](../config/hexagon-experiment.lock.json)
+keeps admission disabled. GenieX is a signed device-access reference; its bundled
+revision does not support Swift PQ2/PTQ1, and its catalog cannot authorize custom
+or newer DSP kernels.
+
+The bounded [preflight](../scripts/Invoke-HexagonPreflight.ps1) inventories CPU/NPU
+drivers and an optional explicit local package, without installing or loading it.
+It always leaves execution unqualified. Its worker has an aggregate deadline and
+normal cancellation cleanup; abrupt parent-death Job containment remains a
+diagnostic-helper limitation. The [packed layout audit](../tools/hexagon/README.md)
+checks an independent lossless PQ2/Q2 control, not a production GGUF conversion.
+[Hosted prerequisite CI](../.github/workflows/hexagon-qualification.yml) owns full
+regressions and an opt-in inventory-only five-minute device job. No startup
+benchmark or family-wide accelerator choice follows from these controls.
+
 ## Device and route boundaries
 
 Hexagon acceptance concerns completed-response latency or energy within memory, quality and

@@ -7,6 +7,10 @@ It forbids unsafe code and uses the workspace's existing Serde dependencies.
 The `hardware` module defines the initial H0 runtime discovery parser and
 immutable profile/evidence keys. It does not select or qualify profiles; see the
 [wire and evidence contracts](../../docs/hardware-capabilities.md).
+Its `hardware::ranking` module supplies an offline comparison recommendation for
+independently reviewed CPU/GPU/NPU observations, including whole-request mixed
+placement. It does not authorize or change serving admission; family names and
+TOPS do not enter the ranking.
 
 The maintenance CLI combines its pure plan with a physical-memory observation.
 The broker reuses profile memory limits, server arguments and environment-name

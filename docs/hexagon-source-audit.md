@@ -58,6 +58,21 @@ changing plugins is not a faithful PQ2 conversion or a native Rust implementatio
 
 ## Other exact source leads
 
+Subsequent bounded local verification on **2026-10-30** downloaded and checked
+the exact SDK archive above, then inventoried its runtime directory without
+loading code. The [retained observation selection](evidence/hexagon-x2-inventory.json)
+records X2E94100, native ARM64 and the signed Qualcomm NPU driver
+`30.0.220.11010`. Windows reported a valid HTP catalog signature; a separate
+read-only `signtool verify /pa /v /c` check verified the bundled **v81** SO's
+membership and chain to Microsoft Root Certificate Authority 2010, with exit
+code zero and no warnings. The [sanitized verification output](evidence/hexagon-v81-catalog-verification.txt)
+and per-file hashes retain that narrow result. It does not verify X1/v73,
+installed driver-package trust, mapping, dispatch, DMA64 or VTCM access. Most
+host ggml DLLs report `NotSigned`; their release digest identifies their bytes
+without establishing inference qualification. No driver, certificate or boot
+policy changed and no model or DSP code executed. Durable raw archival and
+main-only matching-device CI remain pending.
+
 | Source | What the audit can use | What remains unproved |
 | --- | --- | --- |
 | [ggml b11913, `7aca0d2ea8d92b56911233b822db01f9fbb1ae50`](https://github.com/ggml-org/llama.cpp/commit/7aca0d2ea8d92b56911233b822db01f9fbb1ae50) | Q1/Q2 Hexagon source, DMA64 and VTCM request/limit review | PQ2 Q8_K arithmetic, Swift transforms and a matching signed Windows package; the GenieX catalog does not cover this revision |

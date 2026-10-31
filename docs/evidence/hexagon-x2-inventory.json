@@ -1,0 +1,233 @@
+{
+  "SchemaVersion": 1,
+  "Kind": "hexagon-prerequisite-observations-only",
+  "ReviewDateLocal": "2026-10-30",
+  "CollectedAtUtc": "2026-10-31T02:15:13.3751720Z",
+  "PreflightSourceRevision": "16a1a312f325e8a87ff62569f23f3066eb47186d",
+  "PreflightRawSha256": "f8ae1cc679a0eced29b87b9a0dbc8bd4bfb8c56163fc47033549b85ab2b43046",
+  "InventorySelection": {
+    "OsArchitecture": "Arm64",
+    "ProcessArchitecture": "Arm64",
+    "Processors": [
+      {
+        "Name": "Snapdragon(R) X2 Elite Extreme - X2E94100 - Qualcomm Oryon(TM) CPU",
+        "Manufacturer": "Qualcomm Technologies Inc",
+        "Architecture": 12
+      }
+    ],
+    "Drivers": [
+      {
+        "DeviceName": "Snapdragon(R) X2 Elite Extreme - X2E94100 - Qualcomm(R) Hexagon(TM) NPU",
+        "Manufacturer": "Qualcomm Technologies, Inc.",
+        "DriverVersion": "30.0.220.11010",
+        "DriverDate": "2026-01-27T00:00:00.0000000Z",
+        "IsSigned": true,
+        "InfName": "oem122.inf"
+      }
+    ],
+    "Package": {
+      "Status": "inventoried",
+      "Files": [
+        {
+          "Name": "geniex_plugin.dll",
+          "Bytes": 292352,
+          "Sha256": "4eabfa6c518c597935b3e5487fce85e1287bdba191236587cdb519a720dfe28a",
+          "Signature": {
+            "Status": "NotSigned",
+            "SignerThumbprint": null,
+            "Scope": "file-signature-observation-only"
+          }
+        },
+        {
+          "Name": "ggml-base.dll",
+          "Bytes": 664064,
+          "Sha256": "16bb50b27aa67128ce9b558427325fdb2889c8915fb21783c1db05f109cdab96",
+          "Signature": {
+            "Status": "NotSigned",
+            "SignerThumbprint": null,
+            "Scope": "file-signature-observation-only"
+          }
+        },
+        {
+          "Name": "ggml-cpu.dll",
+          "Bytes": 903680,
+          "Sha256": "8eee316bb1d4bead011e042c77ab0a71b26eff5dd3554bd95e8d37c8fc508355",
+          "Signature": {
+            "Status": "NotSigned",
+            "SignerThumbprint": null,
+            "Scope": "file-signature-observation-only"
+          }
+        },
+        {
+          "Name": "ggml-hexagon.dll",
+          "Bytes": 356352,
+          "Sha256": "5cb97e9f9d1473d5f7f961158b5c5946dbfd947c864a17570ca9e1c7f09a3d7e",
+          "Signature": {
+            "Status": "NotSigned",
+            "SignerThumbprint": null,
+            "Scope": "file-signature-observation-only"
+          }
+        },
+        {
+          "Name": "ggml-opencl.dll",
+          "Bytes": 3064320,
+          "Sha256": "434b1efafd07ef5089eec79d23e6cd65a54d3e6a64abeaebd662dfa54543fd26",
+          "Signature": {
+            "Status": "NotSigned",
+            "SignerThumbprint": null,
+            "Scope": "file-signature-observation-only"
+          }
+        },
+        {
+          "Name": "ggml.dll",
+          "Bytes": 72704,
+          "Sha256": "58f200b482a8239c0851d22e0a3a414883f7cdfc692039340a858b756b31862c",
+          "Signature": {
+            "Status": "NotSigned",
+            "SignerThumbprint": null,
+            "Scope": "file-signature-observation-only"
+          }
+        },
+        {
+          "Name": "libggml-htp-v73.so",
+          "Bytes": 826248,
+          "Sha256": "4286ba2095b593a2c3a6d8ebbf565cca748c8dae2391a41eb90ac75eebbcdace",
+          "Signature": null
+        },
+        {
+          "Name": "libggml-htp-v75.so",
+          "Bytes": 772104,
+          "Sha256": "d6e5c96dde8428953feef501e50be7ea4fe6edb9da7d372cd0f8b673a6d4b216",
+          "Signature": null
+        },
+        {
+          "Name": "libggml-htp-v79.so",
+          "Bytes": 780392,
+          "Sha256": "938616a1191c51b9b8a29a0837c58ca5396920e5dc4cf18950f161d09cd4380c",
+          "Signature": null
+        },
+        {
+          "Name": "libggml-htp-v81.so",
+          "Bytes": 809160,
+          "Sha256": "79624453229f5be9565253a4f08247601888c17923e684f97794d5faf9e1c784",
+          "Signature": null
+        },
+        {
+          "Name": "libggml-htp.cat",
+          "Bytes": 13087,
+          "Sha256": "2555489322c1a87f629389cc32243a5790ce10c6b251ab0eaab2e980e9e91857",
+          "Signature": {
+            "Status": "Valid",
+            "SignerThumbprint": "6022340C9F4CB00307DF8DB036D392ADAC766212",
+            "Scope": "catalog-signature-only; member binding unverified"
+          }
+        },
+        {
+          "Name": "libomp140.aarch64.dll",
+          "Bytes": 796728,
+          "Sha256": "4b7108af47f2f1bd1973a9ae3a61861e13e787e1846d24fa90e7a6240a0b566c",
+          "Signature": {
+            "Status": "Valid",
+            "SignerThumbprint": "587116075365AA15BCD8E4FA9CB31BE372B5DE51",
+            "Scope": "file-signature-observation-only"
+          }
+        },
+        {
+          "Name": "llama-common.dll",
+          "Bytes": 5059072,
+          "Sha256": "3db418ac7b967c8c4f10efada3da3abe20493f62e282113fda3d8204fe33e45f",
+          "Signature": {
+            "Status": "NotSigned",
+            "SignerThumbprint": null,
+            "Scope": "file-signature-observation-only"
+          }
+        },
+        {
+          "Name": "llama.dll",
+          "Bytes": 2783232,
+          "Sha256": "208f66a257f3c2bd4ec95c650bb9ba9ef6d25ebcd794c1bed4ac76745a7df66a",
+          "Signature": {
+            "Status": "NotSigned",
+            "SignerThumbprint": null,
+            "Scope": "file-signature-observation-only"
+          }
+        },
+        {
+          "Name": "mtmd.dll",
+          "Bytes": 1498112,
+          "Sha256": "b4abe314a41cde8ed90da7172bd5c21e08d55615a3b52393b4698a1954254d3e",
+          "Signature": {
+            "Status": "NotSigned",
+            "SignerThumbprint": null,
+            "Scope": "file-signature-observation-only"
+          }
+        }
+      ],
+      "TotalBytes": 18691607
+    }
+  },
+  "SelectionOmissions": [
+    "device instance ID",
+    "raw local paths"
+  ],
+  "Archive": {
+    "Bytes": 84788957,
+    "Sha256": "5676e27cc5639717890ce92f3beec937a6aefc645c9cc57bcb537f972b4fecc7",
+    "ArchiveVerified": true
+  },
+  "CatalogVerification": {
+    "Command": [
+      "signtool",
+      "verify",
+      "/pa",
+      "/v",
+      "/c",
+      "libggml-htp.cat",
+      "libggml-htp-v81.so"
+    ],
+    "ExitCode": 0,
+    "Warnings": 0,
+    "Errors": 0,
+    "Signer": "Microsoft Windows Hardware Compatibility Publisher",
+    "Root": "Microsoft Root Certificate Authority 2010",
+    "RawOutputSha256": "66766ac52a3f5e8427fce1c1d7010452dfe9379b6de6e1b3fe439b0891e5bada",
+    "RetainedOutputSha256": "73c88864b342f93b0635da0792b3af48cf4c7e3766c77bceaaea732c70a3e5dd",
+    "RetainedOutputTransform": "external temp path redacted; newlines normalized",
+    "SigntoolExecutableSha256": "cf81ce1946885a1495a1092942d4be7f34d55bf9ec77bcd19117207e5a2b0f5f",
+    "RetainedOutput": "docs/evidence/hexagon-v81-catalog-verification.txt",
+    "Scope": "Authenticode-policy catalog member verification only; installed driver trust and dispatch not tested"
+  },
+  "ObservedDurationsMilliseconds": {
+    "ArchiveDownloadHashAndDirectoryInspection": 4684,
+    "PreflightWorkerStartupInventoryAndCleanup": 3292,
+    "CatalogMemberVerification": 316,
+    "InitialFocusedRustCompileAndTest": 12035,
+    "ScopedRustClippy": 2534
+  },
+  "Validation": {
+    "RustFocusedTests": [
+      "relative_cpu_gpu_npu_costs_choose_each_winner",
+      "evidence_assertions_and_stale_driver_never_admit_npu"
+    ],
+    "RustFocusedTestsPassed": true,
+    "RustClippyAllTargetsPassed": true,
+    "PowerShellAnalyzerVersion": "1.25.0",
+    "PowerShellChangedFilesPassed": true,
+    "PowerShellSyntheticPreflightChecksPassed": true,
+    "PythonFocusedLayoutAndValidationChecksPassed": true,
+    "FullRegressions": "pending-hosted-CI"
+  },
+  "Execution": "not-attempted",
+  "Qualification": "pending",
+  "ProfileEligible": false,
+  "ModelLoaded": false,
+  "DriverInstalled": false,
+  "TrustChanged": false,
+  "Limits": [
+    "No mapping, RPC, HVX/HMX, VTCM or DMA64 execution evidence.",
+    "No Swift packed activation, logits, adapter, state, lifecycle or performance acceptance.",
+    "No X1 inventory or qualification.",
+    "Local prerequisite observation, not main-only device CI or independent promotion review.",
+    "Raw package and original local receipt remain in external temporary storage; durable archival pending."
+  ]
+}
