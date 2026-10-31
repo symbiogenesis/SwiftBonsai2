@@ -27,6 +27,14 @@ mod sealed;
 
 pub use sealed::{protect_private_data, unprotect_private_data};
 
+#[allow(
+    unsafe_code,
+    reason = "Audited CNG SHA-256 boundary owns its hash handle and borrows input only during each call."
+)]
+mod hash;
+
+pub use hash::Sha256;
+
 /// Queries the actual Windows process token, without trusting an environment flag.
 ///
 /// # Errors
