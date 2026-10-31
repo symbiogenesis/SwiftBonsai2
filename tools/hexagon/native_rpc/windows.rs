@@ -14,6 +14,8 @@ use std::sync::{Mutex, MutexGuard};
 
 #[path = "mapping.rs"]
 mod mapping;
+#[path = "session_native.rs"]
+mod session_native;
 
 type Handle = *mut c_void;
 type Control = unsafe extern "C" fn(u32, *mut c_void, u32) -> i32;
@@ -377,6 +379,15 @@ impl Driver {
             return Err(Error::Contract);
         }
         Ok(query.capability)
+    }
+
+    pub(super) fn prepare_session_metadata(
+        &mut self,
+    ) -> Result<crate::SessionPreparationReport, Error> {
+        if mapping::terminal() {
+            return Err(Error::Contract);
+        }
+        session_native::prepare(self)
     }
 }
 

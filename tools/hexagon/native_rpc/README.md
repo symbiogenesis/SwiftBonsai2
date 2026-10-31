@@ -38,6 +38,13 @@ one of the following arguments:
   loading it, for independent signature/hash checks.
 - `--query`: verifies/loads that fixed vendor driver and records each query's
   native success/value or failure. Missing values remain null and unknown.
+- `--session-prepare`: queries the exact architecture, default-CDSP effective
+  domain and fixed bundled module URI. It opens no remote module or session,
+  allocates/maps no buffer and requests no unsigned process. Both native return
+  codes and every completed stage remain distinct; an unsupported family,
+  changed input structure, malformed or mismatched URI never becomes a fallback
+  domain or synthesized URI. This metadata gate still needs a supervised device
+  observation and does not qualify signed deployment.
 - `--mapping-probe`: consumes one driver/process admission for a fixed 4096-byte
   system-heap allocation, descriptor lookup, CPU byte check, static domain-3
   registration, matching unmap and free. It never submits or reads DSP work.
@@ -71,6 +78,42 @@ module to force admission. The referenced public
 defines host `AEE_ERPC` as `0x200` (512), a generic FastRPC implementation error.
 A matching return value supplies no underlying permission, signature, descriptor
 or hardware diagnosis; retain the exact code and mode before investigating.
+
+## Established-session mapping prerequisite
+
+`session.rs` and `session_native.rs` now encode the next narrow native step:
+`FASTRPC_GET_EFFECTIVE_DOMAIN_ID=14` and `FASTRPC_GET_URI=15` for `cdsp`, session
+zero, using the exact 24-byte and 48-byte Windows ARM64 structures in the pinned
+vendor header. Architecture comes from the driver, not the processor name. The
+returned URI must match the exact v73/v81 module, `htp_iface_skel_handle_invoke`,
+module version 1.0, domain and session. Inputs, pointer fields, extents and the
+NUL-terminated output are checked after each call. No vendor-controlled string
+is loaded or printed. All source identities remain those in `sources.json`.
+
+This deliberately stops before `remote_handle64_open`. A module basename URI
+does not bind the installed ELF bytes, catalog membership or trust to the
+owner's checked package directory. Supplying an absolute URI has not been
+established as a supported Windows deployment route. The exact installed module,
+its catalog and the supported search/deployment route must be independently
+verified and held against mutation through open and teardown before adding that
+call. No environment search-path override, catalog installation or certificate
+change is supplied by this candidate.
+
+The reviewed ggml session initializer requests unsigned-process control before
+opening its HTP interface. That request is omitted here; neither its presence in
+source nor the bundled catalog proves that Runner may enable it. A future signed
+session must establish its actual process/deployment policy independently.
+
+After a verified session is established, the matching effective domain must own
+every mapping and unmapping tuple. Public FD mode 2 and delayed-FD mode 3 are
+recorded as constants, not executed by metadata preparation. The public pinned
+header describes delayed mode as registration until DSP-side `HAP_mmap`; its
+success alone does not prove DSP visibility or DMA. CPU/DSP cache maintenance
+also remains a separate ownership obligation. The ggml extended delayed flag
+and its SDK ABI are absent from this pinned public header and remain pending;
+no guessed enum value is exposed. Actual asynchronous submission, completion,
+cancellation and in-use buffer retention require the signed kernel/queue ABI
+and cannot be established by a metadata or map/unmap control.
 
 The architecture decoder follows the pinned ggml low-byte packed-decimal
 interpretation, but rejects invalid nibbles and zero; raw values remain in the

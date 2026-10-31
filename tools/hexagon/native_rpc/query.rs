@@ -53,6 +53,29 @@ fn run() -> Result<String, hexagon_native_rpc::Error> {
     }) {
         return Err(hexagon_native_rpc::Error::InheritedOverride);
     }
+    if arguments[0] == "--session-prepare" {
+        let mut driver = Driver::open_system()?;
+        let driver_path = driver.path().to_string_lossy().into_owned();
+        let report = driver.prepare_session_metadata()?;
+        let signed = |value: Option<i32>| {
+            value.map_or_else(|| String::from("null"), |value| value.to_string())
+        };
+        let architecture = report
+            .architecture
+            .map_or_else(|| String::from("null"), |value| value.to_string());
+        return Ok(format!(
+            "{{\"schemaVersion\":1,\"kind\":\"native-fastrpc-session-preparation\",\"driverDll\":{},\"metadataPrepared\":{},\"stage\":{},\"architectureRaw\":{},\"architecture\":{},\"sessionId\":0,\"domainRequestId\":14,\"domainResult\":{},\"effectiveDomain\":{},\"uriRequestId\":15,\"uriResult\":{},\"uriVerified\":{},\"driverLoaded\":true,\"remoteModuleOpened\":false,\"signedDeploymentVerified\":false,\"mappingExecuted\":false,\"computeExecuted\":false,\"unsignedProcessRequested\":false,\"profileEligible\":false}}",
+            quote(&driver_path),
+            report.metadata_prepared(),
+            quote(report.stage),
+            report.architecture_raw,
+            architecture,
+            signed(report.domain_result),
+            signed(report.effective_domain),
+            signed(report.uri_result),
+            report.uri_verified,
+        ));
+    }
     if arguments[0] == "--mapping-probe" {
         let driver = Driver::open_system()?;
         let driver_path = driver.path().to_string_lossy().into_owned();
