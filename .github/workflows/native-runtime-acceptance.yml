@@ -70,6 +70,7 @@ jobs:
               'native_stalled_consumer_retains_fragmented_prefix_connection_until_dropped',
               'native_stalled_consumer_never_qualifies_natural_completion_as_interruption',
               'native_stalled_consumer_rejects_error_or_unframed_stream_headers',
+              'native_case_budget_rejects_missing_unbounded_and_malformed_allowances',
               'native_case_budget_cancels_owned_tasks_before_followup')) {
             if ($modelFreeCases -cnotcontains ($case + ': test')) { throw 'Required hosted acceptance regression was not found.' }
             & (Join-Path $package 'native-model-acceptance.exe') $case --exact
@@ -104,6 +105,10 @@ jobs:
     env:
       BONSAI_NATIVE_DIAGNOSTICS_READY: 'false'
     steps:
+      - name: Start the complete owner-job budget before checkout and tool intake
+        shell: pwsh
+        run: |
+          "BONSAI_NATIVE_JOB_STARTED_UTC=$([DateTime]::UtcNow.ToString('o'))" >> $env:GITHUB_ENV
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -165,7 +170,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           [Environment]::CurrentDirectory = $env:BONSAI_NATIVE_WORK
-          $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+          $cpu = Get-CimInstance Win32_Processor -OperationTimeoutSec 10 | Select-Object -First 1
           if ($cpu.Name -notmatch 'Snapdragon.*X.*Elite') { throw 'Actual Snapdragon X/X2 Elite identity is required; no generic ARM substitute.' }
           $hostReport = [ordered]@{
             SchemaVersion=1; Revision=$env:GITHUB_SHA; RunId=$env:GITHUB_RUN_ID
@@ -176,6 +181,10 @@ jobs:
             BoundedHistoryRequested=($env:BONSAI_NATIVE_EXTENDED -eq 'true')
             StalledConsumerRequested=($env:BONSAI_NATIVE_STALLED_CONSUMER -eq 'true')
             AcceptanceProcessExitCode=$null; AggregateBudgetExpired=$false
+            OwnerJobStartedUtc=$env:BONSAI_NATIVE_JOB_STARTED_UTC
+            WholeJobMaximumSeconds=300; PostProcessReserveSeconds=30
+            PreparationElapsedMilliseconds=$null; ModelCaseBudgetSeconds=$null
+            TestProcessHardLimitSeconds=$null
             StartupDiagnosticsReceipt='startup-diagnostics.json'
             StartupDiagnosticsReady=$false; StartupDiagnosticsClassification='not-collected'
             StartupFailureMarkers=@()
@@ -214,6 +223,21 @@ jobs:
             foreach ($argument in @($case, '--exact', '--ignored', '--nocapture')) {
               $start.ArgumentList.Add($argument)
             }
+            $jobStarted = [DateTime]::Parse($env:BONSAI_NATIVE_JOB_STARTED_UTC, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
+            $setupElapsed = ([DateTime]::UtcNow - $jobStarted).TotalSeconds
+            # Charge checkout, hosted-binary intake, verification and inventory.
+            # Reserve ten seconds between the Rust soft limit and process limit,
+            # then thirty seconds for forced teardown, diagnostics and uploads.
+            $hardLimitSeconds = [int][Math]::Floor([Math]::Min(250, 270 - $setupElapsed))
+            $caseBudgetSeconds = [Math]::Min(240, $hardLimitSeconds - 10)
+            if ($setupElapsed -lt 0 -or $caseBudgetSeconds -lt 1) {
+              $hostReport.AggregateBudgetExpired = $true
+              throw 'Owner-job preparation exhausted the acceptance budget; qualification remains pending.'
+            }
+            $hostReport.PreparationElapsedMilliseconds = [Math]::Ceiling($setupElapsed * 1000)
+            $hostReport.ModelCaseBudgetSeconds = $caseBudgetSeconds
+            $hostReport.TestProcessHardLimitSeconds = $hardLimitSeconds
+            $start.Environment['BONSAI_NATIVE_CASE_BUDGET_SECONDS'] = [string]$caseBudgetSeconds
             foreach ($name in @('ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNNER_INPUT_TOKEN')) {
               [void]$start.Environment.Remove($name)
             }
@@ -221,9 +245,9 @@ jobs:
             try {
               $stdout = $child.StandardOutput.ReadToEndAsync()
               $stderr = $child.StandardError.ReadToEndAsync()
-              if (-not $child.WaitForExit(240000)) {
+              if (-not $child.WaitForExit($hardLimitSeconds * 1000)) {
                 $hostReport.AggregateBudgetExpired = $true
-                throw 'The aggregate 240-second model case budget expired.'
+                throw 'The acceptance process exceeded its remaining owner-job budget.'
               }
               [Console]::Out.Write($stdout.GetAwaiter().GetResult())
               $testStderr = $stderr.GetAwaiter().GetResult()
@@ -276,7 +300,7 @@ jobs:
           }
           @('Bounded actual-model Rust application lifecycle passed under required native containment.',
             ('Explicit acceptance profile: ' + $env:BONSAI_NATIVE_PROFILE),
-            'All setup, model loading, execution and cleanup share one five-minute job; actual-model cases and selected bounded workloads share one 240-second aggregate soft deadline. Do not split a matrix into repeated jobs.',
+            'All setup, model loading, execution and cleanup share one five-minute job. Actual-model cases receive at most 240 seconds, reduced by checkout, intake and verification time, with separate process teardown and evidence reserves. Do not split a matrix into repeated jobs.',
             ('Bounded supplied history (128 repetitions, four-token cap) requested: ' + $env:BONSAI_NATIVE_EXTENDED),
             ('Explicit Stop with a nonreading connected client requested: ' + $env:BONSAI_NATIVE_STALLED_CONSUMER),
             'The stalled-client workload requires an interrupted broker operation, bounded owned shutdown and fresh-owner recovery; it does not prove socket-buffer saturation or that the backend was still generating at Stop.',

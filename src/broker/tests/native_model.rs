@@ -36,6 +36,28 @@ const SHORT_COMPLETION_CAP: u32 = 4;
 const STALLED_CONSUMER_PAUSE: Duration = Duration::from_secs(1);
 const STOP_WAIT: Duration = Duration::from_secs(30);
 
+fn case_budget_setting(setting: Option<&str>) -> Option<Duration> {
+    let setting = setting?;
+    if setting.is_empty() || !setting.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let seconds = setting.parse::<u64>().ok()?;
+    (1..=CASE_BUDGET.as_secs())
+        .contains(&seconds)
+        .then_some(Duration::from_secs(seconds))
+}
+
+fn case_budget() -> Duration {
+    // Hosted preparation passes only the allowance left after owner-job setup.
+    // Missing/malformed limits must never silently restore a fresh 240 seconds.
+    case_budget_setting(
+        env::var("BONSAI_NATIVE_CASE_BUDGET_SECONDS")
+            .ok()
+            .as_deref(),
+    )
+    .unwrap()
+}
+
 struct Workloads {
     extended_history: bool,
     stalled_consumer: bool,
@@ -435,8 +457,14 @@ async fn supplied_history_acceptance(port: u16, credential: &str) {
     streamed_response(&exchange(port, credential, &short_request(history, true)).await);
 }
 
-async fn acceptance(data: &Path, evidence: &Path, workloads: &Workloads, report: &mut Value) {
-    let deadline = tokio::time::Instant::now() + CASE_BUDGET;
+async fn acceptance(
+    data: &Path,
+    evidence: &Path,
+    workloads: &Workloads,
+    budget: Duration,
+    report: &mut Value,
+) {
+    let deadline = tokio::time::Instant::now() + budget;
     report["phase"] = json!("initial-owner-startup");
     save_acceptance_report(evidence, report);
     let owner = start(data, evidence).await;
@@ -790,6 +818,7 @@ fn native_bounded_history_and_stall_requests_preserve_distinct_output_limits() {
 #[ignore = "Actual pinned model; explicitly dispatched main-only device CI, never ordinary suites."]
 fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
     ci_only();
+    let budget = case_budget();
     let data = env::var_os("BONSAI_NATIVE_DATA").unwrap();
     let evidence = env::var_os("BONSAI_NATIVE_EVIDENCE").unwrap();
     let data = Path::new(&data);
@@ -823,7 +852,8 @@ fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
         "runId":env::var("GITHUB_RUN_ID").unwrap(), "runAttempt":env::var("GITHUB_RUN_ATTEMPT").unwrap(),
         "scope":"bounded-actual-model-runner-lifecycle", "passed":false,
         "lifecyclePassed":false, "allRequestedWorkloadsPassed":false,
-        "aggregateModelCaseBudgetSeconds":CASE_BUDGET.as_secs(), "wholeJobMaximumSeconds":300,
+        "aggregateModelCaseBudgetSeconds":budget.as_secs(), "maximumModelCaseBudgetSeconds":CASE_BUDGET.as_secs(),
+        "wholeJobMaximumSeconds":300,
         "boundedHistoryRequested":workloads.extended_history,
         "stalledConsumerRequested":workloads.stalled_consumer,
         "runtimeLock":serde_json::from_str::<Value>(include_str!("../../../config/prism-inference.lock.json")).unwrap(),
@@ -836,8 +866,8 @@ fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
     });
     runtime.block_on(LocalSet::new().run_until(async {
         timeout(
-            CASE_BUDGET,
-            acceptance(data, evidence, &workloads, &mut report),
+            budget,
+            acceptance(data, evidence, &workloads, budget, &mut report),
         )
         .await
         .unwrap();
@@ -976,9 +1006,10 @@ async fn bounded_adapter_acceptance(
     profile: &AdapterProfile,
     data: &Path,
     evidence: &Path,
+    budget: Duration,
     report: &mut Value,
 ) {
-    let deadline = tokio::time::Instant::now() + CASE_BUDGET;
+    let deadline = tokio::time::Instant::now() + budget;
     report["phase"] = json!("initial-owner-startup");
     save_acceptance_report(evidence, report);
     let owner = start_adapter(profile, data, evidence).await;
@@ -1140,6 +1171,7 @@ fn native_row4_profile_is_explicit_original_pq2_and_one_stream_only() {
 #[ignore = "Actual PTQ1 and approved adapter; explicit bounded main-only device CI, never ordinary suites."]
 fn pinned_native_ptq1_adapter_starts_and_streams_within_device_budget() {
     ci_only();
+    let budget = case_budget();
     assert_eq!(
         profile_case(
             &env::var("BONSAI_NATIVE_PROFILE").unwrap(),
@@ -1155,7 +1187,8 @@ fn pinned_native_ptq1_adapter_starts_and_streams_within_device_budget() {
         "revision":env::var("GITHUB_SHA").unwrap(), "runId":env::var("GITHUB_RUN_ID").unwrap(),
         "runAttempt":env::var("GITHUB_RUN_ATTEMPT").unwrap(), "scope":"bounded-actual-model-ptq1-adapter-lifecycle",
         "profile":"ptq1-adapter", "passed":false, "requiredNativeSandbox":true,
-        "aggregateModelCaseBudgetSeconds":CASE_BUDGET.as_secs(), "wholeJobMaximumSeconds":300,
+        "aggregateModelCaseBudgetSeconds":budget.as_secs(), "maximumModelCaseBudgetSeconds":CASE_BUDGET.as_secs(),
+        "wholeJobMaximumSeconds":300,
         "sameOwnerAfterInvalidScalePassed":false, "invalidScaleRejected":false,
         "unrunIndependentGates":["signed-zero-and-scale-2", "context-rejection-and-reuse", "fresh-owner-restart",
             "supplied-history", "extended-history", "stalled-consumer", "full-context-and-output"],
@@ -1171,11 +1204,12 @@ fn pinned_native_ptq1_adapter_starts_and_streams_within_device_budget() {
         .unwrap();
     runtime.block_on(LocalSet::new().run_until(async {
         timeout(
-            CASE_BUDGET,
+            budget,
             bounded_adapter_acceptance(
                 &PTQ1_ADAPTER_PROFILE,
                 Path::new(&data),
                 evidence,
+                budget,
                 &mut report,
             ),
         )
@@ -1188,6 +1222,7 @@ fn pinned_native_ptq1_adapter_starts_and_streams_within_device_budget() {
 #[ignore = "Actual original PQ2 and approved adapter with four row workers; explicit bounded main-only device CI."]
 fn pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget() {
     ci_only();
+    let budget = case_budget();
     assert_eq!(
         profile_case(
             &env::var("BONSAI_NATIVE_PROFILE").unwrap(),
@@ -1207,7 +1242,8 @@ fn pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget() {
         "revision":env::var("GITHUB_SHA").unwrap(), "runId":env::var("GITHUB_RUN_ID").unwrap(),
         "runAttempt":env::var("GITHUB_RUN_ATTEMPT").unwrap(), "scope":"bounded-actual-model-pq2-adapter-row4-lifecycle",
         "profile":PQ2_ADAPTER_ROW4_PROFILE.name, "passed":false, "requiredNativeSandbox":true,
-        "aggregateModelCaseBudgetSeconds":CASE_BUDGET.as_secs(), "wholeJobMaximumSeconds":300,
+        "aggregateModelCaseBudgetSeconds":budget.as_secs(), "maximumModelCaseBudgetSeconds":CASE_BUDGET.as_secs(),
+        "wholeJobMaximumSeconds":300,
         "configuredNativeRowWorkers":4, "rowWorkerCountIndependentlyObserved":false,
         "requiredStreams":1, "requestedAdapterScale":1.3, "requestedCompletionCap":4,
         "weightRepresentation":"PQ2_0", "runtimeLock":runtime_lock,
@@ -1227,17 +1263,44 @@ fn pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget() {
         .unwrap();
     runtime.block_on(LocalSet::new().run_until(async {
         timeout(
-            CASE_BUDGET,
+            budget,
             bounded_adapter_acceptance(
                 &PQ2_ADAPTER_ROW4_PROFILE,
                 Path::new(&data),
                 evidence,
+                budget,
                 &mut report,
             ),
         )
         .await
         .unwrap();
     }));
+}
+
+#[test]
+fn native_case_budget_rejects_missing_unbounded_and_malformed_allowances() {
+    for invalid in [
+        None,
+        Some(""),
+        Some("0"),
+        Some("241"),
+        Some("3600"),
+        Some("-1"),
+        Some("+120"),
+        Some("120.0"),
+        Some(" 120"),
+        Some("120\n"),
+        Some("18446744073709551616"),
+    ] {
+        assert_eq!(case_budget_setting(invalid), None);
+    }
+    for seconds in [1, 30, 120, 121, 239, 240] {
+        let budget = case_budget_setting(Some(&seconds.to_string())).unwrap();
+        assert_eq!(budget, Duration::from_secs(seconds));
+        // Setup can reduce the allowance below the optional-workload reserve;
+        // neither workload may use the original maximum to reopen admission.
+        assert_eq!(optional_workload_enabled(true, budget), seconds > 120);
+    }
 }
 
 #[test]

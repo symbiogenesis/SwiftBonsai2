@@ -33,8 +33,15 @@ Ordinary Foundation/local runs never execute the ignored case.
 
 All owner-laptop diagnostics share a **five-minute total ceiling**, including
 setup, model loading, execution and cleanup. The workflow's owner job stops at
-five minutes; each actual-model case has one **240-second aggregate soft deadline**,
-including startup and cleanup. Per-request deadlines cannot extend it. Do not
+five minutes. Its clock starts before checkout and hosted-binary intake. Each
+actual-model case receives a validated **1–240-second aggregate soft allowance**,
+reduced by all preceding setup, verification and case inventory, including startup
+and cleanup. Missing, malformed or excessive allowances reject before model use.
+The process hard limit leaves ten seconds after the Rust allowance for owned-task
+teardown, and stops by owner-job second 270, reserving thirty seconds for forced
+cleanup, sanitized diagnostics and evidence uploads. The host receipt records the
+preparation cost and both limits; the model receipt records its actual allowance
+and 240-second maximum. Per-request deadlines cannot extend it. Do not
 split a long matrix across repeated owner jobs. Hosted ARM64 prepares exact
 source-bound test and maintenance binaries without loading models; the owner job
 verifies their run/revision, SHA-256 and native architecture before direct execution,
@@ -113,6 +120,7 @@ Model-free acceptance regressions:
 | `native_stalled_consumer_retains_fragmented_prefix_connection_until_dropped` | Fragmented UTF-8/SSE intake and retained connection |
 | `native_stalled_consumer_never_qualifies_natural_completion_as_interruption` | Operation-counter interruption guard |
 | `native_stalled_consumer_rejects_error_or_unframed_stream_headers` | HTTP 200 and chunked event-stream framing before accepting content |
+| `native_case_budget_rejects_missing_unbounded_and_malformed_allowances` | Reject missing, zero, malformed, overflowing and over-240-second allowances; optional workloads use the reduced allowance and retain the 120-second recovery reserve |
 
 ### Foundation and routing
 
