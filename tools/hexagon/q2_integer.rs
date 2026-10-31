@@ -5,7 +5,7 @@
 //! entry, shapes and actual returned bits still require independent qualification.
 //! No prepared Q8_1 upload, native submission or performance claim follows.
 
-use super::{Error, finite, half};
+use super::{Error, PQ2_BYTES, finite, half};
 
 const PADDED_K: usize = 256;
 const Q2_BLOCK_BYTES: usize = 18;
@@ -28,7 +28,8 @@ impl GuardedQ2Inputs {
     /// CPU-prepared 128 codes. Original PQ2 scale bytes are validated but are not
     /// moved into the integer primitive; its four logical Q2 scales are one.
     pub fn new(original_pq2: &[u8], prepared_codes: &[i8]) -> Result<Self, Error> {
-        if original_pq2.len() != 34 || prepared_codes.len() != 128 {
+        let original_pq2: &[u8; PQ2_BYTES] = original_pq2.try_into().map_err(|_| Error::Extent)?;
+        if prepared_codes.len() != 128 {
             return Err(Error::Extent);
         }
         half(original_pq2)?;
@@ -131,9 +132,7 @@ pub fn reduce_original_block(
     previous: f32,
     limb_dots: [f32; 2],
 ) -> Result<f32, Error> {
-    if original_pq2.len() != 34 {
-        return Err(Error::Extent);
-    }
+    let original_pq2: &[u8; PQ2_BYTES] = original_pq2.try_into().map_err(|_| Error::Extent)?;
     finite(original_q8k_scale)?;
     finite(previous)?;
     for value in limb_dots {
@@ -236,10 +235,17 @@ mod tests {
                 Err(Error::Protocol)
             );
         }
-        assert_eq!(
-            GuardedQ2Inputs::new(&first[..33], &[0; 128]).err(),
-            Some(Error::Extent)
-        );
+        let oversized = [0; PQ2_BYTES + 1];
+        for malformed in [&first[..0], &first[..PQ2_BYTES - 1], &oversized[..]] {
+            assert_eq!(
+                GuardedQ2Inputs::new(malformed, &[0; 128]).err(),
+                Some(Error::Extent)
+            );
+            assert_eq!(
+                reduce_original_block(malformed, scale, 0.0, [0.0, 0.0]),
+                Err(Error::Extent)
+            );
+        }
         Ok(())
     }
 }
