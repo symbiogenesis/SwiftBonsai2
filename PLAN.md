@@ -567,6 +567,10 @@ Follow [Hexagon contracts](docs/hexagon.md).
   to independent mock-RPC wire observations and Rust replay. Reproduce the captured
   dependency resolution and complete compiler identity; public generation alone
   does not qualify SDK/public marshalling equivalence or the signed device ABI.
+  Preserve the reviewed Windows explicit-zero/read-noblock route and symbolic
+  timeout default. Compare public infinite-wait, FD/cache/callback/import-close
+  contracts and authoritative u64 close against the matching SDK; the reference
+  wrapper's narrowing pointer typedef is not an ABI to reuse.
   Implement the reviewed queue/IDL, correlated responses, bounded waits, in-use
   buffer retention and stop/drain contract before submitting a device kernel.
 - Start with `blk.0.ffn_up.weight`, K=5120/M=17408/N=1, keeping transforms, adapter

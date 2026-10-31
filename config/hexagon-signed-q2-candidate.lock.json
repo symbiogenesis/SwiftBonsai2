@@ -255,6 +255,33 @@
       "sha256": "43b4130d14dc4152b9b3cafc7899d781e2e3546076383a65159774000275021e",
       "url": "https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/idl/remote.idl",
       "license": "BSD-3-Clause"
+    },
+    {
+      "repository": "https://github.com/ggml-org/llama.cpp",
+      "commit": "19cce6919992fdffd92e0ac152caaf1e2b8f254e",
+      "path": "ggml/src/ggml-hexagon/htp-drv.cpp",
+      "bytes": 18461,
+      "sha256": "8b93060b8f5a0aceb77c708d1772c56699810e901a52ab0ae1a4826f9f3e6854",
+      "url": "https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp-drv.cpp",
+      "license": "MIT"
+    },
+    {
+      "repository": "https://github.com/ggml-org/llama.cpp",
+      "commit": "19cce6919992fdffd92e0ac152caaf1e2b8f254e",
+      "path": "ggml/src/ggml-hexagon/htp-drv.h",
+      "bytes": 3116,
+      "sha256": "c89560619f6c52de53417d5da794ae319668fff1a3f11230da13e3ae6944ae79",
+      "url": "https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp-drv.h",
+      "license": "MIT"
+    },
+    {
+      "repository": "https://github.com/qualcomm/fastrpc",
+      "commit": "a56e9d4de3614a8d8f4b0e15ff561350c4b686e3",
+      "path": "inc/remote.h",
+      "bytes": 65625,
+      "sha256": "f9d0690cfd8953697d6fc3163c2be448a7b5b801148808c9b1b360857aeabc44",
+      "url": "https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/remote.h",
+      "license": "BSD-3-Clause"
     }
   ],
   "kernelBoundary": {
@@ -342,7 +369,67 @@
       },
       "sdkHeaderContentReviewed": false,
       "sdkPublicHeaderEquivalenceQualified": false,
-      "sdkLayoutQualified": false
+      "sdkLayoutQualified": false,
+      "publicSourceSemantics": {
+        "scope": "pinned-public-declaration-and-documentation-only; not-proven-installed-Windows-queue-behavior",
+        "queueHandle": "opaque-dspqueue-pointer",
+        "callback": "queue-handle/error/client-context; no-safe-Rust-lifetime-or-threading-qualification",
+        "bufferMustAlreadyBeMappedWithSameFd": true,
+        "bufferSubsectionMustFitMapping": true,
+        "bufferReferenceScope": "whole-FD-mapping; not-only-message-subsection",
+        "referenceFlag": 4,
+        "dereferenceFlag": 8,
+        "flushSenderFlag": 16,
+        "invalidateSenderFlag": 32,
+        "flushRecipientFlag": 64,
+        "invalidateRecipientFlag": 128,
+        "exportReturns": "uint64-queue-id; does-not-prove-DSP-import",
+        "hostCloseMayFailWhileDspImportRemainsOpen": true,
+        "blockingReadRequiresPacketCallbackAbsent": true,
+        "noBlockEmptyResult": "AEE_EWOULDBLOCK",
+        "infiniteTimeoutU32": 4294967295,
+        "infiniteTimeoutIsSupervisionDeadline": false,
+        "referenceOrCacheFlagIsCompletionProof": false
+      },
+      "hostDriverReference": {
+        "source": "ggml-org/llama.cpp@19cce6919992fdffd92e0ac152caaf1e2b8f254e:ggml/src/ggml-hexagon/htp-drv.cpp",
+        "headerSource": "ggml-org/llama.cpp@19cce6919992fdffd92e0ac152caaf1e2b8f254e:ggml/src/ggml-hexagon/htp-drv.h",
+        "windowsDriverBasename": "libcdsprpc.dll",
+        "providerRoute": "SCM-qcnspmcdm-service-directory; reference-code-only-not-Rust-loader-authority",
+        "queueExportsResolved": [
+          "dspqueue_create",
+          "dspqueue_close",
+          "dspqueue_export",
+          "dspqueue_write",
+          "dspqueue_read",
+          "dspqueue_read_noblock"
+        ],
+        "windowsExplicitReadTimeoutZeroExport": "dspqueue_read_noblock",
+        "ordinaryReadExport": "dspqueue_read",
+        "referenceWindowsDefaultTimeout": "DSPQUEUE_TIMEOUT_NONE",
+        "referenceNonWindowsDefaultTimeoutMicroseconds": 1000000,
+        "timeoutDispatchSourceLines": [
+          174,
+          184
+        ],
+        "timeoutDefaultHeaderLines": [
+          85,
+          88
+        ],
+        "closePointerTypedefSourceLine": 72,
+        "closePointerTypedefParameter": "remote_handle (uint32)",
+        "closeWrapperParameter": "remote_handle64 (uint64)",
+        "authoritativeCloseParameter": "remote_handle64 (uint64)",
+        "closeAuthority": "qualcomm/fastrpc@a56e9d4de3614a8d8f4b0e15ff561350c4b686e3:inc/remote.h:871",
+        "closePointerTypedefMatchesAuthoritativeDeclaration": false,
+        "referenceCodeAuthorizesCopyAsAbi": false,
+        "sourceExportResolutionProvesInstalledExports": false,
+        "WindowsQueueAbiQualified": false,
+        "SDKPublicQueueEquivalenceQualified": false,
+        "vendorCallbackLifetimeQualified": false,
+        "vendorTeardownQualified": false,
+        "reviewDate": "2026-10-31"
+      }
     },
     "generatedIdlProvenance": {
       "status": "pending-before-any-device-invoke",

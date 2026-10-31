@@ -28,7 +28,7 @@ v0.9.1 and v0.9.3 releases use `e467e5b5e5ba43071d6151b3d881deb9300d000e`.
 The stable candidate is sufficient for this source decision; no automatic latest-tag
 selection follows from this inventory.
 
-All twenty-six reviewed public source files have exact repository, revision, path, byte
+All twenty-nine reviewed public source files have exact repository, revision, path, byte
 extent, SHA-256 and URL entries in the candidate lock. They include the release
 pipeline, package installation rules, host solver/repack/queue implementation,
 DSP operation types, matmul arithmetic, IDL and public compiler sources. The llama
@@ -112,6 +112,40 @@ also distinguishes queue export/import and buffer references: successful host
 queue creation does not establish remote import or safe buffer release. Bind
 matching Windows declarations, native layouts, flags/cache semantics and driver
 identity before adding a callable Rust queue boundary.
+
+Additional queue-source review: **2026-10-31**. The pinned
+[host driver wrapper](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp-drv.cpp)
+and [its header](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp-drv.h)
+are 18,461 and 3,116 bytes respectively; their full digests are in the candidate
+lock. They resolve queue create/close/export/write/read/read-noblock exports from
+the service-derived `libcdsprpc.dll`. On Windows, an
+[explicit read timeout of zero](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp-drv.cpp#L174-L184)
+routes to `dspqueue_read_noblock`. That differs from the reference header's
+[Windows default](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp-drv.h#L85-L88),
+`DSPQUEUE_TIMEOUT_NONE`: the
+[public queue header](https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/dspqueue.h#L20-L21)
+defines that as `0xffffffff`, an infinite wait. Neither branch supplies an
+aggregate process deadline or proves installed Windows timeout behavior.
+
+This reference is not an ABI to copy. Its
+[close function-pointer typedef](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp-drv.cpp#L72)
+takes the 32-bit `remote_handle`, although the wrapper accepts `remote_handle64`.
+The separately pinned
+[authoritative declaration](https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/remote.h#L871)
+takes a 64-bit handle. Reusing that pointer typedef would narrow the argument;
+the existing native Rust terminal control correctly keeps the full u64. This
+source mismatch does not diagnose any device observation.
+
+Public queue ownership requirements also remain explicit. A
+[buffer reference](https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/dspqueue.h#L95-L127)
+requires a prior mapping with the same FD, with its subsection inside that mapping;
+reference accounting covers the whole mapped buffer. Reference/dereference and
+sender/recipient cache flags are separate. Export returns an ID for a later DSP
+import, and [host close can fail while that import remains open](https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/dspqueue.h#L243-L296).
+[Blocking read](https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/dspqueue.h#L421-L454)
+requires no packet callback. These declarations guide the future ownership review;
+they establish neither matching SDK layouts/callback lifetimes nor safe buffer
+release, cache completion or vendor teardown. No callable queue binding is added.
 
 Generated host marshalling is a concrete prerequisite. The exact build compiles
 `htp_iface_stub.c` and invokes the SDK's `build_idl`; the
