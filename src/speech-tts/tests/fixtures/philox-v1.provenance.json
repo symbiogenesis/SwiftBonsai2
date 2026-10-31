@@ -1,0 +1,67 @@
+{
+    "schema_version":  1,
+    "purpose":  "Frozen independently captured scalar Philox outputs; no native oracle is needed for replay.",
+    "source":  {
+                   "repository":  "https://github.com/ServeurpersoCom/qwentts.cpp",
+                   "revision":  "5916bf7c79dbb4e66fc059cdc507a79a23a28bb4",
+                   "path":  "src/philox.h",
+                   "license_file":  "../../LICENSE.qwen-core",
+                   "bytes_normalized_lf":  3552,
+                   "sha256_normalized_lf":  "41a955e4267eba8d1c1a4b55a0b8964c4a7bd28f380faae5f981152403c81de7"
+               },
+    "retired_reference":  {
+                              "repository":  "https://github.com/symbiogenesis/SwiftBonsai2Runner",
+                              "revision":  "bd42793992ceee433999d25f48508d656f83351c",
+                              "header":  {
+                                             "path":  "src/speech-tts/tests/reference/philox.h",
+                                             "bytes_normalized_lf":  3552,
+                                             "sha256_normalized_lf":  "41a955e4267eba8d1c1a4b55a0b8964c4a7bd28f380faae5f981152403c81de7"
+                                         },
+                              "driver":  {
+                                             "path":  "src/speech-tts/tests/philox_oracle.cpp",
+                                             "bytes_normalized_lf":  1365,
+                                             "sha256_normalized_lf":  "62c4abe4f2acb4b57073aa9dc32a05216a279533be068929f735bcc07c735194"
+                                         }
+                          },
+    "capture":  {
+                    "time_utc":  "2026-10-31T02:45:34.618244+00:00",
+                    "target":  "aarch64-pc-windows-msvc",
+                    "compiler_version":  "clang version 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5)\nTarget: aarch64-pc-windows-msvc\nThread model: posix\nBuild config: +alloc:rpmalloc",
+                    "compiler_executable_sha256":  "d5487944bbd56cea6ac4fdde2496f58b32802a3276c24b32e231e0d72e2122c9",
+                    "compiler_flags":  [
+                                           "/nologo",
+                                           "/std:c++17",
+                                           "/EHsc",
+                                           "/W4",
+                                           "/WX",
+                                           "/O2",
+                                           "/fp:precise"
+                                       ],
+                    "compile_exit_code":  0,
+                    "oracle_exit_code":  0,
+                    "expected_outputs_generated_by":  "Unmodified pinned native header and retired native driver; Rust output was not used.",
+                    "cases":  4411,
+                    "edge_cases":  315,
+                    "lcg_cases":  4096,
+                    "inputs_sha256":  "9aeecda45a021ca9025785b8b6246203126758b75118770538b59c4754d45159",
+                    "output_bits_sha256":  "21f5de671a6a9b6769d328846648d91de1d24f3f369036fcadf6a281150a84d9",
+                    "models_loaded":  false
+                },
+    "fixture":  {
+                    "file":  "philox-v1.bin",
+                    "magic_hex":  "4250485876310000",
+                    "version":  1,
+                    "header_bytes":  16,
+                    "records":  4411,
+                    "record_bytes":  24,
+                    "record_fields":  [
+                                          "seed:i64-le",
+                                          "subsequence:i64-le",
+                                          "counter:u32-le",
+                                          "expected_f32_bits:u32-le"
+                                      ],
+                    "bytes":  105880,
+                    "sha256":  "662aa6850e5726b2e5173002a0182b9b854829389b035b7919c718aae1621e59"
+                },
+    "qualification_boundary":  "Exact scalar replay and independent Random123 known answers do not establish full-model speech quality, performance, or native worker lifecycle acceptance."
+}
