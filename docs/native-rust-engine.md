@@ -332,6 +332,14 @@ true`; command success alone cannot authorize promotion.
 
 ### Required evidence
 
+The [frozen 0.1.10/a809 snapshot](evidence/rust-runtime-promotion-0110-a809.json)
+records the actual evaluator result: four documentary gates passed and thirteen
+pending. It binds the exact reviewed runtime release and historical Runner main
+revision; it cannot qualify later revisions or the four-worker device profile.
+The [bounded device attempt](evidence/prism-0110-service-attempt.json) separately
+retains verified readiness and two streams before the acceptance-checker mismatch;
+the missing rejection/history/Stop observations remain pending.
+
 Required gates cover release provenance, runtime Foundation/conformance, Runner
 Foundation, 8K logits/full state, prompts/sampling/stops, 4K-output lifecycle/recovery,
 complete-model resources, adapter basis/logits, standard-scale TPS/human quality,
