@@ -45,7 +45,7 @@ jobs:
             $manifest = Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml'
             cargo +nightly-2026-10-22 fmt --manifest-path $manifest --all -- --check
             cargo +nightly-2026-10-22 clippy --manifest-path $manifest --locked --release -p bonsai-tools -p bonsai-artifacts -p bonsai-broker --all-targets -- -D warnings
-            cargo +nightly-2026-10-22 test --manifest-path $manifest --locked --release -p bonsai-tools -p bonsai-artifacts --lib
+            cargo +nightly-2026-10-22 test --manifest-path $manifest --locked --release -p bonsai-tools -p bonsai-artifacts -p bonsai-broker --lib
             # Actual-model cases are explicitly ignored and never enabled here.
             cargo +nightly-2026-10-22 test --manifest-path $manifest --locked --release -p bonsai-broker --test native_model
             cargo +nightly-2026-10-22 build --manifest-path $manifest --locked --release -p bonsai-tools --bin bonsai-tools
