@@ -1,6 +1,9 @@
 //! Plain-text find state. Only visible message bodies participate, never reasoning.
 use super::{Message, egui};
-use std::{collections::BTreeMap, ops::Range};
+use std::{
+    collections::{BTreeMap, btree_map::Entry},
+    ops::Range,
+};
 #[cfg(test)]
 mod performance_tests;
 mod shortcuts;
@@ -30,6 +33,9 @@ enum Refresh {
 }
 
 struct CachedMatches {
+    // A full refresh flips the epoch, marks visited entries and drops the rest.
+    // Only one epoch survives retain(), so a boolean needs no wraparound case.
+    epoch: bool,
     // Streaming appends preserve an entry; replacement explicitly removes it.
     // Restored transcripts start with a fresh Search.
     body_bytes: usize,
@@ -45,6 +51,7 @@ impl CachedMatches {
         let scanned = matcher.extend(body, 0, &mut ranges);
         (
             Self {
+                epoch: false,
                 body_bytes: body.len(),
                 ranges,
                 continuation: tail.then_some(matcher),
@@ -70,6 +77,7 @@ pub(super) struct Search {
     // valid when only selection or the streaming tail changes.
     pub(super) query_revision: u64,
     cached_messages: BTreeMap<u64, CachedMatches>,
+    cache_epoch: bool,
     #[cfg(test)]
     scanned_messages: usize,
     #[cfg(test)]
@@ -126,23 +134,24 @@ impl Search {
                 self.cached_messages.clear();
                 query.clone_into(&mut self.cached_query);
             }
-            let mut previous_cache = std::mem::take(&mut self.cached_messages);
+            self.cache_epoch = !self.cache_epoch;
+            let epoch = self.cache_epoch;
             for message in messages {
-                #[cfg(test)]
-                {
-                    self.rebuilt_cache_entries += 1;
-                }
                 let tail = messages.last().is_some_and(|last| last.id == message.id);
-                let mut cached = previous_cache.remove(&message.id).unwrap_or_else(|| {
-                    let (cached, scanned) = CachedMatches::scan(&message.body, &query, tail);
-                    #[cfg(test)]
-                    {
-                        self.scanned_messages += 1;
-                        self.scanned_bytes += scanned;
+                let cached = match self.cached_messages.entry(message.id) {
+                    Entry::Occupied(entry) => entry.into_mut(),
+                    Entry::Vacant(entry) => {
+                        let (cached, scanned) = CachedMatches::scan(&message.body, &query, tail);
+                        #[cfg(test)]
+                        {
+                            self.rebuilt_cache_entries += 1;
+                            self.scanned_messages += 1;
+                            self.scanned_bytes += scanned;
+                        }
+                        let _ = scanned;
+                        entry.insert(cached)
                     }
-                    let _ = scanned;
-                    cached
-                });
+                };
                 if cached.body_bytes != message.body.len() {
                     let scanned = if tail
                         && cached.body_bytes < message.body.len()
@@ -155,7 +164,11 @@ impl Search {
                         )
                     } else {
                         let (fresh, scanned) = CachedMatches::scan(&message.body, &query, tail);
-                        cached = fresh;
+                        *cached = fresh;
+                        #[cfg(test)]
+                        {
+                            self.rebuilt_cache_entries += 1;
+                        }
                         scanned
                     };
                     cached.body_bytes = message.body.len();
@@ -169,6 +182,7 @@ impl Search {
                 if !tail {
                     cached.continuation = None;
                 }
+                cached.epoch = epoch;
                 for range in &cached.ranges {
                     if self.matches.len() == MAX_MATCHES {
                         self.limited = true;
@@ -183,11 +197,14 @@ impl Search {
                         self.copied_matches += 1;
                     }
                 }
-                self.cached_messages.insert(message.id, cached);
                 if self.limited {
                     break;
                 }
             }
+            // Also discard entries after a saturated prefix. They were not
+            // visited and cannot own a valid continuation for the next append.
+            self.cached_messages
+                .retain(|_, cached| cached.epoch == epoch);
         }
         self.active = previous
             .as_ref()
