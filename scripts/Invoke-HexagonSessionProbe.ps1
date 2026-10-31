@@ -1,7 +1,7 @@
 #requires -Version 7.6
 <#
 .SYNOPSIS
-Runs one source-bound native Rust signed-session FD mapping probe in an owned Windows Job.
+Runs one source-bound native Rust catalog-verified FD session probe in an owned Windows Job.
 .DESCRIPTION
 Requires a trusted same-run hosted fixture bundle, exact source revision, pinned
 runtime files and a pinned signtool. A receipt's HostedBuild assertion alone does
@@ -9,7 +9,9 @@ not establish provenance: the caller must verify its CI artifact intake first.
 All hashing, catalog verification and native session mapping run under one aggregate
 worker deadline with 75 seconds reserved for Job teardown and pipe drainage.
 No model, driver installation, trust change or CPU fallback is permitted.
-Success establishes one native signed-session FD mapping cycle, never compute or Swift admission.
+The explicit ReferenceInitialization mode requests the signed package's unsigned
+DSP process class; default mode omits that request. Neither changes OS trust.
+Success establishes one FD mapping cycle in the recorded process mode, never compute or Swift admission.
 #>
 [CmdletBinding(DefaultParameterSetName = 'Execute')]
 [OutputType([Collections.Specialized.OrderedDictionary])]

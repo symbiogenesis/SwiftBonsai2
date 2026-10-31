@@ -26,6 +26,10 @@ on:
         description: Open the fixed signed module and probe one 4 KiB FD mapping in that session
         type: boolean
         default: false
+      reference_initialization:
+        description: For the session probe only, request the signed package's reference unsigned-DSP-process initialization
+        type: boolean
+        default: false
       package_directory:
         description: Optional existing absolute runtime directory on the owner device
         type: string
@@ -48,7 +52,7 @@ jobs:
         with:
           toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
       - name: Require one owner operation within the shared device budget
-        if: (inputs.run_device && inputs.run_dispatch) || (inputs.run_session_probe && (inputs.run_device || inputs.run_dispatch))
+        if: (inputs.run_device && inputs.run_dispatch) || (inputs.run_session_probe && (inputs.run_device || inputs.run_dispatch)) || (inputs.reference_initialization && !inputs.run_session_probe)
         shell: pwsh
         run: throw 'Select exactly one owner operation within the shared five-minute investigation budget.'
       - name: Validate packed layout and bounded inventory supervision without models
@@ -177,6 +181,7 @@ jobs:
         env:
           HEXAGON_PACKAGE_DIRECTORY: ${{ inputs.package_directory }}
           HEXAGON_SIGNTOOL_PATH: ${{ inputs.signtool_path }}
+          HEXAGON_REFERENCE_INITIALIZATION: ${{ inputs.reference_initialization }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
@@ -192,12 +197,14 @@ jobs:
           if ($setup -lt 0 -or $allowance -le 75) { throw 'Owner setup exhausted the verified teardown reserve; session mapping remains pending.' }
           $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-Hexagon-Session-' + [guid]::NewGuid().ToString('N'))
           "BONSAI_HEXAGON_SESSION_EVIDENCE=$evidence" >> $env:GITHUB_ENV
-          $result = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-HexagonSessionProbe.ps1') -PackageDirectory $env:HEXAGON_PACKAGE_DIRECTORY -FixtureDirectory $bundle -OutputDirectory $evidence -SigntoolPath $env:HEXAGON_SIGNTOOL_PATH -ExpectedRunnerRevision $env:GITHUB_SHA -MaximumSeconds $allowance
+          if ($env:HEXAGON_REFERENCE_INITIALIZATION -cnotin @('true','false')) { throw 'Reference initialization selection must be explicit.' }
+          $result = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-HexagonSessionProbe.ps1') -PackageDirectory $env:HEXAGON_PACKAGE_DIRECTORY -FixtureDirectory $bundle -OutputDirectory $evidence -SigntoolPath $env:HEXAGON_SIGNTOOL_PATH -ExpectedRunnerRevision $env:GITHUB_SHA -MaximumSeconds $allowance -ReferenceInitialization:($env:HEXAGON_REFERENCE_INITIALIZATION -ceq 'true')
           [ordered]@{
             SchemaVersion = 1; RunnerRevision = $env:GITHUB_SHA; RunId = $env:GITHUB_RUN_ID; RunAttempt = $env:GITHUB_RUN_ATTEMPT
             WholeJobMaximumSeconds = 300; PreparationElapsedMilliseconds = [Math]::Ceiling($setup * 1000)
             ProbeAggregateAllowanceSeconds = $allowance; PostProcessReserveSeconds = 30; TrustedSameRunIntake = $true
             Outcome = $result.Outcome; SwiftQualified = $false; ProfileEligible = $false
+            ReferenceInitializationSelected = $env:HEXAGON_REFERENCE_INITIALIZATION -ceq 'true'
           } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidence 'host.json') -Encoding utf8NoBOM
           @('One native Rust signed-module open and terminal 4 KiB FD mapping probe; no compute or model.',
             'Missing signed-session mapping, vendor teardown or custom packed-kernel evidence keeps admission disabled.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY

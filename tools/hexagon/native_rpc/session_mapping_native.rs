@@ -237,13 +237,11 @@ fn reference_after_domain(
         return report;
     }
     let mut uri = [0xa5; 256];
-    match session_native::prepare_fixed_uri(report.metadata, control, &mut uri) {
-        Ok(metadata) => report.metadata = metadata,
-        Err(_) => {
-            report.stage = "session-metadata-incomplete";
-            return report;
-        }
-    }
+    let Ok(metadata) = session_native::prepare_fixed_uri(report.metadata, control, &mut uri) else {
+        report.stage = "session-metadata-incomplete";
+        return report;
+    };
+    report.metadata = metadata;
     if !report.metadata.metadata_prepared() {
         report.stage = "session-metadata-incomplete";
         return report;
@@ -630,7 +628,7 @@ mod tests {
             }
             // SAFETY: the fixed caller owns its 256-byte writable output array.
             unsafe {
-                std::ptr::copy_nonoverlapping(uri.as_ptr(), request.uri.cast::<u8>(), uri.len())
+                std::ptr::copy_nonoverlapping(uri.as_ptr(), request.uri.cast::<u8>(), uri.len());
             };
             0
         } else {
