@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "kind": "curated-public-standard-mode-C-compile-refusal",
+  "runId": "41171448060",
+  "runUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41171448060",
+  "runnerRevision": "de17d0eed1a67d912a438b5a4de5c7ee1ca32519",
+  "artifact": {
+    "id": 13030869102,
+    "name": "hexagon-public-qaic-41171448060-1",
+    "bytes": 119584,
+    "digest": "sha256:87ca1783b254d7fd362501b04fe9751070554328a6be2464256498fc79133c03",
+    "metadataUrl": "https://api.github.com/repos/symbiogenesis/SwiftBonsai2Runner/actions/artifacts/13030869102",
+    "digestSource": "independently-read-GitHub-Actions-artifact-metadata",
+    "artifactZipDigestLocallyVerified": false
+  },
+  "retainedFiles": [
+    {
+      "path": "host.json",
+      "artifactPath": "host.json",
+      "bytes": 23862,
+      "sha256": "abf43413868645a7ec61f7bee5d9be9f0a9692e99805b95a7f224b2686c558ab",
+      "artifactBytesPreserved": true
+    },
+    {
+      "path": "wire-compile.log",
+      "artifactPath": "wire-compile.log",
+      "bytes": 4668,
+      "sha256": "cf7b9ca087a7253aec920cf3cf03111312c1ae19c3622f800c700b6370904006",
+      "artifactBytesPreserved": true
+    },
+    {
+      "path": "licenses/LICENSE-QAIC.txt",
+      "artifactPath": "inputs-and-notices/LICENSE-QAIC.txt",
+      "bytes": 1689,
+      "sha256": "3a15c06f7c0f8e38e884e0a20e739fe0d92c1ac0996928af4ab119170603d1f8",
+      "artifactBytesPreserved": true
+    },
+    {
+      "path": "licenses/LICENSE-FastRPC.txt",
+      "artifactPath": "inputs-and-notices/LICENSE-FastRPC.txt",
+      "bytes": 1565,
+      "sha256": "683e80f5436e6b0761139e626d2c764870ea0ed19b14916ef4c82772b99c4d44",
+      "artifactBytesPreserved": true
+    },
+    {
+      "path": "licenses/LICENSE-llama.cpp.txt",
+      "artifactPath": "inputs-and-notices/LICENSE-llama.cpp.txt",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "artifactBytesPreserved": true
+    }
+  ],
+  "hostedSourceVerification": [
+    {
+      "path": "tools/hexagon/public_qaic_oracle.py",
+      "gitBlobSha256": "7ecd51a5962dd8dd31828a56c62e74f13047c7cd1f3413e7a23d0c8afabe1a8b",
+      "hostedSha256": "7ecd51a5962dd8dd31828a56c62e74f13047c7cd1f3413e7a23d0c8afabe1a8b",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public-qaic.lock.json",
+      "gitBlobSha256": "c8693e3e83cc7e5ce1a96aa34f888f74b935ab42bc2b35c0362e77048587901f",
+      "hostedSha256": "c8693e3e83cc7e5ce1a96aa34f888f74b935ab42bc2b35c0362e77048587901f",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public_qaic_wire.py",
+      "gitBlobSha256": "cd893f31729ff2e0deab2c1219bdb130d199f783f97c268d231052b1e74ca161",
+      "hostedSha256": "cd893f31729ff2e0deab2c1219bdb130d199f783f97c268d231052b1e74ca161",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    }
+  ],
+  "selection": "host receipt, exact compile log and original licenses; repeated bootstrap inputs/logs omitted",
+  "observed": {
+    "compileExitCode": 1,
+    "mockExecuted": false,
+    "rustComparisonExecuted": false,
+    "failureScope": "standard-type-generated-header-retains-named-AEEResult-but-does-not-include-its-public-declaration; not-device-refusal",
+    "resolvedByLaterControl": "checked-public-AEEStdDef.h-forced-include; no-custom-typedef-or-vendor-patch",
+    "goldenFixtureChanged": false
+  },
+  "scope": "public-host-compile-only-losing-observation",
+  "sdkExecutableUsed": false,
+  "deviceCodeLoaded": false,
+  "profileEligible": false
+}

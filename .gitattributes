@@ -32,3 +32,7 @@ tools/hexagon/public_idl_control.rs text eol=lf
 # Preserve curated losing/standard-mode public observations as original data bytes.
 docs/evidence/hexagon-public-qaic-41170405233/** -text -whitespace
 docs/evidence/hexagon-public-qaic-41171073546/** -text -whitespace
+
+# Preserve final public wire evidence and the separate standard-mode compile refusal.
+docs/evidence/hexagon-public-qaic-41171859264/** -text -whitespace
+docs/evidence/hexagon-public-qaic-41171448060/** -text -whitespace

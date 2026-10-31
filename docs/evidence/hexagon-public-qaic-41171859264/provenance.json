@@ -1,0 +1,658 @@
+{
+  "schemaVersion": 1,
+  "kind": "independently-verified-public-Linux-C-Rust-wire-control",
+  "runId": "41171859264",
+  "runUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41171859264",
+  "runnerRevision": "8c69947b7b98a8d406d15c639d83f926a3b643cc",
+  "artifact": {
+    "id": 13031258586,
+    "name": "hexagon-public-qaic-41171859264-1",
+    "bytes": 129129,
+    "digest": "sha256:a44aaf4d75f77cb1331949516e3a576bbeca97da6e391f59a1a723d9d2921919",
+    "metadataUrl": "https://api.github.com/repos/symbiogenesis/SwiftBonsai2Runner/actions/artifacts/13031258586",
+    "digestSource": "independently-read-GitHub-Actions-artifact-metadata",
+    "artifactZipDigestLocallyVerified": false
+  },
+  "retainedFiles": [
+    {
+      "path": "cabal-version.log",
+      "artifactPath": "cabal-version.log",
+      "bytes": 9,
+      "sha256": "4554770c1cb00d7017b4f6ae07053da892c1fc6bf2a4a31f92a112ed1e3ce112",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "file2hs-before-build.freeze",
+      "artifactPath": "file2hs-before-build.freeze",
+      "bytes": 277,
+      "sha256": "4f8f56c8657486361f23cc724519bdc8fe0b6ff2e1dae7f47007343b0e73a9e3",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "file2hs-cabal.project",
+      "artifactPath": "file2hs-cabal.project",
+      "bytes": 87,
+      "sha256": "25d05e64775d07ef1f42a3b5defe8b7fd0e9ee26d18faed7b6c2edf74d905965",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "file2hs-cabal.project.freeze",
+      "artifactPath": "file2hs-cabal.project.freeze",
+      "bytes": 277,
+      "sha256": "4f8f56c8657486361f23cc724519bdc8fe0b6ff2e1dae7f47007343b0e73a9e3",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "file2hs-cabal.project.local",
+      "artifactPath": "file2hs-cabal.project.local",
+      "bytes": 22,
+      "sha256": "8d018a85a8a4f939e36ec775bd78426416b697a845728869145b2537f21f4667",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "file2hs-dist-newstyle-cache-plan.json",
+      "artifactPath": "file2hs-dist-newstyle-cache-plan.json",
+      "bytes": 1678,
+      "sha256": "42b8a2b065b3707b9546cedbdabc75b2d11d33b3500c72b41b103b5e87adfd87",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "file2hs-freeze.log",
+      "artifactPath": "file2hs-freeze.log",
+      "bytes": 162,
+      "sha256": "67c15dd8bf20cdb36aa6b760415920ee45778216f48892c584557a94616a1a65",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "generated-public-source/htp_iface.h.txt",
+      "artifactPath": "generated-public-source/htp_iface.h",
+      "bytes": 7920,
+      "sha256": "84e34d52796581fd2e6ebe236e65e4980bd3c6633325f6a81774f24924baa038",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "generated-public-source/htp_iface_skel.c.txt",
+      "artifactPath": "generated-public-source/htp_iface_skel.c",
+      "bytes": 20248,
+      "sha256": "b517ef6f7b895bc42133cac2b97258bd1d0618c1b47b84c878d10d616f6e541d",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "generated-public-source/htp_iface_stub.c.txt",
+      "artifactPath": "generated-public-source/htp_iface_stub.c",
+      "bytes": 16963,
+      "sha256": "3ea8854291ef82fa5e87e4a0d1cdec45b558941774b157995e085a6e1560fe92",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "ghc-info.log",
+      "artifactPath": "ghc-info.log",
+      "bytes": 3109,
+      "sha256": "72a3dac795c19289ec099dfb745493161cca02336cd0a856603e66a554983c8b",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "ghc-libdir.log",
+      "artifactPath": "ghc-libdir.log",
+      "bytes": 48,
+      "sha256": "b1b953e635a40184cf08089be89b27cac1d1fba48b43b8b71d069b8fb4a580dd",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "ghc-package-db.log",
+      "artifactPath": "ghc-package-db.log",
+      "bytes": 148289,
+      "sha256": "f86b65561a2d9ae5ca19d9b55a64d4fda1866bbb555ae91b426a6e8f48124470",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "ghc-version.log",
+      "artifactPath": "ghc-version.log",
+      "bytes": 7,
+      "sha256": "9eb530c7120599fed886a06f8ba0958266eb4c950a9f7a67daf9e960558722f3",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "hackage-update.log",
+      "artifactPath": "hackage-update.log",
+      "bytes": 163,
+      "sha256": "4be62568f328e88e9e6db7723c8fb76981c6c0224d7b9b625e986612a6018a8d",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "host.json",
+      "artifactPath": "host.json",
+      "bytes": 33074,
+      "sha256": "574fa0528d16bb3f429af976748e68e0fcb20dea1b3d2e2fe9c2999554fbbbb7",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "independent-generation.log",
+      "artifactPath": "independent-generation.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "inputs-and-notices/AEEStdDef.idl",
+      "artifactPath": "inputs-and-notices/AEEStdDef.idl",
+      "bytes": 1793,
+      "sha256": "dda9bee2163b148be27365c101c11356cbefa691c3687a34586e705c074c7ddc",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "inputs-and-notices/htp_iface.idl",
+      "artifactPath": "inputs-and-notices/htp_iface.idl",
+      "bytes": 718,
+      "sha256": "196448f5166f300c572172b83a51e128e71e4471f13e30d0c5f88d6ce0cfe8bc",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "inputs-and-notices/LICENSE-FastRPC.txt",
+      "artifactPath": "inputs-and-notices/LICENSE-FastRPC.txt",
+      "bytes": 1565,
+      "sha256": "683e80f5436e6b0761139e626d2c764870ea0ed19b14916ef4c82772b99c4d44",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "inputs-and-notices/LICENSE-llama.cpp.txt",
+      "artifactPath": "inputs-and-notices/LICENSE-llama.cpp.txt",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "inputs-and-notices/LICENSE-QAIC.txt",
+      "artifactPath": "inputs-and-notices/LICENSE-QAIC.txt",
+      "bytes": 1689,
+      "sha256": "3a15c06f7c0f8e38e884e0a20e739fe0d92c1ac0996928af4ab119170603d1f8",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "inputs-and-notices/QAIC-template-Allocator.c.txt",
+      "artifactPath": "inputs-and-notices/QAIC-template-Allocator.c",
+      "bytes": 2014,
+      "sha256": "a56e2e6f4b09de1f959e9ef0185ea1b2312eb848c6debd1781d5a420a99f1127",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "inputs-and-notices/QAIC-template-CStub.c.txt",
+      "artifactPath": "inputs-and-notices/QAIC-template-CStub.c",
+      "bytes": 3111,
+      "sha256": "5f7bd861ad40c089bde8cc93b68d0687e3f3a240cbab1bcff9b60eb494ce4214",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "inputs-and-notices/QAIC-template-Env.c.txt",
+      "artifactPath": "inputs-and-notices/QAIC-template-Env.c",
+      "bytes": 4526,
+      "sha256": "3f1e229596e18da85c1645fa5d29375319471680e774eb0d70aa01c20a4b7c28",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "inputs-and-notices/QAIC-template-Slim.c.txt",
+      "artifactPath": "inputs-and-notices/QAIC-template-Slim.c",
+      "bytes": 5430,
+      "sha256": "f5c3c8d88284bf606c6b44858b17a80a67f03e1f3c81955d7d7240551d43504d",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "inputs-and-notices/QAIC-template-Stub.c.txt",
+      "artifactPath": "inputs-and-notices/QAIC-template-Stub.c",
+      "bytes": 1387,
+      "sha256": "8fcd0627db58983a55b7a359e1d0b3eafbb1908d38a55752d525284eacbf2377",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "inputs-and-notices/remote.idl",
+      "artifactPath": "inputs-and-notices/remote.idl",
+      "bytes": 1498,
+      "sha256": "43b4130d14dc4152b9b3cafc7899d781e2e3546076383a65159774000275021e",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "NOTICES.txt",
+      "artifactPath": "NOTICES.txt",
+      "bytes": 412,
+      "sha256": "c5451cf53cc46bb051417df67b0a027821d1456adf3bf2146dbfd06270e53651",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "public_idl_control.rs.txt",
+      "artifactPath": "public_idl_control.rs",
+      "bytes": 6049,
+      "sha256": "49cf427afc5e145c0f32aeb79a8bd2636fca8f5665c0f089a26b021ed7d119a4",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "qaic-before-build.freeze",
+      "artifactPath": "qaic-before-build.freeze",
+      "bytes": 1028,
+      "sha256": "8fc54632de05d73fb3b0d7eec4440013ae3519dd906441f2ace2b67be4acf360",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "qaic-cabal.project",
+      "artifactPath": "qaic-cabal.project",
+      "bytes": 87,
+      "sha256": "25d05e64775d07ef1f42a3b5defe8b7fd0e9ee26d18faed7b6c2edf74d905965",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "qaic-cabal.project.freeze",
+      "artifactPath": "qaic-cabal.project.freeze",
+      "bytes": 1028,
+      "sha256": "8fc54632de05d73fb3b0d7eec4440013ae3519dd906441f2ace2b67be4acf360",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "qaic-cabal.project.local",
+      "artifactPath": "qaic-cabal.project.local",
+      "bytes": 22,
+      "sha256": "8d018a85a8a4f939e36ec775bd78426416b697a845728869145b2537f21f4667",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "qaic-dist-newstyle-cache-plan.json",
+      "artifactPath": "qaic-dist-newstyle-cache-plan.json",
+      "bytes": 6385,
+      "sha256": "945e3f1d9769d88953d1df99dd72a3b52fc4ebd8599be3e478309e1b1e88c988",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "qaic-freeze.log",
+      "artifactPath": "qaic-freeze.log",
+      "bytes": 154,
+      "sha256": "5287366369477b2001c2adc9c43bd835ef927beb9c3a03b4523650da3b1403c7",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "qaic-source-files.json",
+      "artifactPath": "qaic-source-files.json",
+      "bytes": 26262,
+      "sha256": "9c07fe3db93de335c0e5ddb4477c10f31aaf3f8caa8204c2e598f77d011d12df",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "source-clean.log",
+      "artifactPath": "source-clean.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "source-generator-version.log",
+      "artifactPath": "source-generator-version.log",
+      "bytes": 158,
+      "sha256": "2b6ea69b9048b4f1708f777583eda0df3ccfab65715f4ecd699775f1a18c3cdb",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "source-inventory.log",
+      "artifactPath": "source-inventory.log",
+      "bytes": 6067,
+      "sha256": "0f5c00ba05aca5ab3fc5540fd8a52f272fdade0c8016858f98dfc3fdd6f03e9d",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "source-revision.log",
+      "artifactPath": "source-revision.log",
+      "bytes": 41,
+      "sha256": "962c2902c47bccc23527bf9afb1cc2de97567c117b7c4a363d94058118e844e7",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "source-root.log",
+      "artifactPath": "source-root.log",
+      "bytes": 84,
+      "sha256": "3988a124cab68aa7470334055253bc5cc53afe6ef10ecfe969d442aa0f25f8da",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "upstream-make.log",
+      "artifactPath": "upstream-make.log",
+      "bytes": 92243,
+      "sha256": "f61eec3a750c9cba3c3be22b430fa08853c1cd2f9eb6bdd9dace933a0b8f9377",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-capture.log",
+      "artifactPath": "wire-capture.log",
+      "bytes": 905,
+      "sha256": "d8335a9b786bc6ba8223f18bf3b4648d930d1cc06a1f37b964d8ee698ecbe556",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-compile.log",
+      "artifactPath": "wire-compile.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-gcc-as.log",
+      "artifactPath": "wire-gcc-as.log",
+      "bytes": 3,
+      "sha256": "8b97bca79750847558d488e2ea4de79903c9c71c9af27ecf1b3dff5dba2abdd9",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-gcc-banner.log",
+      "artifactPath": "wire-gcc-banner.log",
+      "bytes": 266,
+      "sha256": "ae487f55927d605284a32711e4ecf6bc3be2bcd5a9de414ace0936264b741f85",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-gcc-cc1.log",
+      "artifactPath": "wire-gcc-cc1.log",
+      "bytes": 41,
+      "sha256": "a8081bc5652e2ec80147e680dfc24dd61f11820e2109d1e3b759d77c378583a9",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-gcc-ld.log",
+      "artifactPath": "wire-gcc-ld.log",
+      "bytes": 3,
+      "sha256": "3b6cb8ae51045d062a7c7de7cc488ad8785144cfbc0a7fc9546ed52429e0d97f",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-gcc-specs.log",
+      "artifactPath": "wire-gcc-specs.log",
+      "bytes": 11008,
+      "sha256": "3a269a0e5ee21101352e1f276f347d289e4152854796704a46416964b170e0dc",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-gcc-target.log",
+      "artifactPath": "wire-gcc-target.log",
+      "bytes": 17,
+      "sha256": "08cababdf891ccbf96eb376f1e84f279f70302fb13d84e5f98637becdfc6d989",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-gcc-version.log",
+      "artifactPath": "wire-gcc-version.log",
+      "bytes": 7,
+      "sha256": "bb6aade8c4ca40cae9cb1be8abe12377f651fccd82954af74ec61703b6608fc5",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-link.map",
+      "artifactPath": "wire-link.map",
+      "bytes": 21648,
+      "sha256": "3fcf96208b8798560ae13c22ccdd09fb46d4b361bf91792a21f34f9b1e0cd185",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-public-inputs/AEEStdDef.h.txt",
+      "artifactPath": "wire-public-inputs/AEEStdDef.h",
+      "bytes": 7999,
+      "sha256": "319a834050e0a53eaecaef0c54d84dab3133ea340de5f68d9f213a7d5463ed3d",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "wire-public-inputs/AEEStdErr.h.txt",
+      "artifactPath": "wire-public-inputs/AEEStdErr.h",
+      "bytes": 21724,
+      "sha256": "e25d3f48cfff870394c2af5a18b21c7b050c1370594f3193b5ad7d8033a3ff57",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "wire-public-inputs/HAP_debug.h.txt",
+      "artifactPath": "wire-public-inputs/HAP_debug.h",
+      "bytes": 2822,
+      "sha256": "68103f23d79da9149588d07fb1397e3508730e8b0f71e4a5a1ffaa5b3baf4c43",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "wire-public-inputs/HAP_farf.h.txt",
+      "artifactPath": "wire-public-inputs/HAP_farf.h",
+      "bytes": 7692,
+      "sha256": "08656b697776a6a25b34d57e2bb908ddba499972c202e103c21ebebbbf47e07a",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "wire-public-inputs/public-qaic-wire.expected.json",
+      "artifactPath": "wire-public-inputs/public-qaic-wire.expected.json",
+      "bytes": 1797,
+      "sha256": "de50944e2eab9c56eab0544a42c2754c421e4bdcb5cae20ac52294981aa3e552",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-public-inputs/public_qaic_wire.c.txt",
+      "artifactPath": "wire-public-inputs/public_qaic_wire.c",
+      "bytes": 5643,
+      "sha256": "a3d8ca46afe5bdf58690a58f243ad917fe97d68c879f67a02a257f24725fc0bb",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "wire-public-inputs/remote.h.txt",
+      "artifactPath": "wire-public-inputs/remote.h",
+      "bytes": 65625,
+      "sha256": "f9d0690cfd8953697d6fc3163c2be448a7b5b801148808c9b1b360857aeabc44",
+      "artifactBytesPreserved": true,
+      "role": "captured-public-source-data-no-build-consumer"
+    },
+    {
+      "path": "wire-rust-build.log",
+      "artifactPath": "wire-rust-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-rust-contract.log",
+      "artifactPath": "wire-rust-contract.log",
+      "bytes": 186,
+      "sha256": "d7ab53232838a1dd049666fc5a351df02dc20029b0d1e7c4f34cbe5f7c6a1e47",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-rust-encoding.log",
+      "artifactPath": "wire-rust-encoding.log",
+      "bytes": 658,
+      "sha256": "d88d6b87dcca5091998aad97a1506c7244c0cfc1c64d7ad1e3cd49a4d22b5859",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-rust-test-build.log",
+      "artifactPath": "wire-rust-test-build.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-rustc-sysroot.log",
+      "artifactPath": "wire-rustc-sysroot.log",
+      "bytes": 76,
+      "sha256": "5386c4ce00b434076c334eea68cb7494870eb2105382a996a3ee66d9fb4eb8ca",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    },
+    {
+      "path": "wire-rustc-version.log",
+      "artifactPath": "wire-rustc-version.log",
+      "bytes": 214,
+      "sha256": "9485f855e24739bb1b59c79900a51e9f08d864cb178169827f1b1b2a5d0b711e",
+      "artifactBytesPreserved": true,
+      "role": "retained-public-control-data"
+    }
+  ],
+  "retainedArtifactFileCount": 66,
+  "retainedArtifactBytes": 545496,
+  "hostedSourceVerification": [
+    {
+      "path": "tools/hexagon/public_qaic_oracle.py",
+      "bytes": 17972,
+      "gitBlobSha256": "7ecd51a5962dd8dd31828a56c62e74f13047c7cd1f3413e7a23d0c8afabe1a8b",
+      "hostedSha256": "7ecd51a5962dd8dd31828a56c62e74f13047c7cd1f3413e7a23d0c8afabe1a8b",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public-qaic.lock.json",
+      "bytes": 8425,
+      "gitBlobSha256": "554864c7f7992bc6e67aadb60cf9a2fa72e0452c9fe4831157086d212810da78",
+      "hostedSha256": "554864c7f7992bc6e67aadb60cf9a2fa72e0452c9fe4831157086d212810da78",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public_qaic_wire.py",
+      "bytes": 10207,
+      "gitBlobSha256": "21c74371ed925595110789625b3cfe86bc7cfafae0f7fbf5a9b95d4a90c8c625",
+      "hostedSha256": "21c74371ed925595110789625b3cfe86bc7cfafae0f7fbf5a9b95d4a90c8c625",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public_qaic_wire.c",
+      "bytes": 5643,
+      "gitBlobSha256": "a3d8ca46afe5bdf58690a58f243ad917fe97d68c879f67a02a257f24725fc0bb",
+      "hostedSha256": "a3d8ca46afe5bdf58690a58f243ad917fe97d68c879f67a02a257f24725fc0bb",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public-qaic-wire.expected.json",
+      "bytes": 1797,
+      "gitBlobSha256": "de50944e2eab9c56eab0544a42c2754c421e4bdcb5cae20ac52294981aa3e552",
+      "hostedSha256": "de50944e2eab9c56eab0544a42c2754c421e4bdcb5cae20ac52294981aa3e552",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public_idl_rust.py",
+      "bytes": 5817,
+      "gitBlobSha256": "13099e9221e269506b8c6516dab6e9f3a2109b3880502d75dffda5bec286d88e",
+      "hostedSha256": "13099e9221e269506b8c6516dab6e9f3a2109b3880502d75dffda5bec286d88e",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    },
+    {
+      "path": "tools/hexagon/public_idl_control.rs",
+      "bytes": 6049,
+      "gitBlobSha256": "49cf427afc5e145c0f32aeb79a8bd2636fca8f5665c0f089a26b021ed7d119a4",
+      "hostedSha256": "49cf427afc5e145c0f32aeb79a8bd2636fca8f5665c0f089a26b021ed7d119a4",
+      "checkoutTransform": "none-Linux-Git-blob-bytes",
+      "matched": true
+    }
+  ],
+  "verification": {
+    "successfulCommandLogsVerified": 30,
+    "repositorySourceIdentitiesVerified": 7,
+    "original163FileQaicInventoryMatched": true,
+    "publicInputsAndFiveRuntimeHeadersVerified": true,
+    "generatedSourceUnchangedFromReviewedStandardMode": true,
+    "dependencyFreezesAndSybPinsReplayed": true,
+    "typedCAndRustLogsEqualHostAndIndependentExpected": true,
+    "sevenFieldsDecodedAtOffsets": [
+      0,
+      8,
+      16,
+      20,
+      24,
+      32,
+      40
+    ],
+    "zeroGapBytes": [
+      4,
+      5,
+      6,
+      7
+    ],
+    "zeroTailBytes": [
+      44,
+      45,
+      46,
+      47
+    ],
+    "cCallCount": 2,
+    "cUnexpectedCalls": 0,
+    "cBothReturnCodesZero": true,
+    "publicAeeStdDefHeaderForcedInclude": true,
+    "customTypedefShimOrGeneratedPatch": false,
+    "linkMapShowsSystemCrtGccLibcAndLocalObjectsOnly": true,
+    "rustContractPassed": true,
+    "rustEncodingMatchedGeneratedC": true,
+    "compilerExecutableBytesRetained": false,
+    "compilerOrOsClosureComplete": false
+  },
+  "scope": "one-fixed-positive-start/stop-vector; public-QAIC-standard-types/public-FastRPC-headers; hosted-Linux-x86_64-LP64-little-endian-only",
+  "publicWireControlPassed": true,
+  "sdkEquivalenceQualified": false,
+  "WindowsArm64AbiQualified": false,
+  "driverLoaded": false,
+  "deviceCodeLoaded": false,
+  "queueOwnershipQualified": false,
+  "nativeComputeQualified": false,
+  "wholeModelQualified": false,
+  "profileEligible": false,
+  "sharedAdditionalTemplateNotices": "docs/evidence/hexagon-public-qaic-41169481882/provenance.json",
+  "authority": "data-only-evidence; no-production-build-consumer-or-device-admission"
+}

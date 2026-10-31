@@ -567,10 +567,12 @@ Follow [Hexagon contracts](docs/hexagon.md).
   `remote_work.h` and effective Windows conditionals/layout/calling conventions
   and import closure before Rust invocation; the public Windows `remote_ext.h`
   input also remains unpinned. Establish applicable SDK tool/output terms; the uncertain NOTICE
-  decoding and keyword observations establish no grant. Bind the [captured public-source QAIC header/stub/skeleton](docs/evidence/hexagon-public-qaic-41169481882/provenance.json)
-  to independent mock-RPC wire observations and Rust replay. Reproduce the captured
-  dependency resolution and complete compiler identity; public generation alone
-  does not qualify SDK/public marshalling equivalence or the signed device ABI.
+  decoding and keyword observations establish no grant. The [public generated-C/Rust
+  wire control](docs/evidence/hexagon-public-qaic-41171859264/provenance.json) passed
+  for one fixed 48-byte start frame and null-argument stop on hosted Linux LP64,
+  replaying pinned dependency inputs. Preserve its exact source/compiler identities
+  when extending coverage; it does not qualify SDK/public equivalence, Windows
+  ARM64 ABI, queue ownership, signed device computation or whole-model behavior.
   Preserve the reviewed Windows explicit-zero/read-noblock route and symbolic
   timeout default. Compare public infinite-wait, FD/cache/callback/import-close
   contracts and authoritative u64 close against the matching SDK; the reference

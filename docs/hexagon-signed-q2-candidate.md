@@ -276,8 +276,8 @@ tar SHA-256 to `ddcaca983f67a170c0cfdbd037a268779880e2f9b57f93135eaccb6ae4c5da3f
 and records the Cabal-metadata hash and GHC package identities. Both freezes are
 unchanged through the build. Requested Hackage index time is
 `2026-10-29T00:00:00Z`; the effective frozen index entry is
-`2026-10-28T23:27:22Z`. Replaying a checked-in dependency resolution remains a
-separate control. The GHC file identity is its 424-byte launcher, so it does not
+`2026-10-28T23:27:22Z`. The passing wire control below replays the pinned freezes
+and `syb` identities. This first GHC file identity is its 424-byte launcher, so it does not
 independently identify the complete compiler/toolchain closure. Cabal and the
 12,077,520-byte generator have hosted-reported executable identities; those
 executable bytes were not uploaded in the artifact.
@@ -292,9 +292,10 @@ available as imports. `AEEStdDef.idl` explicitly warns against compiling it as a
 standalone input. Retain every import, command and generated header/stub/skeleton
 digest. The actual generated header is 7,889 bytes, host stub 16,931 bytes and
 skeleton 20,188 bytes. Their exact identities and unchanged captured bytes are
-retained. This closes public-source generation only; independently captured
-marshalling bytes, Rust replay, equivalence to SDK6.7 imports/tool and the exact
-signed-module build remain separate gates. A declaration or generated C function
+retained. This first receipt closes public-source generation only; the later
+public wire control below independently captures and replays its fixed frame.
+Equivalence to SDK6.7 imports/tool and the exact signed-module build remain
+separate gates. A declaration or generated C function
 signature does not authorize device invocation.
 
 The [first C compile attempt](evidence/hexagon-public-qaic-41170405233/provenance.json),
@@ -320,6 +321,38 @@ The later receipts also identify the selected installation's 2,123,392-byte GHC
 ELF compiler and runtime executable candidates, alongside the original launcher.
 That improves the recorded tool identity while retaining the explicit limit:
 the complete toolchain and operating-system closure is not established.
+
+The [second compile refusal](evidence/hexagon-public-qaic-41171448060/provenance.json)
+preserves the standard-mode header's missing `AEEResult` declaration. It also
+stopped before C mock or Rust execution. The final control supplies that named
+alias through a forced include of the exact checked public `AEEStdDef.h`, with
+no custom typedef, generated-source edit, SDK input or change to the golden frame.
+
+The [final public C/Rust wire control](evidence/hexagon-public-qaic-41171859264/provenance.json)
+passed on hosted Linux x86_64 in run 41171859264 at
+`8c69947b7b98a8d406d15c639d83f926a3b643cc`. Independent review verified seven exact
+repository source/pin identities, every successful command log, public headers
+and inputs, unchanged generated files, pinned freezes and the independent expected
+vector. All 66 artifact files, totaling 545,496 bytes, are retained with their
+original raw hashes and notices; captured C/header/Rust source has `.txt` suffixes
+and no production build consumer. Artifact ZIP digests remain reported GitHub
+metadata, distinct from locally verified retained-file hashes.
+
+The C mock recorded exactly two calls, no unexpected calls and two zero returns.
+`start` used scalar `0x02010000`, one 48-byte input and the separate synthetic
+64-bit handle. All seven fields at offsets 0/8/16/20/24/32/40 and zero padding at
+4–7 and 44–47 match the independent fixture. `stop` used `0x03000000` with null
+arguments. The standalone std-only Rust encoder passed its contract and emitted
+the same strictly typed fields and bytes. GCC 13.3.0 driver/components and the
+dated Rust compiler/driver identities, flags, source and executable hashes are
+recorded; executable/compiler binaries are not retained. The C link map contains
+system CRT/libgcc/libc and local objects, with no SDK or FastRPC runtime library.
+
+This achieves the public fixed-positive-vector start/stop wire gate on little-endian
+Linux LP64. It qualifies no other RPC methods or vectors, matching SDK/Windows
+ARM64 ABI, queue/cache/callback ownership, signed DSP identity, native device
+computation, Swift numerics, whole-model behavior or profile admission. Those
+remain separate work under PLAN.md.
 
 The pinned public compiler's
 [BSD-3-Clause-Clear license](https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/LICENSE.txt)

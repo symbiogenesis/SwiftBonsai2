@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "testVectorId": "htp-start-distinct-positive-v1",
+  "handleHex": "1020304050607080",
+  "start": {
+    "scalars": 33619968,
+    "method": 2,
+    "inputBuffers": 1,
+    "outputBuffers": 0,
+    "inputHandles": 0,
+    "outputHandles": 0,
+    "argsNull": false,
+    "primaryBytes": 48,
+    "primaryHex": "443322110000000018077665544332216453423174635241483726150473625158473625140372611403827100000000"
+  },
+  "stop": {
+    "scalars": 50331648,
+    "method": 3,
+    "inputBuffers": 0,
+    "outputBuffers": 0,
+    "inputHandles": 0,
+    "outputHandles": 0,
+    "argsNull": true,
+    "primaryBytes": 0,
+    "primaryHex": ""
+  },
+  "derivation": {
+    "scope": "independent-public-generator-source-derivation-before-generated-C-capture; not-SDK-equivalence",
+    "qaicCommit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
+    "idlCommit": "19cce6919992fdffd92e0ac152caaf1e2b8f254e",
+    "parameterOffsets": [0, 8, 16, 20, 24, 32, 40],
+    "logicalBytes": 44,
+    "primaryArray": "six-zero-initialized-uint64-elements; gap4..7-and-tail44..47-zero",
+    "parameterHex": ["11223344", "2132435465760718", "31425364", "41526374", "5162730415263748", "6172031425364758", "71820314"],
+    "sources": [
+      "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/SO/ToCStub.hs",
+      "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/Slim/ToSlim.hs",
+      "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/Slim/Serialize.hs",
+      "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/SO/Args.hs",
+      "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/SO/Pack.hs"
+    ]
+  }
+}

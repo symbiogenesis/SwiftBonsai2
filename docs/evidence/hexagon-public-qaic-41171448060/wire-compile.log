@@ -1,0 +1,44 @@
+In file included from /home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c:3:
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:22: error: unknown type name ‘AEEResult’
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32_t sess_id, uint64_t dsp_queue_id, uint32_t n_hvx, uint32_t n_hmx, uint64_t vtcm_size, uint64_t max_vmem, uint32_t power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:261:22: error: unknown type name ‘AEEResult’
+  261 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_stop)(remote_handle64 _h) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:262:22: error: unknown type name ‘AEEResult’
+  262 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_mmap)(remote_handle64 _h, uint32_t fd, uint64_t size) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:263:22: error: unknown type name ‘AEEResult’
+  263 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_munmap)(remote_handle64 _h, uint32_t fd) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:264:22: error: unknown type name ‘AEEResult’
+  264 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_profiler)(remote_handle64 _h, uint32_t mode, const htp_iface_pmu_conf* pmu) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:265:22: error: unknown type name ‘AEEResult’
+  265 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_etm)(remote_handle64 _h, uint32_t enable) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:266:22: error: unknown type name ‘AEEResult’
+  266 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_hwinfo)(remote_handle64 _h, uint32_t* n_threads, uint32_t* n_hvx, uint32_t* n_hmx, uint64_t* vtcm_size) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+In file included from /home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/wire-public-inputs/public_qaic_wire.c:9:
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:260:22: error: unknown type name ‘AEEResult’
+  260 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_start)(remote_handle64 _h, uint32_t sess_id, uint64_t dsp_queue_id, uint32_t n_hvx, uint32_t n_hmx, uint64_t vtcm_size, uint64_t max_vmem, uint32_t power_mode) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:261:22: error: unknown type name ‘AEEResult’
+  261 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_stop)(remote_handle64 _h) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:262:22: error: unknown type name ‘AEEResult’
+  262 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_mmap)(remote_handle64 _h, uint32_t fd, uint64_t size) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:263:22: error: unknown type name ‘AEEResult’
+  263 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_munmap)(remote_handle64 _h, uint32_t fd) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:264:22: error: unknown type name ‘AEEResult’
+  264 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_profiler)(remote_handle64 _h, uint32_t mode, const htp_iface_pmu_conf* pmu) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:265:22: error: unknown type name ‘AEEResult’
+  265 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_etm)(remote_handle64 _h, uint32_t enable) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~
+/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface.h:266:22: error: unknown type name ‘AEEResult’
+  266 | __QAIC_HEADER_EXPORT AEEResult __QAIC_HEADER(htp_iface_hwinfo)(remote_handle64 _h, uint32_t* n_threads, uint32_t* n_hvx, uint32_t* n_hmx, uint64_t* vtcm_size) __QAIC_HEADER_ATTRIBUTE;
+      |                      ^~~~~~~~~

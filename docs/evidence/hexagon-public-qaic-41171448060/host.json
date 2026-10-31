@@ -1,0 +1,725 @@
+{
+  "schemaVersion": 1,
+  "kind": "public-QAIC-independent-source-oracle",
+  "runnerRevision": "de17d0eed1a67d912a438b5a4de5c7ee1ca32519",
+  "runId": "41171448060",
+  "runAttempt": "1",
+  "qaicCommit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
+  "sourceSha256": "7ecd51a5962dd8dd31828a56c62e74f13047c7cd1f3413e7a23d0c8afabe1a8b",
+  "pinSha256": "c8693e3e83cc7e5ce1a96aa34f888f74b935ab42bc2b35c0362e77048587901f",
+  "outcome": "failed",
+  "stage": "mock-wire-compile",
+  "generatorExecuted": true,
+  "generatorAttempted": true,
+  "generatorCompleted": true,
+  "versionQueryAttempted": true,
+  "versionQueryCompleted": true,
+  "idlGenerationAttempted": true,
+  "idlGenerationCompleted": true,
+  "hackageIndexState": "2026-10-29T00:00:00Z",
+  "sourceFiles": [
+    {
+      "name": "README.md",
+      "bytes": 37846,
+      "sha256": "bce26b318f45a1aee6c46b0b94988e2cec8c59fdb17394a5401f964496a5f470"
+    },
+    {
+      "name": "LICENSE.txt",
+      "bytes": 1689,
+      "sha256": "3a15c06f7c0f8e38e884e0a20e739fe0d92c1ac0996928af4ab119170603d1f8"
+    },
+    {
+      "name": "src/Makefile",
+      "bytes": 5869,
+      "sha256": "5d7e6960dbe6eff6d46fe256cf4534e594ef7fe3245898dcb674df3650e0e81c"
+    },
+    {
+      "name": "src/qaic.cabal",
+      "bytes": 2942,
+      "sha256": "c27f82fabc467ec8c4eee782e8fb9a4833f02f55d6a83db99117a1810718d910"
+    },
+    {
+      "name": "src/file2hs/file2hs.cabal",
+      "bytes": 391,
+      "sha256": "6aa4755b05a3e1f60213f7f4e5a6519cb078219558f9bb995c4494502abdd20f"
+    },
+    {
+      "name": "src/Language/SO/CStub.c",
+      "bytes": 3111,
+      "sha256": "5f7bd861ad40c089bde8cc93b68d0687e3f3a240cbab1bcff9b60eb494ce4214"
+    },
+    {
+      "name": "src/Language/SO/Stub.c",
+      "bytes": 1387,
+      "sha256": "8fcd0627db58983a55b7a359e1d0b3eafbb1908d38a55752d525284eacbf2377"
+    },
+    {
+      "name": "src/Language/SO/Env.c",
+      "bytes": 4526,
+      "sha256": "3f1e229596e18da85c1645fa5d29375319471680e774eb0d70aa01c20a4b7c28"
+    },
+    {
+      "name": "src/Language/SO/Allocator.c",
+      "bytes": 2014,
+      "sha256": "a56e2e6f4b09de1f959e9ef0185ea1b2312eb848c6debd1781d5a420a99f1127"
+    },
+    {
+      "name": "src/Language/SO/Slim.c",
+      "bytes": 5430,
+      "sha256": "f5c3c8d88284bf606c6b44858b17a80a67f03e1f3c81955d7d7240551d43504d"
+    }
+  ],
+  "publicInputs": [
+    {
+      "name": "htp_iface.idl",
+      "bytes": 718,
+      "sha256": "196448f5166f300c572172b83a51e128e71e4471f13e30d0c5f88d6ce0cfe8bc",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp/htp_iface.idl"
+    },
+    {
+      "name": "AEEStdDef.idl",
+      "bytes": 1793,
+      "sha256": "dda9bee2163b148be27365c101c11356cbefa691c3687a34586e705c074c7ddc",
+      "url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/idl/AEEStdDef.idl"
+    },
+    {
+      "name": "remote.idl",
+      "bytes": 1498,
+      "sha256": "43b4130d14dc4152b9b3cafc7899d781e2e3546076383a65159774000275021e",
+      "url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/idl/remote.idl"
+    },
+    {
+      "name": "LICENSE-FastRPC.txt",
+      "bytes": 1565,
+      "sha256": "683e80f5436e6b0761139e626d2c764870ea0ed19b14916ef4c82772b99c4d44",
+      "url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/LICENSE.txt"
+    },
+    {
+      "name": "LICENSE-llama.cpp.txt",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/19cce6919992fdffd92e0ac152caaf1e2b8f254e/LICENSE"
+    }
+  ],
+  "toolchain": {
+    "ghcVersion": "9.10.3",
+    "cabalVersion": "3.12.1.0",
+    "ghcExecutable": {
+      "name": "ghc-9.10.3",
+      "bytes": 424,
+      "sha256": "d7f38f57cb9dd5586966d5935c8ea32b468d7ca66eddbc20bff41d526fb0f3f6"
+    },
+    "cabalExecutable": {
+      "name": "cabal",
+      "bytes": 37560632,
+      "sha256": "5bee05b53f093fe6e51521a46e27548b480ab96cdbe8bdc9a41ce6990f09da42"
+    },
+    "setupAction": "haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d",
+    "selectedGhcRuntime": {
+      "reportedLibdir": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/lib",
+      "selectedToolRoot": "/usr/local/.ghcup/ghc/9.10.3",
+      "scope": "selected-installation-compiler/runtime-executable-candidates; not-complete-tool-or-OS-closure",
+      "scanTruncated": false,
+      "entriesObserved": 13143,
+      "candidates": [
+        {
+          "name": "ghc-9.10.3",
+          "bytes": 424,
+          "sha256": "d7f38f57cb9dd5586966d5935c8ea32b468d7ca66eddbc20bff41d526fb0f3f6",
+          "path": "/usr/local/.ghcup/ghc/9.10.3/bin/ghc-9.10.3",
+          "discoveredAs": "/usr/local/.ghcup/ghc/9.10.3/bin/ghc",
+          "elfExecutable": false
+        },
+        {
+          "name": "ghc-iserv-ghc-9.10.3",
+          "bytes": 31046688,
+          "sha256": "1c894bf7d2142900373fc661d2b8349e373c7f8a437fc25fefca6378bfeb7809",
+          "path": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-ghc-9.10.3",
+          "discoveredAs": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-ghc-9.10.3",
+          "elfExecutable": true
+        },
+        {
+          "name": "ghc-iserv-dyn-ghc-9.10.3",
+          "bytes": 18528,
+          "sha256": "1abcfef202051e2c765ce7fbb3c4b8fad80bcff59c431ce8417ec4d64aa1426f",
+          "path": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-dyn-ghc-9.10.3",
+          "discoveredAs": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-dyn",
+          "elfExecutable": true
+        },
+        {
+          "name": "ghc-iserv-prof-ghc-9.10.3",
+          "bytes": 52701920,
+          "sha256": "d08a52c19d7dd19fad063c4300e7baf4646e30bec152ddced8dcdd18070ed99e",
+          "path": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-prof-ghc-9.10.3",
+          "discoveredAs": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-iserv-prof-ghc-9.10.3",
+          "elfExecutable": true
+        },
+        {
+          "name": "ghc-9.10.3",
+          "bytes": 2123392,
+          "sha256": "560b354d05aa626c66f6d9ef04139c3746e4000acaf272667c393ce86336a45f",
+          "path": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc-9.10.3",
+          "discoveredAs": "/usr/local/.ghcup/ghc/9.10.3/lib/ghc-9.10.3/bin/ghc",
+          "elfExecutable": true
+        }
+      ]
+    }
+  },
+  "dependencyResolution": [
+    {
+      "name": "file2hs-cabal.project",
+      "bytes": 87,
+      "sha256": "25d05e64775d07ef1f42a3b5defe8b7fd0e9ee26d18faed7b6c2edf74d905965"
+    },
+    {
+      "name": "file2hs-cabal.project.freeze",
+      "bytes": 277,
+      "sha256": "4f8f56c8657486361f23cc724519bdc8fe0b6ff2e1dae7f47007343b0e73a9e3"
+    },
+    {
+      "name": "file2hs-cabal.project.local",
+      "bytes": 22,
+      "sha256": "8d018a85a8a4f939e36ec775bd78426416b697a845728869145b2537f21f4667"
+    },
+    {
+      "name": "file2hs-dist-newstyle-cache-plan.json",
+      "bytes": 1678,
+      "sha256": "42b8a2b065b3707b9546cedbdabc75b2d11d33b3500c72b41b103b5e87adfd87"
+    },
+    {
+      "name": "qaic-cabal.project",
+      "bytes": 87,
+      "sha256": "25d05e64775d07ef1f42a3b5defe8b7fd0e9ee26d18faed7b6c2edf74d905965"
+    },
+    {
+      "name": "qaic-cabal.project.freeze",
+      "bytes": 1028,
+      "sha256": "8fc54632de05d73fb3b0d7eec4440013ae3519dd906441f2ace2b67be4acf360"
+    },
+    {
+      "name": "qaic-cabal.project.local",
+      "bytes": 22,
+      "sha256": "8d018a85a8a4f939e36ec775bd78426416b697a845728869145b2537f21f4667"
+    },
+    {
+      "name": "qaic-dist-newstyle-cache-plan.json",
+      "bytes": 6385,
+      "sha256": "945e3f1d9769d88953d1df99dd72a3b52fc4ebd8599be3e478309e1b1e88c988"
+    }
+  ],
+  "generatedFiles": [
+    {
+      "name": "htp_iface.h",
+      "bytes": 7920,
+      "sha256": "84e34d52796581fd2e6ebe236e65e4980bd3c6633325f6a81774f24924baa038",
+      "copyrightMarkerPresent": false,
+      "bsdClearIdentifierPresent": false
+    },
+    {
+      "name": "htp_iface_skel.c",
+      "bytes": 20248,
+      "sha256": "b517ef6f7b895bc42133cac2b97258bd1d0618c1b47b84c878d10d616f6e541d",
+      "copyrightMarkerPresent": false,
+      "bsdClearIdentifierPresent": false
+    },
+    {
+      "name": "htp_iface_stub.c",
+      "bytes": 16963,
+      "sha256": "3ea8854291ef82fa5e87e4a0d1cdec45b558941774b157995e085a6e1560fe92",
+      "copyrightMarkerPresent": false,
+      "bsdClearIdentifierPresent": false
+    }
+  ],
+  "commands": [
+    {
+      "name": "source-root",
+      "arguments": [
+        "git",
+        "-C",
+        "/home/runner/work/SwiftBonsai2Runner/SwiftBonsai2Runner/.hexagon-public-qaic-source",
+        "rev-parse",
+        "--show-toplevel"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "source-root.log",
+        "bytes": 84,
+        "sha256": "3988a124cab68aa7470334055253bc5cc53afe6ef10ecfe969d442aa0f25f8da"
+      }
+    },
+    {
+      "name": "source-revision",
+      "arguments": [
+        "git",
+        "-C",
+        "/home/runner/work/SwiftBonsai2Runner/SwiftBonsai2Runner/.hexagon-public-qaic-source",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "source-revision.log",
+        "bytes": 41,
+        "sha256": "962c2902c47bccc23527bf9afb1cc2de97567c117b7c4a363d94058118e844e7"
+      }
+    },
+    {
+      "name": "source-clean",
+      "arguments": [
+        "git",
+        "-C",
+        "/home/runner/work/SwiftBonsai2Runner/SwiftBonsai2Runner/.hexagon-public-qaic-source",
+        "status",
+        "--porcelain"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "source-clean.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "source-inventory",
+      "arguments": [
+        "git",
+        "-C",
+        "/home/runner/work/SwiftBonsai2Runner/SwiftBonsai2Runner/.hexagon-public-qaic-source",
+        "ls-files"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "source-inventory.log",
+        "bytes": 6067,
+        "sha256": "0f5c00ba05aca5ab3fc5540fd8a52f272fdade0c8016858f98dfc3fdd6f03e9d"
+      }
+    },
+    {
+      "name": "ghc-version",
+      "arguments": [
+        "/usr/local/.ghcup/ghc/9.10.3/bin/ghc-9.10.3",
+        "--numeric-version"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "ghc-version.log",
+        "bytes": 7,
+        "sha256": "9eb530c7120599fed886a06f8ba0958266eb4c950a9f7a67daf9e960558722f3"
+      }
+    },
+    {
+      "name": "cabal-version",
+      "arguments": [
+        "/usr/local/.ghcup/cabal/3.12.1.0/cabal",
+        "--numeric-version"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "cabal-version.log",
+        "bytes": 9,
+        "sha256": "4554770c1cb00d7017b4f6ae07053da892c1fc6bf2a4a31f92a112ed1e3ce112"
+      }
+    },
+    {
+      "name": "ghc-info",
+      "arguments": [
+        "/usr/local/.ghcup/ghc/9.10.3/bin/ghc-9.10.3",
+        "--info"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "ghc-info.log",
+        "bytes": 3109,
+        "sha256": "72a3dac795c19289ec099dfb745493161cca02336cd0a856603e66a554983c8b"
+      }
+    },
+    {
+      "name": "ghc-package-db",
+      "arguments": [
+        "ghc-pkg",
+        "dump"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "ghc-package-db.log",
+        "bytes": 148289,
+        "sha256": "f86b65561a2d9ae5ca19d9b55a64d4fda1866bbb555ae91b426a6e8f48124470"
+      }
+    },
+    {
+      "name": "ghc-libdir",
+      "arguments": [
+        "/usr/local/.ghcup/ghc/9.10.3/bin/ghc-9.10.3",
+        "--print-libdir"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "ghc-libdir.log",
+        "bytes": 48,
+        "sha256": "b1b953e635a40184cf08089be89b27cac1d1fba48b43b8b71d069b8fb4a580dd"
+      }
+    },
+    {
+      "name": "hackage-update",
+      "arguments": [
+        "/usr/local/.ghcup/cabal/3.12.1.0/cabal",
+        "update"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 16881,
+      "log": {
+        "name": "hackage-update.log",
+        "bytes": 163,
+        "sha256": "4be62568f328e88e9e6db7723c8fb76981c6c0224d7b9b625e986612a6018a8d"
+      }
+    },
+    {
+      "name": "file2hs-freeze",
+      "arguments": [
+        "/usr/local/.ghcup/cabal/3.12.1.0/cabal",
+        "freeze"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 1403,
+      "log": {
+        "name": "file2hs-freeze.log",
+        "bytes": 162,
+        "sha256": "67c15dd8bf20cdb36aa6b760415920ee45778216f48892c584557a94616a1a65"
+      }
+    },
+    {
+      "name": "qaic-freeze",
+      "arguments": [
+        "/usr/local/.ghcup/cabal/3.12.1.0/cabal",
+        "freeze"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 1403,
+      "log": {
+        "name": "qaic-freeze.log",
+        "bytes": 154,
+        "sha256": "5287366369477b2001c2adc9c43bd835ef927beb9c3a03b4523650da3b1403c7"
+      }
+    },
+    {
+      "name": "upstream-make",
+      "arguments": [
+        "make",
+        "-C",
+        "src",
+        "TARGET_ARCH=x86_64-linux"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 46698,
+      "log": {
+        "name": "upstream-make.log",
+        "bytes": 92243,
+        "sha256": "17af14fe623b0c45926212a97fdc6fcdd949b40805e021614db3be4071ea5c76"
+      }
+    },
+    {
+      "name": "source-generator-version",
+      "arguments": [
+        "/home/runner/work/SwiftBonsai2Runner/SwiftBonsai2Runner/.hexagon-public-qaic-source/src/Linux_ReleaseG/ship/qaic",
+        "--version"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "source-generator-version.log",
+        "bytes": 158,
+        "sha256": "2b6ea69b9048b4f1708f777583eda0df3ccfab65715f4ecd699775f1a18c3cdb"
+      }
+    },
+    {
+      "name": "independent-generation",
+      "arguments": [
+        "/home/runner/work/SwiftBonsai2Runner/SwiftBonsai2Runner/.hexagon-public-qaic-source/src/Linux_ReleaseG/ship/qaic",
+        "--map-dll",
+        "--standard-types",
+        "--include-path=/home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/inputs-and-notices",
+        "--output-path=/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated",
+        "/home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/inputs-and-notices/htp_iface.idl"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "independent-generation.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "wire-gcc-version",
+      "arguments": [
+        "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "-dumpfullversion",
+        "-dumpversion"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "wire-gcc-version.log",
+        "bytes": 7,
+        "sha256": "bb6aade8c4ca40cae9cb1be8abe12377f651fccd82954af74ec61703b6608fc5"
+      }
+    },
+    {
+      "name": "wire-gcc-target",
+      "arguments": [
+        "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "-dumpmachine"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "wire-gcc-target.log",
+        "bytes": 17,
+        "sha256": "08cababdf891ccbf96eb376f1e84f279f70302fb13d84e5f98637becdfc6d989"
+      }
+    },
+    {
+      "name": "wire-gcc-banner",
+      "arguments": [
+        "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "--version"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "wire-gcc-banner.log",
+        "bytes": 266,
+        "sha256": "ae487f55927d605284a32711e4ecf6bc3be2bcd5a9de414ace0936264b741f85"
+      }
+    },
+    {
+      "name": "wire-gcc-specs",
+      "arguments": [
+        "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "-dumpspecs"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "wire-gcc-specs.log",
+        "bytes": 11008,
+        "sha256": "3a269a0e5ee21101352e1f276f347d289e4152854796704a46416964b170e0dc"
+      }
+    },
+    {
+      "name": "wire-gcc-cc1",
+      "arguments": [
+        "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "-print-prog-name=cc1"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "wire-gcc-cc1.log",
+        "bytes": 41,
+        "sha256": "a8081bc5652e2ec80147e680dfc24dd61f11820e2109d1e3b759d77c378583a9"
+      }
+    },
+    {
+      "name": "wire-gcc-as",
+      "arguments": [
+        "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "-print-prog-name=as"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "wire-gcc-as.log",
+        "bytes": 3,
+        "sha256": "8b97bca79750847558d488e2ea4de79903c9c71c9af27ecf1b3dff5dba2abdd9"
+      }
+    },
+    {
+      "name": "wire-gcc-ld",
+      "arguments": [
+        "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "-print-prog-name=ld"
+      ],
+      "exitCode": 0,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "wire-gcc-ld.log",
+        "bytes": 3,
+        "sha256": "3b6cb8ae51045d062a7c7de7cc488ad8785144cfbc0a7fc9546ed52429e0d97f"
+      }
+    },
+    {
+      "name": "wire-compile",
+      "arguments": [
+        "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "-std=gnu11",
+        "-O0",
+        "-fno-lto",
+        "-fno-strict-aliasing",
+        "-I/home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/wire-public-inputs",
+        "-I/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated",
+        "/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c",
+        "/home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/wire-public-inputs/public_qaic_wire.c",
+        "-Wl,-Map=/home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/wire-link.map",
+        "-o",
+        "/home/runner/work/_temp/SwiftBonsai-Public-QAIC/public-qaic-wire-mock"
+      ],
+      "exitCode": 1,
+      "elapsedMilliseconds": 50,
+      "log": {
+        "name": "wire-compile.log",
+        "bytes": 4668,
+        "sha256": "cf7b9ca087a7253aec920cf3cf03111312c1ae19c3622f800c700b6370904006"
+      }
+    }
+  ],
+  "wireCapture": {
+    "kind": "public-generated-C-mock-wire-control",
+    "passed": false,
+    "controller": {
+      "name": "public_qaic_wire.py",
+      "bytes": 9951,
+      "sha256": "cd893f31729ff2e0deab2c1219bdb130d199f783f97c268d231052b1e74ca161"
+    },
+    "headers": [
+      {
+        "name": "remote.h",
+        "bytes": 65625,
+        "sha256": "f9d0690cfd8953697d6fc3163c2be448a7b5b801148808c9b1b360857aeabc44",
+        "url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/remote.h"
+      },
+      {
+        "name": "AEEStdDef.h",
+        "bytes": 7999,
+        "sha256": "319a834050e0a53eaecaef0c54d84dab3133ea340de5f68d9f213a7d5463ed3d",
+        "url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/AEEStdDef.h"
+      },
+      {
+        "name": "AEEStdErr.h",
+        "bytes": 21724,
+        "sha256": "e25d3f48cfff870394c2af5a18b21c7b050c1370594f3193b5ad7d8033a3ff57",
+        "url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/AEEStdErr.h"
+      },
+      {
+        "name": "HAP_farf.h",
+        "bytes": 7692,
+        "sha256": "08656b697776a6a25b34d57e2bb908ddba499972c202e103c21ebebbbf47e07a",
+        "url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/HAP_farf.h"
+      },
+      {
+        "name": "HAP_debug.h",
+        "bytes": 2822,
+        "sha256": "68103f23d79da9149588d07fb1397e3508730e8b0f71e4a5a1ffaa5b3baf4c43",
+        "url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/HAP_debug.h"
+      }
+    ],
+    "compiler": {
+      "name": "x86_64-linux-gnu-gcc-13",
+      "bytes": 1023032,
+      "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+      "path": "/usr/bin/x86_64-linux-gnu-gcc-13",
+      "version": "13.3.0",
+      "target": "x86_64-linux-gnu",
+      "components": [
+        {
+          "name": "cc1",
+          "bytes": 30487984,
+          "sha256": "5d1679131184e2de4435b426eb264bf13472fe026db8e5c6bc97445814e8e2f4",
+          "path": "/usr/libexec/gcc/x86_64-linux-gnu/13/cc1",
+          "role": "cc1"
+        },
+        {
+          "name": "x86_64-linux-gnu-as",
+          "bytes": 745768,
+          "sha256": "21aff249b692b5c31a44007491f922dcb49f41323e362c57d2ada3f52eddb7f0",
+          "path": "/usr/bin/x86_64-linux-gnu-as",
+          "role": "as"
+        },
+        {
+          "name": "x86_64-linux-gnu-ld.bfd",
+          "bytes": 1359128,
+          "sha256": "e9ceb054c12207970f2726dfc07e9a66b411602748628baf27399f02a9bbb31b",
+          "path": "/usr/bin/x86_64-linux-gnu-ld.bfd",
+          "role": "ld"
+        }
+      ],
+      "identityPinScope": "observed-and-rechecked-within-this-hosted-run",
+      "closure": "driver/cc1/as/ld identities; not-complete-OS-closure",
+      "arguments": [
+        "/usr/bin/x86_64-linux-gnu-gcc-13",
+        "-std=gnu11",
+        "-O0",
+        "-fno-lto",
+        "-fno-strict-aliasing",
+        "-I/home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/wire-public-inputs",
+        "-I/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated",
+        "/home/runner/work/_temp/SwiftBonsai-Public-QAIC/generated/htp_iface_stub.c",
+        "/home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/wire-public-inputs/public_qaic_wire.c",
+        "-Wl,-Map=/home/runner/work/_temp/SwiftBonsai-Public-QAIC/review/wire-link.map",
+        "-o",
+        "/home/runner/work/_temp/SwiftBonsai-Public-QAIC/public-qaic-wire-mock"
+      ]
+    },
+    "mockExecutionAttempted": false,
+    "mockExecuted": false,
+    "mockCompleted": false,
+    "sdkLinked": false,
+    "driverLoaded": false,
+    "deviceCodeLoaded": false,
+    "sdkEquivalenceQualified": false,
+    "WindowsArm64AbiQualified": false,
+    "scope": "public-generated-stub-and-public-headers-on-hosted-Linux-LP64-only",
+    "harness": {
+      "name": "public_qaic_wire.c",
+      "bytes": 5643,
+      "sha256": "a3d8ca46afe5bdf58690a58f243ad917fe97d68c879f67a02a257f24725fc0bb"
+    },
+    "independentExpected": {
+      "name": "public-qaic-wire.expected.json",
+      "bytes": 1797,
+      "sha256": "de50944e2eab9c56eab0544a42c2754c421e4bdcb5cae20ac52294981aa3e552"
+    },
+    "generatedInputs": [
+      {
+        "name": "htp_iface.h",
+        "bytes": 7920,
+        "sha256": "84e34d52796581fd2e6ebe236e65e4980bd3c6633325f6a81774f24924baa038"
+      },
+      {
+        "name": "htp_iface_stub.c",
+        "bytes": 16963,
+        "sha256": "3ea8854291ef82fa5e87e4a0d1cdec45b558941774b157995e085a6e1560fe92"
+      }
+    ]
+  },
+  "sdkExecutableUsed": false,
+  "sdkImportsUsed": false,
+  "sdkQaicEquivalenceQualified": false,
+  "sdkImportEquivalenceQualified": false,
+  "deviceCodeLoaded": false,
+  "deviceInvocationAuthorized": false,
+  "profileEligible": false,
+  "externalPackage": {
+    "pkg-name": "syb",
+    "pkg-version": "0.7.4",
+    "pkg-cabal-sha256": "db6f86d818f7732a2cb3a7a8cf630642a90c9faef7a13bd5dad136505774605b",
+    "pkg-src-sha256": "ddcaca983f67a170c0cfdbd037a268779880e2f9b57f93135eaccb6ae4c5da3f",
+    "id": "syb-0.7.4-cc7cdcfd9c4a632d5494d4b83b22e9186ad56e02dd5c4a8c0fa59a4021d3c9c9"
+  },
+  "generatorExecutable": {
+    "name": "qaic",
+    "bytes": 12077520,
+    "sha256": "3055e6ee3c7fce0d12dd910a3cc63768ab5c0c47bd730754b42969e2ce81c31a"
+  },
+  "failureClass": "RuntimeError",
+  "failure": "public QAIC command failed: wire-compile"
+}

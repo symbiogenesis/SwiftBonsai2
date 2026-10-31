@@ -517,7 +517,14 @@
         ]
       },
       "generatedHostStubIdentity": null,
-      "independentWireCaptureIdentity": null,
+      "independentWireCaptureIdentity": {
+        "scope": "fixed-positive-public-start/stop-vector-only; hosted-Linux-LP64-little-endian",
+        "observation": "docs/evidence/hexagon-public-qaic-41171859264/provenance.json",
+        "publicCAndRustMatched": true,
+        "sdkEquivalenceQualified": false,
+        "WindowsArm64AbiQualified": false,
+        "deviceInvocationAuthorized": false
+      },
       "required": "bind-exact-tool-command-inputs-and-generated-host-marshal-or-independent-wire-control-before-Rust-invoke",
       "declarationAloneAuthorizesInvoke": false,
       "independentSourceGeneratorLead": {
@@ -560,7 +567,7 @@
             "sha256": "8fc54632de05d73fb3b0d7eec4440013ae3519dd906441f2ace2b67be4acf360"
           }
         ],
-        "dependencyConstraintStatus": "first-hosted-resolution-bound-to-requested-index-and-byte-identical-before-after-freezes; checked-in-replay-and-complete-toolchain-identity-separate",
+        "dependencyConstraintStatus": "pinned-first-freezes-and-syb-source/Cabal/unit-identities-replayed-on-exact-hosted-GHC9.10.3/Cabal3.12.1.0-control; complete-tool/OS-closure-not-claimed",
         "documentedCommandCandidate": [
           "qaic",
           "--map-dll",
@@ -728,7 +735,73 @@
               "elfExecutable": true
             }
           ]
-        }
+        },
+        "standardTypesCCompileObservation": {
+          "runId": "41171448060",
+          "observation": "docs/evidence/hexagon-public-qaic-41171448060/provenance.json",
+          "compiled": false,
+          "mockExecuted": false,
+          "rustComparisonExecuted": false,
+          "failureScope": "named-AEEResult-public-header-prerequisite; no-device-refusal",
+          "resolvedWithoutCustomShimOrGeneratedPatch": true
+        },
+        "publicWireControlObservation": {
+          "runId": "41171859264",
+          "observation": "docs/evidence/hexagon-public-qaic-41171859264/provenance.json",
+          "passed": true,
+          "scope": "one-fixed-positive-start/stop-vector; public-QAIC-standard-types/public-FastRPC-headers; hosted-Linux-x86_64-LP64-little-endian-only",
+          "CMockPassed": true,
+          "independentRustEncodingPassed": true,
+          "independentGoldenVectorMatched": true,
+          "startScalars": 33619968,
+          "stopScalars": 50331648,
+          "primaryInputBytes": 48,
+          "stopArgumentsNull": true,
+          "mockInvokeCalls": 2,
+          "unexpectedCalls": 0,
+          "goldenFixtureChanged": false,
+          "publicAeeAliasHeaderForcedInclude": {
+            "name": "AEEStdDef.h",
+            "bytes": 7999,
+            "sha256": "319a834050e0a53eaecaef0c54d84dab3133ea340de5f68d9f213a7d5463ed3d",
+            "url": "https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/AEEStdDef.h"
+          },
+          "customTypedefShimOrGeneratedPatch": false,
+          "cCompiler": {
+            "name": "x86_64-linux-gnu-gcc-13",
+            "bytes": 1023032,
+            "sha256": "1b99826121ae6682a634e5efe09bd3e3df58ce58e0b28f849114ab5b89139c26",
+            "version": "13.3.0",
+            "target": "x86_64-linux-gnu",
+            "identityPinScope": "observed-and-rechecked-within-this-hosted-run"
+          },
+          "rustCompiler": {
+            "name": "rustc",
+            "bytes": 647208,
+            "sha256": "05245da48a5188aaafb345b85b566a0d16a3a533c32b34bf7782b294e1e76d58"
+          },
+          "rustToolchain": "nightly-2026-10-22-x86_64-unknown-linux-gnu",
+          "rustTarget": "x86_64-unknown-linux-gnu",
+          "selectedRustCompilerDrivers": [
+            {
+              "name": "librustc_driver-8ddbd174ff1ac129.so",
+              "bytes": 165332272,
+              "sha256": "0ef5cc97a5fae885f2a09fc06f3a83e200c8aa207b551f75a54f3f43a02f2572",
+              "path": "/home/runner/.rustup/toolchains/nightly-2026-10-22-x86_64-unknown-linux-gnu/lib/librustc_driver-8ddbd174ff1ac129.so"
+            }
+          ],
+          "compilerExecutableBytesRetained": false,
+          "completeToolOrOsClosureQualified": false,
+          "sdkEquivalenceQualified": false,
+          "WindowsArm64AbiQualified": false,
+          "queueOwnershipQualified": false,
+          "nativeComputeQualified": false,
+          "wholeModelQualified": false,
+          "deviceCodeLoaded": false,
+          "profileEligible": false
+        },
+        "publicWireGateAchieved": true,
+        "publicWireGateScope": "fixed-positive-public-start/stop-vector-only; hosted-Linux-LP64-little-endian"
       },
       "sdkBuildIdlRecipeIdentity": {
         "archivePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
