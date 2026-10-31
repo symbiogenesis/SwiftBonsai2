@@ -11,6 +11,7 @@ on:
       - tests/Test-HexagonSession.ps1
       - src/cpu-policy/**
       - config/hexagon-experiment.lock.json
+      - config/hexagon-signed-q2-candidate.lock.json
       - config/hexagon-dispatch.lock.json
   workflow_dispatch:
     inputs:

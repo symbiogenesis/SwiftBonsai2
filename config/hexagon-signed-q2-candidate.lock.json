@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "purpose": "source-only-newer-signed-generic-Q2-candidate; no-runtime-repin",
+  "purpose": "source-reviewed-and-data-verified-newer-signed-generic-Q2-candidate; no-runtime-repin",
   "reviewDate": "2026-10-30",
   "admission": "disabled",
   "automaticSelection": false,
   "profileEligible": false,
   "audit": "docs/hexagon-signed-q2-candidate.md",
-  "releaseAssetDownloaded": false,
+  "releaseAssetDownloaded": true,
   "releaseAssetExecuted": false,
   "candidate": {
     "repository": "https://github.com/qualcomm/GenieX",
@@ -31,9 +31,11 @@
       "sha256": "410dc39e79a6d0b7e8991bd4267285f7c73de7c46511a1fe0549b83dc4a26e4e",
       "url": "https://github.com/qualcomm/GenieX/releases/download/v0.10.0/geniex-sdk-windows-arm64-v0.10.0.zip",
       "digestSource": "official-GitHub-release-asset-metadata",
-      "localCatalogMembershipVerified": false,
-      "localSignatureChainVerified": false,
-      "loadedDspIdentityVerified": false
+      "localCatalogMembershipVerified": true,
+      "localSignatureChainVerified": true,
+      "loadedDspIdentityVerified": false,
+      "observation": "docs/evidence/hexagon-signed-q2-package.json",
+      "packageCodeLoaded": false
     }
   },
   "sourceFiles": [
@@ -202,8 +204,8 @@
     "reuseOldIdlOrCatalog": false,
     "safeQueueOwnershipImplemented": false,
     "requires": [
-      "exact-new-package-file-and-catalog-member-lock",
-      "independent-signed-v81-and-driver-verification",
+      "trusted-native-intake-of-data-verified-new-package",
+      "new-runtime-driver-load-identity-and-compatibility",
       "reviewed-Rust-IDL-marshalling-and-queue-ABI",
       "single-session-bounded-queue-export-start",
       "checked-operation-buffer-layout-and-correlated-completion",
@@ -219,5 +221,99 @@
     "swiftServiceBytes": 12348030976,
     "physicalReserveBytes": 4294967296
   },
-  "productionPinsChanged": false
+  "productionPinsChanged": false,
+  "verifiedRuntimeFiles": [
+    {
+      "Name": "llama-common.dll",
+      "Bytes": 5410816,
+      "Sha256": "721a2acea0a356544b0148e159a126f413f500463dfd74d212dad7b636fd6a86"
+    },
+    {
+      "Name": "ggml-cpu.dll",
+      "Bytes": 859136,
+      "Sha256": "93dbdb8577aab80ca8af3a9befdf17ee7e18f496d828a6a2b93e3bcf69724486"
+    },
+    {
+      "Name": "mtmd.dll",
+      "Bytes": 1669120,
+      "Sha256": "ccdbb7c579dea7d9861bba2ca1028402124c18ec79cf6ccaceb79fa08bd4c057"
+    },
+    {
+      "Name": "libomp140.aarch64.dll",
+      "Bytes": 796728,
+      "Sha256": "4b7108af47f2f1bd1973a9ae3a61861e13e787e1846d24fa90e7a6240a0b566c"
+    },
+    {
+      "Name": "libggml-htp-v73.so",
+      "Bytes": 838432,
+      "Sha256": "5c740ff40145ea27b4a13595042402f9a9dfad69a145e2355160c148ae8afe88"
+    },
+    {
+      "Name": "libggml-htp.cat",
+      "Bytes": 13535,
+      "Sha256": "2e9f86e46d179e6e63f8fea95087699815b07fc5adcb70f656d35573d3bc7d88"
+    },
+    {
+      "Name": "libggml-htp-v85.so",
+      "Bytes": 871360,
+      "Sha256": "7cff3e2b486ffb5d98e4e92a87bb7032b401e7fd80357674173d03e24e352e33"
+    },
+    {
+      "Name": "libggml-htp-v75.so",
+      "Bytes": 838368,
+      "Sha256": "434970a541caa4e58da67a343e70c691d1435178a98e8c9307fded7c302ce840"
+    },
+    {
+      "Name": "llama.dll",
+      "Bytes": 3233280,
+      "Sha256": "d07a6082f9cb848d80f745bc33b1d48c0dbc477cae968cfdf5361bccabf75e99"
+    },
+    {
+      "Name": "libggml-htp.inf",
+      "Bytes": 825,
+      "Sha256": "8e8cfc91b9e7966734dc7924b021e5f6f5a2a5e30a431ce52a1dbbae789f4729"
+    },
+    {
+      "Name": "libggml-htp-v79.so",
+      "Bytes": 858944,
+      "Sha256": "ba7e0ec340a15cc6f8708a382375af0cbe93bae445a1a64a4287278d0f034943"
+    },
+    {
+      "Name": "geniex_plugin.dll",
+      "Bytes": 374272,
+      "Sha256": "adb4cb45203290e8306730292088911c90d567228d5460d464655d28bf850d71"
+    },
+    {
+      "Name": "ggml-hexagon.dll",
+      "Bytes": 403456,
+      "Sha256": "cc8dc274bd9f5c7f964f7f1c59d7d781250b33038c2cb435972e3c8f6ea9fe88"
+    },
+    {
+      "Name": "ggml.dll",
+      "Bytes": 72192,
+      "Sha256": "463d61cdb1ff8335e5118a5cfdfd97c8671be7ab374edcb5cfb809e2426e7046"
+    },
+    {
+      "Name": "ggml-opencl.dll",
+      "Bytes": 3408384,
+      "Sha256": "697908204e925dbf5964b10a030d366b2bdda7656730bd960c430d68202f2dc9"
+    },
+    {
+      "Name": "libggml-htp-v81.so",
+      "Bytes": 871360,
+      "Sha256": "beb633f2851322a705da260c6001469e581445f18aee1e1a87151b478ee3e9a0"
+    },
+    {
+      "Name": "ggml-base.dll",
+      "Bytes": 671744,
+      "Sha256": "28715590d42cb978036a072f40442af81471bb94876b94349747ec21f7e4c50d"
+    }
+  ],
+  "verifiedCatalogMembers": [
+    "libggml-htp-v73.so",
+    "libggml-htp-v75.so",
+    "libggml-htp-v79.so",
+    "libggml-htp-v81.so",
+    "libggml-htp-v85.so"
+  ]
 }

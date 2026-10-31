@@ -4,7 +4,9 @@ Source review: **2026-10-30**. The separate
 [candidate lock](../config/hexagon-signed-q2-candidate.lock.json) identifies a newer
 signed-package lead without changing the selected v0.8.0 access package, runtime
 pin, CPU fallback or admission. [PLAN.md](../PLAN.md#hexagon-npu) remains the backlog.
-No release asset was downloaded, verified or executed for this review.
+The later [bounded data-only audit](evidence/hexagon-signed-q2-package.json)
+verified the archive, seventeen runtime files and all five Microsoft catalog
+members, including v81. No candidate package code was loaded, executed or installed.
 
 ## Exact release and source identity
 
@@ -16,8 +18,9 @@ resolves to `19cce6919992fdffd92e0ac152caaf1e2b8f254e`.
 The official asset metadata identifies `geniex-sdk-windows-arm64-v0.10.0.zip`,
 **92,386,770 bytes**, SHA-256
 `410dc39e79a6d0b7e8991bd4267285f7c73de7c46511a1fe0549b83dc4a26e4e`.
-The release reports a Microsoft-signed HTP catalog. That assertion and an asset
-digest are not local signature-chain, catalog-member or loaded-DSP verification.
+The release reports a Microsoft-signed HTP catalog. The retained local audit
+independently verifies its current catalog membership and publisher/chain;
+loaded DSP identity, actual operation support and numerical parity remain pending.
 
 The newer prerelease [v0.10.1-rc.1](https://github.com/qualcomm/GenieX/releases/tag/v0.10.1-rc.1),
 published 2026-10-29, reports the same HTP source revision. The reviewed v0.9.0,
@@ -99,8 +102,8 @@ The old catalog cannot identify or authorize the newer DSP bytes or changed ABI.
 
 A tiny old-package F32 compute fixture is a feasible development target after
 that queue/lifetime boundary is built; its passing generic C++ fixture remains
-separate evidence. The newer Q2 candidate additionally needs exact package/member
-intake and the new ABI. Neither can be completed by extending the terminal mapping
+separate evidence. The newer Q2 candidate additionally needs source-bound native intake of its
+verified package/member set and the new ABI. Neither can be completed by extending the terminal mapping
 probe with an unchecked invoke. Production inference remains native Rust Prism,
 with no C/C++ inference-library dependency and one session until independently
 qualified. No unsafe queue sketch or device dispatch is introduced by this audit.

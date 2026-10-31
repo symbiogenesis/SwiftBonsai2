@@ -8,7 +8,12 @@
     "repository": "https://github.com/symbiogenesis/prism-inference",
     "commit": "7aca2251f09acb345d4afb53d5ce411f81017745",
     "license": "Apache-2.0",
-    "files": ["src/kernels.rs", "src/graph.rs", "tests/fixtures/swift-q8k-parity.bin", "tests/fixtures/swift-q8k-parity.json"],
+    "files": [
+      "src/kernels.rs",
+      "src/graph.rs",
+      "tests/fixtures/swift-q8k-parity.bin",
+      "tests/fixtures/swift-q8k-parity.json"
+    ],
     "contract": "Arithmetic::PinnedSwift, MatvecScratch::with_pinned_backend, q8k_with_rounding::<true>, dot_pq2::<true>, Transforms::sign/rotate",
     "genericSourceArithmeticEquivalent": false
   },
@@ -47,8 +52,19 @@
     "cpuPackedStageBytes": 8704,
     "proposedDoubleBufferedVtcmBytes": 18752,
     "proposedActivationTransferBytes": 3176960,
-    "vtcmBoundExcludes": ["DMA-descriptors", "runtime-session-and-queue-storage", "mappings", "allocator-overhead"],
-    "additionalHostMemoryCharges": ["callers-retained-output-capacity", "borrowed-input-and-weights", "optional-transformed-F32-input", "sign-arrays", "Vec-metadata-capacity-rounding-and-allocator-retention"],
+    "vtcmBoundExcludes": [
+      "DMA-descriptors",
+      "runtime-session-and-queue-storage",
+      "mappings",
+      "allocator-overhead"
+    ],
+    "additionalHostMemoryCharges": [
+      "callers-retained-output-capacity",
+      "borrowed-input-and-weights",
+      "optional-transformed-F32-input",
+      "sign-arrays",
+      "Vec-metadata-capacity-rounding-and-allocator-retention"
+    ],
     "actualTransfersObserved": false,
     "persistentRepackedWeightBytes": 0,
     "stateOwner": "CPU",
@@ -70,9 +86,31 @@
     "signedKernelImplemented": false,
     "authenticatesArtifactsOrSignArrays": false,
     "cpuReplayAdditionalActivationIdentityBytes": 5840,
-    "preserves": ["original-PQ2-bytes", "prepared-Q8_K-records", "ordered-per-block-FMA", "cross-column-tile-reduction-carry"],
-    "rejects": ["unknown-version", "changed-geometry-or-flags", "duplicate-or-out-of-order-tiles", "truncated-or-extended-payloads", "nonfinite-scales", "inconsistent-Q8_K-sums", "changed-activation-records-across-row-tiles", "cancellation-or-incomplete-final-commit"],
-    "excludes": ["vendor-RPC-framing", "DMA-descriptors", "queue-storage", "mapping-and-padding-costs", "asynchronous-buffer-ownership", "artifact-authentication", "actual-device-execution"]
+    "preserves": [
+      "original-PQ2-bytes",
+      "prepared-Q8_K-records",
+      "ordered-per-block-FMA",
+      "cross-column-tile-reduction-carry"
+    ],
+    "rejects": [
+      "unknown-version",
+      "changed-geometry-or-flags",
+      "duplicate-or-out-of-order-tiles",
+      "truncated-or-extended-payloads",
+      "nonfinite-scales",
+      "inconsistent-Q8_K-sums",
+      "changed-activation-records-across-row-tiles",
+      "cancellation-or-incomplete-final-commit"
+    ],
+    "excludes": [
+      "vendor-RPC-framing",
+      "DMA-descriptors",
+      "queue-storage",
+      "mapping-and-padding-costs",
+      "asynchronous-buffer-ownership",
+      "artifact-authentication",
+      "actual-device-execution"
+    ]
   },
   "actualArtifactBindingCandidate": {
     "source": "packed_artifact.rs",
@@ -86,11 +124,18 @@
     "selectedSignBytes": 5120,
     "maximumManifestBytes": 8192,
     "fullArtifactVerificationRequiredEveryInvocation": true,
-    "outputs": ["weights.pq2", "signs.i8", "binding.json"],
-    "actualExtractionPerformed": false,
+    "outputs": [
+      "weights.pq2",
+      "signs.i8",
+      "binding.json"
+    ],
+    "actualExtractionPerformed": true,
     "transformOrInferenceExecuted": false,
     "deviceExecuted": false,
-    "profileEligible": false
+    "profileEligible": false,
+    "observation": "docs/evidence/hexagon-swift-projection-binding.json",
+    "originalTensorSha256": "a0f21e1d4492de2496309b6383b958cba53c54f05c9de710348facdd31706354",
+    "selectedSignSha256": "5ab93190ef5cd4f8322d52c1006783b25a3e118453bda0d0f90b1bf301a67197"
   },
   "signedQ2IntegerPrimitiveControl": {
     "source": "q2_integer.rs",
@@ -121,10 +166,10 @@
     "profileEligible": false
   },
   "pending": [
-    "actual-artifact-packed-tile-and-explicit-sign-array-identities",
+    "consume-verified-first-projection-and-signs-through-operation-and-device-controls",
     "independent-actual-transform-activation-logit-and-complete-state-parity",
     "PTQ1-canonicality-and-Q8_0-independent-qualification",
-    "signed-custom-kernel-distribution-and-native-Rust-device-submission",
+    "reviewed-native-submission-for-existing-signed-primitive-or-separately-signed-custom-kernel",
     "effective-VTCM-DMA64-session-ownership-cancellation-and-failure-qualification",
     "no-LoRA-and-approved-LoRA-forward-qualification",
     "true-batched-HMX-prefill",
