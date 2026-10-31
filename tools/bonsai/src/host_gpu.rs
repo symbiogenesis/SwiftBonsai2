@@ -94,7 +94,7 @@ pub fn run(request: &Value) -> crate::Result<Value> {
 ///
 /// # Errors
 /// Rejects nonempty requests. Failed native queries return an unknown report
-/// retaining value-free stage and raw Vulkan result when available.
+/// retaining fixed stage, raw Vulkan result and optional bounded module basenames.
 pub fn query(request: &Value) -> crate::Result<Value> {
     validate(request)?;
     #[cfg(windows)]

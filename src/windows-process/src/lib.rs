@@ -25,7 +25,7 @@ use std::time::Duration;
 )]
 mod native;
 
-/// Structured failure context retained inside a Vulkan query's `io::Error`.
+/// Bounded failure context retained inside a Vulkan query's `io::Error`.
 ///
 /// Downcast `io::Error::get_ref()` to this type to distinguish failed discovery
 /// stages without parsing driver messages or inferring unsupported hardware.
