@@ -74,6 +74,24 @@
     "rejects": ["unknown-version", "changed-geometry-or-flags", "duplicate-or-out-of-order-tiles", "truncated-or-extended-payloads", "nonfinite-scales", "inconsistent-Q8_K-sums", "changed-activation-records-across-row-tiles", "cancellation-or-incomplete-final-commit"],
     "excludes": ["vendor-RPC-framing", "DMA-descriptors", "queue-storage", "mapping-and-padding-costs", "asynchronous-buffer-ownership", "artifact-authentication", "actual-device-execution"]
   },
+  "actualArtifactBindingCandidate": {
+    "source": "packed_artifact.rs",
+    "ggufLibrary": "existing-bonsai_gguf-VerifiedModel",
+    "ggufLibraryRevision": "7aca2251f09acb345d4afb53d5ce411f81017745",
+    "artifactBytes": 7206168928,
+    "artifactSha256": "5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
+    "completeSignArrayCanonicalI32LeSha256": "3d1ea9136a6044cd680cc1e92cde65e9dd7238e1288fe2effabec5d201c48bed",
+    "headerRetentionLimitBytes": 134217728,
+    "weightPayloadBytes": 23674880,
+    "selectedSignBytes": 5120,
+    "maximumManifestBytes": 8192,
+    "fullArtifactVerificationRequiredEveryInvocation": true,
+    "outputs": ["weights.pq2", "signs.i8", "binding.json"],
+    "actualExtractionPerformed": false,
+    "transformOrInferenceExecuted": false,
+    "deviceExecuted": false,
+    "profileEligible": false
+  },
   "pending": [
     "actual-artifact-packed-tile-and-explicit-sign-array-identities",
     "independent-actual-transform-activation-logit-and-complete-state-parity",
