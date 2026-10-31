@@ -33,9 +33,10 @@ benchmarks and performance captures stay in owning CI.
 - Qualify startup, supplied-history streaming, full 8K context and 4K output, long
   conversations, speech, offline restart and recovery. Cover Stop, abandonment,
   deadlines, memory pressure, owned-process cleanup and explicit retry without replay.
-  Redesign `extended_history` and `stalled_consumer` workloads to fit the owner's
-  five-minute total budget before enabling them on the X2 runner under the [acceptance
-  contract](docs/validation.md#actual-model-application-acceptance). Retain context
+  Qualify the opt-in bounded supplied-history and `stalled_consumer` workloads on
+  X2 within the shared five-minute total budget under the [acceptance
+  contract](docs/validation.md#actual-model-application-acceptance). Skipped requested
+  workloads remain pending; bounded history does not close long-history acceptance. Retain context
   rejection, same-instance reuse, termination and usage, Stop, Job and listener cleanup
   and fresh-owner evidence. Fixture size and output reservations do not prove exact
   occupancy or generation; stalled forwarding does not prove socket saturation or an
@@ -298,8 +299,10 @@ LoRA gates; calibration proves neither quality nor reduced admission.
   discovery](docs/hardware-capabilities.md#host-inventory) with checked SoC/SKU, GPU/NPU
   APIs, features, architecture, drivers, runtime and firmware, signed readiness and
   static identity. Keep unknowns explicit and live budgets separate from compatibility.
-- Restore or register the owner-managed ARM64 runner before the [X2 thread
-  screen](docs/cpu-kernels.md#x2-cpu-thread-screen); the current inventory has none.
+- Register a run-specific ephemeral owner-managed ARM64 runner before the bounded
+  [X2 thread screen](docs/cpu-kernels.md#x2-cpu-thread-screen); the current inventory
+  has none. Qualify the complete short screen within one shared setup, verification,
+  loading, comparison and cleanup budget; leave broader thread choices pending.
   Resolve legacy `0xC0000142` startup with shell DLL audits and bounded `--version`
   probes under unchanged mitigations. Integrate and release the [headless UCRT
   candidate](docs/runtime-candidates/README.md#headless-ucrt-argv-candidate) upstream;
@@ -393,7 +396,9 @@ Follow [Adreno contracts](docs/adreno.md); discovery alone changes no CPU profil
   telemetry](docs/hardware-capabilities.md#native-vulkan-observations), rejecting
   emulation and preserving unknowns and conservative admission. Resolve X2 `host-gpu`
   headless-worker `instance-creation` failure (`VK_ERROR_INCOMPATIBLE_DRIVER`), using
-  retained stage/result diagnostics; tool-policy X2-90 observations neither explain it
+  retained stage/result diagnostics and bounded current-worker module snapshots;
+  module names alone do not identify failed DLLs or establish dependency provenance.
+  Tool-policy X2-90 observations neither explain it
   nor qualify worker access.
 - Pilot one native ARM64 OpenCL packed projection candidate and Swift shape in Prism:
   scalar PQ2-by-Q8_K control, exact grouping, raw scales and float order, separate PTQ1
