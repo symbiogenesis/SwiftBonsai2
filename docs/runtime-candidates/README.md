@@ -240,6 +240,16 @@ any release or lock update.
 
 ### Bounded X2 model-free startup
 
+The [2026-10-30 owner-device receipt](../evidence/x2-owner-startup-20261030.json)
+records all ten probes passing on X2E94100 with the exact hosted bundle and final
+source-bound supervisor. Independent review checked all fourteen bundle digests,
+supervision sidecars and seven explicit mitigation confirmations. The final capture
+took 2,306 ms; it is startup evidence, without an inference performance verdict.
+The exact executed supervisor, Runner source ZIP, raw receipts, earlier capture and
+review are retained in the digest-verified owner qualification archive. Model loading,
+numerical/state/adapter qualification, release integration and production pin updates
+remain pending.
+
 [Invoke-HeadlessPublisherStartup.ps1](../../scripts/Invoke-HeadlessPublisherStartup.ps1)
 checks an already extracted copy of that exact hosted candidate using a prebuilt
 maintenance tool. It accepts only the checked-in hosted package identities, rejects

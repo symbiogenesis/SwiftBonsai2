@@ -35,8 +35,10 @@ benchmarks and performance captures stay in owning CI.
   deadlines, memory pressure, owned-process cleanup and explicit retry without replay.
   Qualify the opt-in bounded supplied-history and `stalled_consumer` workloads on
   X2 within the shared five-minute total budget under the [acceptance
-  contract](docs/validation.md#actual-model-application-acceptance). Skipped requested
-  workloads remain pending; bounded history does not close long-history acceptance. Retain context
+  contract](docs/validation.md#actual-model-application-acceptance), charging checkout,
+  hosted-tool intake and verification against the actual remaining case allowance.
+  Skipped requested workloads remain pending; bounded history does not close
+  long-history acceptance. Retain context
   rejection, same-instance reuse, termination and usage, Stop, Job and listener cleanup
   and fresh-owner evidence. Fixture size and output reservations do not prove exact
   occupancy or generation; stalled forwarding does not prove socket saturation or an
@@ -304,7 +306,9 @@ LoRA gates; calibration proves neither quality nor reduced admission.
   has none. Qualify the complete short screen within one shared setup, verification,
   loading, comparison and cleanup budget; leave broader thread choices pending.
   Resolve legacy `0xC0000142` startup with shell DLL audits and bounded `--version`
-  probes under unchanged mitigations. Integrate and release the [headless UCRT
+  probes under unchanged mitigations. Follow the [retained exact-candidate X2
+  model-free startup](docs/runtime-candidates/README.md#bounded-x2-model-free-startup)
+  with model loading and inference qualification. Integrate and release the [headless UCRT
   candidate](docs/runtime-candidates/README.md#headless-ucrt-argv-candidate) upstream;
   qualify its exact binary before repinning Runner.
 - Qualify scalar/NEON, optional ISA and phase-specific thread, batch, wait and power
@@ -397,7 +401,9 @@ Follow [Adreno contracts](docs/adreno.md); discovery alone changes no CPU profil
   emulation and preserving unknowns and conservative admission. Resolve X2 `host-gpu`
   headless-worker `instance-creation` failure (`VK_ERROR_INCOMPATIBLE_DRIVER`), using
   retained stage/result diagnostics and bounded current-worker module snapshots;
-  module names alone do not identify failed DLLs or establish dependency provenance.
+  retain bounded on-disk loader/new-module hashes for dependency review. Module names
+  and on-disk hashes do not identify failed DLLs, bind mapped-image bytes or establish
+  signature and dependency provenance.
   Tool-policy X2-90 observations neither explain it
   nor qualify worker access.
 - Pilot one native ARM64 OpenCL packed projection candidate and Swift shape in Prism:

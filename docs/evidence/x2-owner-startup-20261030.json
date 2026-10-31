@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "kind": "x2-owner-model-free-startup-and-gpu-discovery",
+  "capturedLocalDate": "2026-10-30",
+  "runnerRevision": "e9f2de08f33da5affb1bbb3619c8c3eba91df263",
+  "scope": "Exact hosted publisher candidate startup and one bounded Vulkan discovery attempt. No model, shader, benchmark, runtime promotion or production pin change.",
+  "tool": {
+    "target": "aarch64-pc-windows-msvc",
+    "toolchain": "nightly-2026-10-22",
+    "profile": "release",
+    "locked": true,
+    "offline": true,
+    "maximumCompileJobs": 4,
+    "sha256": "209cfdce4a45011ef58c7335d3836b25f560db4dc21f95cd275e06137bf64f18",
+    "exactExecutedBinaryArchived": true
+  },
+  "device": {
+    "processorName": "Snapdragon(R) X2 Elite Extreme - X2E94100 - Qualcomm Oryon(TM) CPU",
+    "architecture": "aarch64",
+    "windowsVersion": [10, 0, 26300],
+    "source": "native host-cpu observations"
+  },
+  "candidate": {
+    "hostedRunId": "41100062393",
+    "hostedArtifactSha256": "ac68134c23f8b36a9d4476b77dc9b28104253b2f86945dcbfe31dab6d30baad8",
+    "sourceCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+    "patchSha256": "10cd9ec4dc4d29bd955744bc07d7a7914755d5e22e146a98f254d4c84d9caf2b",
+    "packageFilesIndependentlyDigestVerified": 14,
+    "filePins": "headless-publisher-startup.json"
+  },
+  "startup": {
+    "status": "passed",
+    "startedAtUtcSource": "archived final/startup/startup.json",
+    "scriptSha256": "9db679220750b506fb98c1e7cf2b15c4f311eaea92c2df2d2a5b2eef59d9c558",
+    "receiptSha256": "1184f25fa7d29cdfda8b4007952bce895232fdc241c9999eaeb2bf096f7560a9",
+    "workBudgetSeconds": 45,
+    "elapsedMilliseconds": 2306,
+    "requestedProbes": ["completion-version", "server-version", "bench-help", "argv-0", "argv-1", "argv-2", "argv-3", "argv-4", "argv-5", "argv-6"],
+    "completedProbes": 10,
+    "allExitCodesZero": true,
+    "argumentsMatchHostedFixtures": true,
+    "supervisionSidecarsMatch": true,
+    "modelLoaded": false,
+    "workerPolicy": "ordinary-required-headless",
+    "configuredLimits": {
+      "jobMemoryBytes": 536870912,
+      "activeProcesses": 1,
+      "workerTimeoutSeconds": 10,
+      "maximumBytesPerOutputStream": 65536,
+      "basis": "captured script hash and reviewed supervisor source; not independently queried limit counters"
+    },
+    "argvMitigationConfirmations": 7,
+    "argvObservedMitigations": "Win32k=1 Extensions=1 Images=3",
+    "allSupervisionStatusesCompleted": true,
+    "cancellationFailureReported": false,
+    "explicitJobEmptyCounterObserved": false,
+    "genericReceiptFieldNote": "ModelProcessStarted means executable creation; these fixed version/help/parser-only invocations loaded no model."
+  },
+  "gpu": {
+    "status": "unknown",
+    "backendReady": false,
+    "executionPolicy": "headless-worker",
+    "stage": "instance-creation",
+    "vulkanResult": -9,
+    "loaderApiVersion": 4206893,
+    "applicationApiVersion": 4206592,
+    "beforeModuleCount": 24,
+    "afterModuleCount": 24,
+    "newlyObservedModules": [],
+    "onDiskFiles": [{
+      "file": "vulkan-1.dll",
+      "bytes": 2499544,
+      "sha256": "0429254808e7c7800df2571a4aea692bf285329e888c9aca31ae584305e1df43"
+    }],
+    "receiptSha256": "22032f776ac194acb78b9c50e2c6515b3faaa462268dfa3c892c768d2cd289ea",
+    "loadedImageIdentityVerified": false,
+    "signatureVerified": false,
+    "dependenciesVerified": false,
+    "failureCause": "unknown; an empty module difference does not exclude failed or transient ICD loads"
+  },
+  "validation": {
+    "focusedRustCasesPassed": 8,
+    "startupPlanAndArgumentParityPassed": true,
+    "releaseClippyPassed": ["bonsai-tools library", "bonsai-windows-process library", "bonsai-broker native_model test target"],
+    "strictPowerShellAnalyzer": "pending CI; only an unbuilt analyzer source manifest was available locally",
+    "fullSuitesExecuted": false,
+    "ownerExecutionMaximumSeconds": 300,
+    "finalCaptureReason": "Heap-buffer lint fixes changed the tool binary; repeated only model-free capture to bind final bytes within the same session budget."
+  },
+  "archive": {
+    "directory": "%LOCALAPPDATA%/SwiftBonsai2/qualification/x2-next-20261030/source-e9f2de0",
+    "manifest": "sha256-manifest.json",
+    "manifestSha256": "13fad7f68315eecbd24c7f3ab58884f004c6d2554f90de0011dd10cfcd704220",
+    "payloadFiles": 75,
+    "allPayloadDigestsReread": true,
+    "includes": ["final executed supervisor", "exact Runner source ZIP", "startup/GPU raw receipts and output", "earlier capture", "independent-review.json"],
+    "independentReview": "separate startup worker verified scope, bundle identities, final tool digest, sidecars and seven mitigation logs"
+  },
+  "pending": ["actual-model history and stalled-consumer device acceptance", "candidate model loading and inference", "numerical/state/adapter parity", "performance and quality", "Vulkan ICD failure cause and worker access", "production release and pin update"]
+}

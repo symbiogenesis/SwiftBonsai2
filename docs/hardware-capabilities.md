@@ -143,6 +143,14 @@ executable and raw diagnostic digests. It reproduces `instance-creation` / `-9`,
 observable failure stage; it does not resolve the DLL/policy/resource cause or qualify
 GPU worker access. External raw diagnostics remain temporary rather than durably archived.
 
+The [2026-10-30 source-bound owner capture](evidence/x2-owner-startup-20261030.json)
+still fails at instance creation with `-9` under the headless policy. Its two
+24-module snapshots are identical. The bounded file observation identifies only
+the 2,499,544-byte `vulkan-1.dll` on disk; it does not identify a failing ICD or
+qualify driver access. This newer capture, its exact supervisor and Runner source,
+raw output and independent review have a digest-verified owner archive. The older
+receipt remains separate evidence.
+
 ### Native OpenCL observations
 
 The same `-ToolPath` adds `NativeOpenClObservations` from bounded `host-opencl`: GPU information
