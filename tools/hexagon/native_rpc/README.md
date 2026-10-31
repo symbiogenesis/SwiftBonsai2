@@ -61,6 +61,17 @@ Normal completion unregisters and frees the scratch, but every mapping attempt
 retains its DLL/file owner until supervised process death. Complete implicit-session
 teardown and failure recovery remain unqualified.
 
+This probe's **STATIC flag 0** is a deliberately narrow control. The pinned
+ggml host uses `FASTRPC_MAP_FD` (2) for pinned buffers and `FASTRPC_MAP_FD_DELAYED`
+(3), or a matching-SDK extended mode, for ordinary buffers inside its established
+HTP session. A STATIC refusal does not rule out those paths, DMA64/VTCM access or
+Hexagon execution. The probe never retries with another flag or opens a custom
+module to force admission. The referenced public
+[`AEEStdErr.h`](https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/inc/AEEStdErr.h#L92)
+defines host `AEE_ERPC` as `0x200` (512), a generic FastRPC implementation error.
+A matching return value supplies no underlying permission, signature, descriptor
+or hardware diagnosis; retain the exact code and mode before investigating.
+
 The architecture decoder follows the pinned ggml low-byte packed-decimal
 interpretation, but rejects invalid nibbles and zero; raw values remain in the
 receipt. HVX/HMX values and VTCM page/count queries do not measure throughput or
