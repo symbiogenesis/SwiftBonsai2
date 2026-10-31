@@ -111,11 +111,21 @@ startup and at each workload/cleanup/recovery phase with `passed: false`; only
 complete success changes it to true. A timeout/failure retains the latest phase
 and completed observations without claiming unrun checks. The [promotion evaluator](native-rust-engine.md#default-runtime-promotion) keeps exits independent.
 
+The core PQ2 receipt saves supplied-history termination, visible bytes and reported
+usage, context rejection and same-owner reuse as each completes. Initial Stop,
+fresh-owner abandonment and final fresh-owner shutdown retain separate operation
+counts and Job/listener cleanup observations. Missing usage remains null; visible
+bytes never stand in for tokens. These observations survive a later phase failure
+with `passed: false`; they do not qualify the missing phase or either optional
+workload. The bounded supplied-history and stalled-consumer device gates remain
+pending until successful owner-device evidence is retained within the shared budget.
+
 Model-free acceptance regressions:
 
 | Exact case | Property |
 | --- | --- |
 | `native_extended_acceptance_distinguishes_output_usage_from_delta_count` | Fixture policy; usage separate from bytes/events |
+| `native_lifecycle_observations_separate_generation_usage_and_owned_cleanup` | Visible UTF-8 bytes remain distinct from reported tokens; unknown usage stays null, over-cap usage rejects and cleanup requires the expected owner exit |
 | `native_bounded_history_and_stall_requests_preserve_distinct_output_limits` | Bounded history has 128 repetitions/four tokens; stopped stream reserves 4K; both disable thinking and stay in one aggregate lifecycle case |
 | `native_stalled_consumer_retains_fragmented_prefix_connection_until_dropped` | Fragmented UTF-8/SSE intake and retained connection |
 | `native_stalled_consumer_never_qualifies_natural_completion_as_interruption` | Operation-counter interruption guard |

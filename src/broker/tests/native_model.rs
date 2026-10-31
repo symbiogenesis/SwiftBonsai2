@@ -93,6 +93,37 @@ struct StreamSummary {
     completion_tokens: Option<u64>,
 }
 
+fn stream_observation(summary: &StreamSummary, cap: u32) -> Value {
+    assert!(summary.content_bytes > 0);
+    assert!(["length", "stop"].contains(&summary.finish_reason.as_str()));
+    assert!(
+        summary
+            .completion_tokens
+            .is_none_or(|count| count <= u64::from(cap))
+    );
+    json!({"requestedCompletionCap":cap, "finishReason":summary.finish_reason,
+        "visibleContentBytes":summary.content_bytes,
+        "reportedCompletionTokens":summary.completion_tokens})
+}
+
+fn cleanup_observation(report: &RunReport, expected: RunExit) -> Value {
+    assert_eq!(report.exit, expected);
+    assert!(matches!(
+        expected,
+        RunExit::Shutdown | RunExit::AdmissionClosed
+    ));
+    let exit = if expected == RunExit::Shutdown {
+        "shutdown"
+    } else {
+        "admission-closed"
+    };
+    // LaunchedService::run returns success only after confirming the owned Job
+    // empty. Callers separately verify the frontend listener is released.
+    json!({"exit":exit, "completedOperations":report.completed,
+        "failedOperations":report.failed, "peakInFlight":report.peak_in_flight,
+        "ownedJobEmpty":true, "listenerReleased":true})
+}
+
 fn ci_only() {
     assert_eq!(env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
     assert_eq!(env::var("GITHUB_REF").as_deref(), Ok("refs/heads/main"));
@@ -448,13 +479,55 @@ async fn nonreading_prefix(port: u16, credential: &str) -> (BufReader<TcpStream>
     observed
 }
 
-async fn supplied_history_acceptance(port: u16, credential: &str) {
+async fn supplied_history_acceptance(port: u16, credential: &str) -> Value {
     let history = json!([
         {"role":"user", "content":"Remember the word cedar."},
         {"role":"assistant", "content":"I will remember cedar.", "reasoning_content":"The supplied word is cedar."},
         {"role":"user", "content":"Write one sentence about cedar."}
     ]);
-    streamed_response(&exchange(port, credential, &short_request(history, true)).await);
+    stream_observation(
+        &streamed_response(&exchange(port, credential, &short_request(history, true)).await),
+        SHORT_COMPLETION_CAP,
+    )
+}
+
+async fn history_and_context_acceptance(
+    port: u16,
+    credential: &str,
+    evidence: &Path,
+    report: &mut Value,
+) {
+    report["phase"] = json!("supplied-history-and-context-rejection-reuse");
+    save_acceptance_report(evidence, report);
+    report["suppliedHistoryStream"] = supplied_history_acceptance(port, credential).await;
+    save_acceptance_report(evidence, report);
+    // Exact tokenizer counting must reject before generation, then permit a
+    // fresh request in the same owned model instance. This is not an 8K decode.
+    let oversized = json!([{"role":"user", "content":" cedar".repeat(9000)}]);
+    let rejected = exchange(port, credential, &request(oversized, false, 32)).await;
+    assert_eq!(
+        json_response(&rejected, "HTTP/1.1 413 Content Too Large")["error"]["code"],
+        "context_length_exceeded"
+    );
+    report["contextRejection"] = json!({"status":413, "code":"context_length_exceeded"});
+    save_acceptance_report(evidence, report);
+    let small = short_request(json!([{"role":"user", "content":"Name a tree."}]), false);
+    let completed = json_response(&exchange(port, credential, &small).await, "HTTP/1.1 200 OK");
+    report["sameOwnerAfterContextRejection"] = stream_observation(
+        &StreamSummary {
+            finish_reason: completed["choices"][0]["finish_reason"]
+                .as_str()
+                .unwrap()
+                .into(),
+            content_bytes: completed["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap()
+                .len(),
+            completion_tokens: completed["usage"]["completion_tokens"].as_u64(),
+        },
+        SHORT_COMPLETION_CAP,
+    );
+    save_acceptance_report(evidence, report);
 }
 
 async fn acceptance(
@@ -472,30 +545,7 @@ async fn acceptance(
     let credential = key(&owner);
     let (stop, stopped) = oneshot::channel();
     let running = spawn_local(owner.run(async { stopped.await.map_err(io::Error::other) }));
-    report["phase"] = json!("supplied-history-and-context-rejection-reuse");
-    save_acceptance_report(evidence, report);
-    supplied_history_acceptance(port, &credential).await;
-    // Exact tokenizer counting must reject before generation, then permit a
-    // fresh request in the same owned model instance. This is not an 8K decode.
-    let oversized = json!([{"role":"user", "content":" cedar".repeat(9000)}]);
-    let rejected = exchange(port, &credential, &request(oversized, false, 32)).await;
-    assert_eq!(
-        json_response(&rejected, "HTTP/1.1 413 Content Too Large")["error"]["code"],
-        "context_length_exceeded"
-    );
-    let small = short_request(json!([{"role":"user", "content":"Name a tree."}]), false);
-    let completed = json_response(
-        &exchange(port, &credential, &small).await,
-        "HTTP/1.1 200 OK",
-    );
-    assert!(
-        completed["choices"][0]["message"]["content"]
-            .as_str()
-            .is_some_and(|text| !text.is_empty())
-    );
-    assert!(
-        ["length", "stop"].contains(&completed["choices"][0]["finish_reason"].as_str().unwrap())
-    );
+    history_and_context_acceptance(port, &credential, evidence, report).await;
     let extended_enabled = optional_workload_enabled(
         workloads.extended_history,
         deadline.saturating_duration_since(tokio::time::Instant::now()),
@@ -526,6 +576,8 @@ async fn acceptance(
     let stopped_report = timeout(STOP_WAIT, running).await.unwrap().unwrap().unwrap();
     assert_eq!(stopped_report.exit, RunExit::Shutdown);
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    report["initialCleanup"] = cleanup_observation(&stopped_report, RunExit::Shutdown);
+    save_acceptance_report(evidence, report);
     let mut stalled_report = if let Some((client, content_bytes)) = stalled {
         let extra = usize::from(extended_enabled);
         let summary =
@@ -562,12 +614,15 @@ async fn fresh_owner_recovery(data: &Path, evidence: &Path, report: &mut Value) 
     let running = spawn_local(owner.run(pending::<io::Result<()>>()));
     let long = stalled_request();
     let client = connect(port, &credential, &long).await;
-    drop(timeout(WAIT, read_until_content(client)).await.unwrap());
-    assert_eq!(
-        timeout(WAIT, running).await.unwrap().unwrap().unwrap().exit,
-        RunExit::AdmissionClosed
-    );
+    let (client, content_bytes) = timeout(WAIT, read_until_content(client)).await.unwrap();
+    report["freshOwnerAbandonmentPrefix"] = json!({"observedVisiblePrefixBytes":content_bytes});
+    save_acceptance_report(evidence, report);
+    drop(client);
+    let abandoned_report = timeout(WAIT, running).await.unwrap().unwrap().unwrap();
+    assert_eq!(abandoned_report.exit, RunExit::AdmissionClosed);
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    report["abandonmentCleanup"] = cleanup_observation(&abandoned_report, RunExit::AdmissionClosed);
+    save_acceptance_report(evidence, report);
 
     // Fresh ownership after a cancelled generation must work without replay.
     report["phase"] = json!("fresh-owner-complete-stream-and-cleanup");
@@ -577,20 +632,24 @@ async fn fresh_owner_recovery(data: &Path, evidence: &Path, report: &mut Value) 
     let credential = key(&owner);
     let (stop, stopped) = oneshot::channel();
     let running = spawn_local(owner.run(async { stopped.await.map_err(io::Error::other) }));
-    streamed_response(
-        &exchange(
-            port,
-            &credential,
-            &short_request(json!([{"role":"user", "content":"Name a flower."}]), true),
-        )
-        .await,
+    report["freshOwnerStream"] = stream_observation(
+        &streamed_response(
+            &exchange(
+                port,
+                &credential,
+                &short_request(json!([{"role":"user", "content":"Name a flower."}]), true),
+            )
+            .await,
+        ),
+        SHORT_COMPLETION_CAP,
     );
+    save_acceptance_report(evidence, report);
     stop.send(()).unwrap();
-    assert_eq!(
-        timeout(WAIT, running).await.unwrap().unwrap().unwrap().exit,
-        RunExit::Shutdown
-    );
+    let completed_report = timeout(WAIT, running).await.unwrap().unwrap().unwrap();
+    assert_eq!(completed_report.exit, RunExit::Shutdown);
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    report["freshOwnerCleanup"] = cleanup_observation(&completed_report, RunExit::Shutdown);
+    save_acceptance_report(evidence, report);
 }
 
 fn optional_workload_enabled(requested: bool, remaining: Duration) -> bool {
@@ -772,6 +831,52 @@ fn native_extended_acceptance_distinguishes_output_usage_from_delta_count() {
     );
     let duplicate = framed(&format!("{content}{terminal_usage}{usage}{done}"));
     assert!(std::panic::catch_unwind(|| streamed_response(duplicate.as_bytes())).is_err());
+}
+
+#[test]
+fn native_lifecycle_observations_separate_generation_usage_and_owned_cleanup() {
+    let summary = StreamSummary {
+        finish_reason: "length".into(),
+        content_bytes: "cèdre".len(),
+        completion_tokens: Some(4),
+    };
+    let observed = stream_observation(&summary, 4);
+    assert_eq!(observed["visibleContentBytes"], 6);
+    assert_eq!(observed["reportedCompletionTokens"], 4);
+    assert_eq!(observed["requestedCompletionCap"], 4);
+    assert!(std::panic::catch_unwind(|| stream_observation(&summary, 2)).is_err());
+    assert_eq!(
+        stream_observation(
+            &StreamSummary {
+                completion_tokens: None,
+                ..summary
+            },
+            4
+        )["reportedCompletionTokens"],
+        Value::Null
+    );
+    let abandoned = RunReport {
+        exit: RunExit::AdmissionClosed,
+        completed: 0,
+        failed: 1,
+        peak_in_flight: 1,
+    };
+    let cleanup = cleanup_observation(&abandoned, RunExit::AdmissionClosed);
+    assert_eq!(cleanup["exit"], "admission-closed");
+    assert_eq!(cleanup["completedOperations"], 0);
+    assert_eq!(cleanup["failedOperations"], 1);
+    assert_eq!(cleanup["ownedJobEmpty"], true);
+    assert_eq!(cleanup["listenerReleased"], true);
+    assert!(
+        std::panic::catch_unwind(|| cleanup_observation(&abandoned, RunExit::Shutdown)).is_err()
+    );
+    let failed = RunReport {
+        exit: RunExit::AcceptFailure,
+        ..abandoned
+    };
+    assert!(
+        std::panic::catch_unwind(|| cleanup_observation(&failed, RunExit::AcceptFailure)).is_err()
+    );
 }
 
 #[test]

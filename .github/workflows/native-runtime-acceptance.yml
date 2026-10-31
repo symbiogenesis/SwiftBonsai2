@@ -67,6 +67,7 @@ jobs:
           foreach ($case in @('native_profile_selection_and_scale_receipts_preserve_bounded_scope', 'native_row4_profile_is_explicit_original_pq2_and_one_stream_only',
               'native_bounded_history_and_stall_requests_preserve_distinct_output_limits',
               'native_extended_acceptance_distinguishes_output_usage_from_delta_count',
+              'native_lifecycle_observations_separate_generation_usage_and_owned_cleanup',
               'native_stalled_consumer_retains_fragmented_prefix_connection_until_dropped',
               'native_stalled_consumer_never_qualifies_natural_completion_as_interruption',
               'native_stalled_consumer_rejects_error_or_unframed_stream_headers',
