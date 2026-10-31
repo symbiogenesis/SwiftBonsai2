@@ -110,8 +110,7 @@ mod tests {
     fn uri_is_bound_to_exact_architecture_domain_and_default_session() {
         assert!(self_check());
         let mut uri = module_uri(81)
-            .map(CStr::to_bytes)
-            .unwrap_or_default()
+            .map_or_default(CStr::to_bytes)
             .to_vec();
         uri.extend_from_slice(b"&_dom=cdsp&_session=0\0");
         assert!(checked_uri(81, &uri));
