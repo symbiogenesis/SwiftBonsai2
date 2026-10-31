@@ -84,7 +84,7 @@ function Get-BonsaiHexagonSessionProbeResult {
     if ($ExitCode -ne 0 -or ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -ne 1 -or
         $record.kind -isnot [string] -or $record.kind -cne 'native-fastrpc-session-mapping-probe' -or
         $record.driverDll -isnot [string] -or -not [IO.Path]::IsPathFullyQualified($record.driverDll) -or [IO.Path]::GetFileName($record.driverDll) -ine 'libcdsprpc.dll' -or
-        $record.stage -isnot [string] -or $record.stage -cnotin @('session-metadata-incomplete','reference-process-init-refused-pinned','reference-process-init-contract-changed-pinned','module-open-refused-pinned','module-handle-not-written-pinned','allocation-refused','descriptor-refused','allocation-not-page-aligned','cpu-roundtrip-failed','fd-mapping-failed-pinned','fd-unmapping-failed-pinned','session-fd-cycle-completed-owner-pinned','module-close-refused-pinned') -or
+        $record.stage -isnot [string] -or $record.stage -cnotin @('session-metadata-incomplete','reference-process-init-refused-pinned','module-open-refused-pinned','module-handle-not-written-pinned','allocation-refused','descriptor-refused','allocation-not-page-aligned','cpu-roundtrip-failed','fd-mapping-failed-pinned','fd-unmapping-failed-pinned','session-fd-cycle-completed-owner-pinned','module-close-refused-pinned') -or
         $record.metadataStage -isnot [string] -or $record.metadataStage -cnotmatch '^[a-z][a-z0-9-]{0,63}$') { throw 'Invalid native session probe identity or stage.' }
     foreach ($field in @('passed','metadataPrepared','uriVerified','handleObserved','remoteModuleOpened','allocationSucceeded','descriptorObserved','cpuRoundtripVerified','mappingAttempted','freeCompleted','poisoned','moduleCloseCompleted','ownerPinnedUntilExit','driverLoaded','signedDeploymentVerified','computeExecuted','dmaExecuted','unsignedProcessRequested','referenceProcessInitializationSelected','sessionTeardownVerified','profileEligible')) {
         if ($record[$field] -isnot [bool]) { throw 'Native session probe requires exact boolean values.' }
@@ -98,7 +98,10 @@ function Get-BonsaiHexagonSessionProbeResult {
         if (($value -isnot [int] -and $value -isnot [long]) -or $value -ne $pair[1]) { throw 'Native session probe changed a fixed argument.' }
     }
     if (($record.architectureRaw -isnot [int] -and $record.architectureRaw -isnot [long]) -or $record.architectureRaw -lt 0 -or $record.architectureRaw -gt [uint]::MaxValue) { throw 'Invalid raw native architecture.' }
-    foreach ($field in @('domainResult','effectiveDomain','uriResult','moduleOpenResult','descriptorError','mappingResult','unmappingResult','moduleCloseResult','processInitializationResult')) {
+    foreach ($field in @('processInitializationDomainAfter','processInitializationEnableAfter')) {
+        if (-not $record.Contains($field)) { throw 'Native process initialization omitted a returned-field observation.' }
+    }
+    foreach ($field in @('domainResult','effectiveDomain','uriResult','moduleOpenResult','descriptorError','mappingResult','unmappingResult','moduleCloseResult','processInitializationResult','processInitializationDomainAfter','processInitializationEnableAfter')) {
         $value = $record[$field]
         if ($null -ne $value -and (($value -isnot [int] -and $value -isnot [long]) -or $value -lt [int]::MinValue -or $value -gt [int]::MaxValue)) { throw 'Invalid raw native session result.' }
     }
@@ -114,6 +117,11 @@ function Get-BonsaiHexagonSessionProbeResult {
     if ($record.metadataPrepared -ne $metadata -or ($metadata -and $record.metadataStage -cne 'session-metadata-prepared')) { throw 'Native session metadata is contradictory.' }
     $openAttempted = $null -ne $record.moduleOpenResult
     $initializationAttempted = $null -ne $record.processInitializationResult
+    # The public control buffer is mutable. These are raw returned bytes, not
+    # effective process-class/configuration evidence or a replacement domain.
+    foreach ($field in @('processInitializationDomainAfter','processInitializationEnableAfter')) {
+        if ($initializationAttempted -ne ($null -ne $record[$field])) { throw 'Native process initialization returned-field presence contradicts its attempted request.' }
+    }
     $domainPrepared = $supported -and $null -ne $record.domainResult -and $record.domainResult -eq 0 -and
         $null -ne $record.effectiveDomain -and $record.effectiveDomain -ge 0
     if ($record.referenceProcessInitializationSelected -ne [bool]$ReferenceInitialization -or
@@ -153,7 +161,6 @@ function Get-BonsaiHexagonSessionProbeResult {
     $stageMatches = switch -CaseSensitive ($record.stage) {
         'session-metadata-incomplete' { -not $metadata -and -not $openAttempted -and (-not $initializationAttempted -or $record.processInitializationResult -eq 0) }
         'reference-process-init-refused-pinned' { $ReferenceInitialization -and $initializationAttempted -and $record.processInitializationResult -ne 0 -and $null -eq $record.uriResult -and -not $record.uriVerified -and -not $openAttempted }
-        'reference-process-init-contract-changed-pinned' { $ReferenceInitialization -and $initializationAttempted -and $record.processInitializationResult -eq 0 -and $null -eq $record.uriResult -and -not $record.uriVerified -and -not $openAttempted }
         'module-open-refused-pinned' { $openAttempted -and $record.moduleOpenResult -ne 0 -and -not $opened }
         'module-handle-not-written-pinned' { $openAttempted -and $record.moduleOpenResult -eq 0 -and -not $record.handleObserved -and -not $opened }
         'allocation-refused' { $opened -and -not $record.allocationSucceeded -and $null -ne $record.moduleCloseResult }

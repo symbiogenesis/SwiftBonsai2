@@ -67,6 +67,7 @@ if ($Case -ceq 'Plan') {
         driverLoaded = $true; signedDeploymentVerified = $false; computeExecuted = $false; dmaExecuted = $false
         unsignedProcessRequested = $false; sessionTeardownVerified = $false; profileEligible = $false
         referenceProcessInitializationSelected = $false; processInitializationResult = $null
+        processInitializationDomainAfter = $null; processInitializationEnableAfter = $null
         processInitializationRequestId = 2; processInitializationEnable = 1; processInitializationStructureBytes = 8
     }
     $checked = Get-BonsaiHexagonSessionProbeResult -Json ($native | ConvertTo-Json -Depth 8) -ExitCode 0
@@ -102,8 +103,22 @@ if ($Case -ceq 'Plan') {
     Assert (-not $checked.passed -and -not $checked.mappingAttempted -and $checked.ownerPinnedUntilExit) 'A module-open refusal became mapping or released the owner.'
     $reference = $native.Clone(); $reference.referenceProcessInitializationSelected = $true
     $reference.processInitializationResult = 0; $reference.unsignedProcessRequested = $true
+    $reference.processInitializationDomainAfter = 3; $reference.processInitializationEnableAfter = 1
     $checked = Get-BonsaiHexagonSessionProbeResult -Json ($reference | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization
     Assert ($checked.passed -and $checked.unsignedProcessRequested -and $checked.processInitializationResult -eq 0) 'Explicit reference process initialization lost its separate outcome.'
+    $mutated = $reference.Clone(); $mutated.processInitializationDomainAfter = [int]::MinValue; $mutated.processInitializationEnableAfter = [int]::MaxValue
+    $checked = Get-BonsaiHexagonSessionProbeResult -Json ($mutated | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization
+    Assert ($checked.passed -and $checked.effectiveDomain -eq 3 -and $checked.processInitializationDomainAfter -eq [int]::MinValue -and $checked.processInitializationEnableAfter -eq [int]::MaxValue) 'Returned control-buffer bytes changed the validated domain or hid their raw observation.'
+    foreach ($field in @('processInitializationDomainAfter','processInitializationEnableAfter')) {
+        foreach ($value in @($null,$true,1.5,2147483648)) {
+            $changed = $reference.Clone(); $changed[$field] = $value
+            Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'Missing or coerced returned process-control bytes were admitted.'
+        }
+        $changed = $reference.Clone(); $changed.Remove($field)
+        Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'An attempted process-control call omitted a returned field.'
+        $changed = $native.Clone(); $changed[$field] = 3
+        Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 } 'An unattempted process-control call acquired returned bytes.'
+    }
     Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($reference | ConvertTo-Json -Depth 8) -ExitCode 0 } 'The default parser admitted an unselected reference-process request.'
     Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($native | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A default execution was relabeled as explicitly selected reference initialization.'
     foreach ($field in @('processInitializationRequestId','processInitializationEnable','processInitializationStructureBytes')) {
@@ -112,6 +127,7 @@ if ($Case -ceq 'Plan') {
     }
     $referenceRefused = $openRefused.Clone(); $referenceRefused.referenceProcessInitializationSelected = $true
     $referenceRefused.unsignedProcessRequested = $true; $referenceRefused.processInitializationResult = 14
+    $referenceRefused.processInitializationDomainAfter = 3; $referenceRefused.processInitializationEnableAfter = 1
     $referenceRefused.stage = 'reference-process-init-refused-pinned'; $referenceRefused.metadataPrepared = $false
     $referenceRefused.metadataStage = 'effective-domain-prepared'; $referenceRefused.uriResult = $null; $referenceRefused.uriVerified = $false
     $referenceRefused.moduleOpenResult = $null
@@ -131,11 +147,6 @@ if ($Case -ceq 'Plan') {
     Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A refused reference initialization continued into URI preparation.'
     $changed = $referenceRefused.Clone(); $changed.uriVerified = $true
     Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A refused reference initialization verified an unrequested URI.'
-    $contractChanged = $referenceRefused.Clone(); $contractChanged.stage = 'reference-process-init-contract-changed-pinned'; $contractChanged.processInitializationResult = 0
-    $checked = Get-BonsaiHexagonSessionProbeResult -Json ($contractChanged | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization
-    Assert (-not $checked.passed -and $checked.unsignedProcessRequested -and $checked.ownerPinnedUntilExit -and $null -eq $checked.uriResult) 'A changed native init input lost its precise completed-control/blocked-URI observation.'
-    $changed = $contractChanged.Clone(); $changed.uriResult = 0
-    Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A changed native init input continued into URI preparation.'
     $changed = $referenceRefused.Clone(); $changed.ownerPinnedUntilExit = $false
     Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A completed reference-process request released its owner.'
     $referenceUriRefused = $referenceRefused.Clone(); $referenceUriRefused.stage = 'session-metadata-incomplete'; $referenceUriRefused.metadataStage = 'session-uri-refused'
@@ -144,6 +155,7 @@ if ($Case -ceq 'Plan') {
     Assert ($checked.processInitializationResult -eq 0 -and $checked.uriResult -eq 14 -and -not $checked.remoteModuleOpened) 'Reference initialization success erased the separately refused URI request.'
     $referenceDomainRefused = $referenceRefused.Clone(); $referenceDomainRefused.stage = 'session-metadata-incomplete'; $referenceDomainRefused.metadataStage = 'effective-domain-refused'
     $referenceDomainRefused.unsignedProcessRequested = $false; $referenceDomainRefused.processInitializationResult = $null
+    $referenceDomainRefused.processInitializationDomainAfter = $null; $referenceDomainRefused.processInitializationEnableAfter = $null
     $referenceDomainRefused.ownerPinnedUntilExit = $false; $referenceDomainRefused.domainResult = 14; $referenceDomainRefused.effectiveDomain = $null
     $checked = Get-BonsaiHexagonSessionProbeResult -Json ($referenceDomainRefused | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization
     Assert ($checked.referenceProcessInitializationSelected -and -not $checked.unsignedProcessRequested -and $null -eq $checked.processInitializationResult) 'Selecting reference initialization became an actual request before its prerequisites.'
