@@ -513,7 +513,10 @@ Follow [Hexagon contracts](docs/hexagon.md).
   4 KiB STATIC mapping probe returned generic FastRPC error 512 after allocation,
   descriptor and host read/write success; it does not rule out the signed runtime's
   established-session FD flow. Preserve that scoped failure and prove the next
-  supported mapping before computation. Start with `blk.0.ffn_up.weight`,
+  supported mapping before computation. Qualify the fixed native default-session
+  domain/URI preparation against the signed deployment, then bind actual module
+  loading and FD mapping to that established session; metadata alone proves neither.
+  Start with `blk.0.ffn_up.weight`,
   K=5120/M=17408/N=1, keeping transforms,
   adapter corrections and all committed state on CPU. Implement lossless PQ2
   tiling/fused matvec against exact Q8_K preparation/reduction, then separately qualify
@@ -521,6 +524,11 @@ Follow [Hexagon contracts](docs/hexagon.md).
   bytes. The model-free PQ2/Q2 layout control preserves weights only and adds
   419,840,000 bytes for a whole packed copy; bind actual transform/sign arrays and
   prove activation/logit/state parity before timing or expanding placement.
+  Transfer the [CPU-only tiled operation control](tools/hexagon/packed-projection.md)
+  into Prism's signed device path after its captured Q8_K/FMA, tile traversal,
+  transform and cancellation controls pass hosted CI. Bind actual artifact/sign
+  arrays and effective VTCM; its proposed 18,752-byte double-buffer reserve excludes
+  session, queue, DMA-descriptor and mapping costs and grants no device admission.
 - Evaluate HVX packed work and HMX batched prefill with bounded VTCM, DMA and repacking
   scratch, exact fusion/recurrent basis and independent adapters. Cover ring saturation,
   partial tiles, double buffering, requested and effective VTCM, allocation refusal and

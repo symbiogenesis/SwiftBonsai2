@@ -18,6 +18,10 @@ It always leaves execution unqualified. Its worker has an aggregate deadline and
 normal cancellation cleanup; abrupt parent-death Job containment remains a
 diagnostic-helper limitation. The [packed layout audit](../tools/hexagon/README.md)
 checks an independent lossless PQ2/Q2 control, not a production GGUF conversion.
+The [packed projection control](../tools/hexagon/packed-projection.md) adds an
+N=1 CPU tile schedule with captured native Q8_K/FMA observations, explicit signed
+Hadamard input, bounded scratch and cancellation before output publication. Its
+VTCM/traffic ledger is a proposal, not device measurement or signed kernel support.
 [Native Rust access progress](hexagon-native-progress.md) records direct driver
 capability success and the scoped 4 KiB STATIC mapping refusal. The separate
 native boundary is prepared in an unpublished Prism workspace crate.
