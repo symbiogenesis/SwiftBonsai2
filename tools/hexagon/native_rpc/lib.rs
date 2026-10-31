@@ -1,4 +1,4 @@
-//! Minimal native Rust FastRPC capability boundary, without an inference library.
+//! Minimal native Rust `FastRPC` capability boundary, without an inference library.
 //!
 //! This candidate performs only the fixed, read-only CDSP capability control
 //! request. It cannot load DSP kernels, create sessions, change power/trust,
@@ -11,7 +11,10 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 #[cfg(all(windows, target_arch = "aarch64"))]
-#[allow(unsafe_code, reason = "Small audited Windows SCM, loader, trust and vendor capability boundary")]
+#[allow(
+    unsafe_code,
+    reason = "Small audited Windows SCM, loader, trust and vendor capability boundary"
+)]
 mod windows;
 
 /// Exact ggml host-driver source used to verify the Windows loading convention.
@@ -108,9 +111,14 @@ impl Capability {
 
 /// Complete bounded attribute inventory, excluding unsigned-process controls.
 pub const CAPABILITIES: [Capability; 8] = [
-    Capability::Domain, Capability::Hvx64, Capability::Hvx128,
-    Capability::VtcmPage, Capability::VtcmCount, Capability::Architecture,
-    Capability::HmxDepth, Capability::HmxSpatial,
+    Capability::Domain,
+    Capability::Hvx64,
+    Capability::Hvx128,
+    Capability::VtcmPage,
+    Capability::VtcmCount,
+    Capability::Architecture,
+    Capability::HmxDepth,
+    Capability::HmxSpatial,
 ];
 
 /// Exact C `remote_dsp_capability` layout from the pinned Qualcomm header.
@@ -146,8 +154,8 @@ pub const fn decode_architecture(raw: u32) -> Option<u32> {
 /// Returns a fixed contract error if ABI size/alignment/offsets or architecture
 /// decoding differ from the pinned C contract.
 pub fn self_check() -> Result<(), Error> {
-    if std::mem::size_of::<CapabilityRequest>() != 12
-        || std::mem::align_of::<CapabilityRequest>() != 4
+    if size_of::<CapabilityRequest>() != 12
+        || align_of::<CapabilityRequest>() != 4
         || std::mem::offset_of!(CapabilityRequest, domain) != 0
         || std::mem::offset_of!(CapabilityRequest, attribute_id) != 4
         || std::mem::offset_of!(CapabilityRequest, capability) != 8
@@ -166,21 +174,27 @@ pub fn self_check() -> Result<(), Error> {
 pub struct DriverLocation(PathBuf);
 
 impl DriverLocation {
-    /// Read the fixed `qcnspmcdm` service and validate its DriverStore location.
+    /// Read the fixed `qcnspmcdm` service and validate its `DriverStore` location.
     ///
     /// # Errors
     /// Rejects nonnative platforms, missing SCM access, malformed paths and
     /// reparse ancestors. No environment variable or caller path chooses a DLL.
     pub fn inspect_system() -> Result<Self, Error> {
         #[cfg(all(windows, target_arch = "aarch64"))]
-        { windows::inspect_system().map(Self) }
+        {
+            windows::inspect_system().map(Self)
+        }
         #[cfg(not(all(windows, target_arch = "aarch64")))]
-        { Err(Error::UnsupportedPlatform) }
+        {
+            Err(Error::UnsupportedPlatform)
+        }
     }
 
     /// Service-derived absolute vendor driver path, suitable for external hashing.
     #[must_use]
-    pub fn path(&self) -> &Path { &self.0 }
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
 }
 
 /// Single-threaded native capability session with retained file/library lifetime.
@@ -208,12 +222,16 @@ impl Driver {
             Ok(Self { location, inner })
         }
         #[cfg(not(all(windows, target_arch = "aarch64")))]
-        { Err(Error::UnsupportedPlatform) }
+        {
+            Err(Error::UnsupportedPlatform)
+        }
     }
 
     /// Exact service-derived path whose signed file is retained by this session.
     #[must_use]
-    pub fn path(&self) -> &Path { self.location.path() }
+    pub fn path(&self) -> &Path {
+        self.location.path()
+    }
 
     /// Issue only the fixed handle-free capability control request for CDSP.
     ///
@@ -221,9 +239,14 @@ impl Driver {
     /// Preserves native failure codes; output bytes are not used on failure.
     pub fn capability(&mut self, capability: Capability) -> Result<u32, Error> {
         #[cfg(all(windows, target_arch = "aarch64"))]
-        { self.inner.capability(capability) }
+        {
+            self.inner.capability(capability)
+        }
         #[cfg(not(all(windows, target_arch = "aarch64")))]
-        { let _ = capability; Err(Error::UnsupportedPlatform) }
+        {
+            let _ = capability;
+            Err(Error::UnsupportedPlatform)
+        }
     }
 }
 
