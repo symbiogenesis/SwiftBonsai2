@@ -62,9 +62,9 @@ Q8_K path. No performance, admission or backend-selection decision follows.
 
 The [native Rust driver boundary](native_rpc/README.md) and
 [signed-package numeric fixture](dispatch_fixture.rs) cover separate access
-questions. [Current evidence and execution commands](../../docs/hexagon-native-progress.md)
-describe the successful driver queries, scoped STATIC-mode refusal and hosted
-numeric-dispatch gate. Neither tool changes the production runtime.
+questions. [Observed X2 access](../../docs/hexagon-source-audit.md#observed-x2-access)
+records passed driver queries, numeric dispatch and the corrected native FD cycle,
+alongside independent STATIC/default-open refusals. Production execution is unchanged.
 
 The separate [packed projection operation control](packed-projection.md) keeps
 original PQ2 blocks and pinned Swift Q8_K/FMA arithmetic in a bounded CPU tile

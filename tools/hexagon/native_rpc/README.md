@@ -43,8 +43,8 @@ one of the following arguments:
   allocates/maps no buffer and requests no unsigned process. Both native return
   codes and every completed stage remain distinct; an unsupported family,
   changed input structure, malformed or mismatched URI never becomes a fallback
-  domain or synthesized URI. This metadata gate still needs a supervised device
-  observation and does not qualify signed deployment.
+  domain or synthesized URI. Its [supervised X2 observation](../../../docs/evidence/hexagon-x2-session-metadata.json)
+  passed; metadata alone does not qualify signed deployment.
 - `--session-mapping-probe ABSOLUTE_PACKAGE_DIRECTORY`: consumes one native owner
   for the fixed signed bundled v73/v81 module in default CDSP session zero,
   then a 4096-byte **FD=2** mapping, matching unmap/free and explicit remote handle
@@ -93,7 +93,7 @@ or hardware diagnosis; retain the exact code and mode before investigating.
 
 ## Established-session mapping prerequisite
 
-`session.rs` and `session_native.rs` now encode the next narrow native step:
+`session.rs` and `session_native.rs` encode metadata preparation:
 `FASTRPC_GET_EFFECTIVE_DOMAIN_ID=14` and `FASTRPC_GET_URI=15` for `cdsp`, session
 zero, using the exact 24-byte and 48-byte Windows ARM64 structures in the pinned
 vendor header. Architecture comes from the driver, not the processor name. The
@@ -102,19 +102,17 @@ module version 1.0, domain and session. Inputs, pointer fields, extents and the
 NUL-terminated output are checked after each call. No vendor-controlled string
 is loaded or printed. All source identities remain those in `sources.json`.
 
-This deliberately stops before `remote_handle64_open`. A module basename URI
-does not bind the installed ELF bytes, catalog membership or trust to the
-owner's checked package directory. Supplying an absolute URI has not been
-established as a supported Windows deployment route. The exact installed module,
-its catalog and the supported search/deployment route must be independently
-verified and held against mutation through open and teardown before adding that
-call. No environment search-path override, catalog installation or certificate
-change is supplied by this candidate.
+Metadata mode stops before `remote_handle64_open` and supplies no search-path override.
+A basename URI does not bind loaded ELF bytes or catalog trust; an absolute URI is
+not an established Windows deployment route. The [terminal FD control](#terminal-signed-session-fd-control)
+adds open under independently checked/retained package, catalog and driver identities
+and one exact child-only search directory. No catalog installation or certificate
+change is supplied; selected DSP-byte identity and vendor teardown remain pending.
 
-The reviewed ggml session initializer requests unsigned-process control before
-opening its HTP interface. That request is omitted here; neither its presence in
-source nor the bundled catalog proves that Runner may enable it. A future signed
-session must establish its actual process/deployment policy independently.
+Metadata and default-session modes omit the reviewed ggml initializer's unsigned-process
+request. The separately selected [reference control](#explicit-reference-process-initialization)
+implements that request under the fixed signed-package policy; neither source nor catalog
+establishes the effective process class, which requires independent observation.
 
 After a verified session is established, the matching effective domain must own
 every mapping and unmapping tuple. Public FD mode 2 and delayed-FD mode 3 are
@@ -130,9 +128,10 @@ and cannot be established by a metadata or map/unmap control.
 The architecture decoder follows the pinned ggml low-byte packed-decimal
 interpretation, but rejects invalid nibbles and zero; raw values remain in the
 receipt. HVX/HMX values and VTCM page/count queries do not measure throughput or
-available allocation. Every report keeps `profileEligible: false`. DSP dispatch,
-PQ2/PTQ1 arithmetic, DMA64, mapping, state, lifecycle and performance remain
-pending, independently for X1 and X2.
+available allocation. Every report keeps `profileEligible: false`. The
+[X2 observations](../../../docs/hexagon-source-audit.md#observed-x2-access) include a passed native FD cycle
+and separate generic numeric dispatch; selected DSP bytes, visibility, native compute,
+PQ2/PTQ1, DMA64, complete state/teardown and performance remain unqualified. X1 is independent.
 
 Hosted CI can build without acquiring a vendor SDK:
 
@@ -169,9 +168,11 @@ open, allocation, descriptor, FD mapping/unmapping, free and close. A marker
 records **entry**, not completion; only returned receipt codes establish completed
 operations. Model-free mock controls check exact URI/map arguments, full success,
 open/handle/allocation/descriptor/map/unmap/close refusal and retained uncertain
-lifetimes. They do not load a driver. Actual signed-session access, selected DSP
-byte binding, DMA64, effective VTCM, compute and Swift arithmetic remain separate
-device gates. Build and complete controls stay hosted-CI only.
+lifetimes. They do not load a driver. The [corrected reference FD observation](../../../docs/evidence/hexagon-x2-native-fd-cycle.json)
+passed open/map/unmap/free/close; selected DSP bytes/visibility, vendor teardown,
+DMA64, effective VTCM, native compute and Swift arithmetic remain separate gates.
+Build and complete controls stay hosted-CI only.
+
 ## Explicit reference process initialization
 
 The separate `--reference-session-mapping-probe ABSOLUTE_PACKAGE_DIRECTORY` and
@@ -222,5 +223,5 @@ Refusal or later incomplete URI returns a separate stage with no weaker retry. T
 The receipt records explicit mode selection, actual request/result and fixed request2,
 size8/enable1 independently. Tests mutate both returned fields, retain their raw
 values and prove that subsequent URI/mapping still uses the original domain3.
-Tests also cover ordering, refusal and retained
-ownership; hosted builds and independent device observations remain required.
+Tests also cover ordering, refusal and retained ownership; further device qualification
+requires source-bound hosted builds and independent observations.

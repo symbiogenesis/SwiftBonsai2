@@ -30,9 +30,9 @@ tile loop; they never launch the old DLL or regenerate golden bytes.
 
 The optional CPU transform takes exact explicit sign bytes, applies signs
 before each 1024-element normalized Sylvester Walsh-Hadamard block and keeps
-the input-last-dimension basis. Sign values/extent are checked; **actual model
-sign-array provenance is still pending**. Synthetic sign tests establish
-axis/order only. PTQ1/Q8_0, odd-128-group PQ2, grouped recurrent permutations,
+the input-last-dimension basis. Sign values/extent are checked; [verified extraction](../../docs/evidence/hexagon-swift-projection-binding.json)
+binds the original model's signs. Their consumption through this control remains
+pending; synthetic sign tests establish axis/order only. PTQ1/Q8_0, odd-128-group PQ2, grouped recurrent permutations,
 LoRA/rank-one corrections and batched HMX execution are outside this control.
 All adapters and committed graph state remain CPU-owned; no-LoRA and approved
 adapter forward paths still require separate qualification.
@@ -91,8 +91,8 @@ It does not independently qualify those shared routines. The retained native
 captures independently bind preparation/FMA only for their original captured
 cases. The Walsh impulse control at coordinate 37 uses the closed-form parity
 of `popcount(i & 37)` to bind interior butterfly ordering across separate blocks.
-Actual packed/sign arrays, independent transform/activation/logit/full-state
-parity, signed custom kernels, DMA64, mapping, ownership/failure recovery,
+Consumption of the verified packed/sign arrays, independent transform/activation/logit/full-state
+parity, signed custom kernels, DMA64, device mapping/visibility, ownership/failure recovery,
 resources and measured whole-request benefit remain open.
 
 ## Proposed signed-kernel tile protocol
@@ -144,8 +144,9 @@ The trusted session owner must bind model, sign arrays, prepared input, custom
 kernel version/signature, geometry, mapping and resources before submission.
 Tests retain byte/traffic parity, awkward final tiles, independent native FMA
 bits, changed headers, malformed arithmetic, sequence faults and cancellation.
-They replay on CPU; actual artifact binding, signed execution, DMA completion,
-buffer retention after submission, full-state parity and benefit remain pending.
+They replay on CPU; verified artifact extraction does not close consumption through
+these controls, signed execution, DMA completion, buffer retention after submission,
+full-state parity or benefit.
 
 ## Actual artifact extraction candidate
 
