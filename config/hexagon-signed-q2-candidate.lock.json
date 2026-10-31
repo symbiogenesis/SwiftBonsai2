@@ -183,6 +183,78 @@
       "bytes": 14470,
       "sha256": "6066f7fd4768052a68e5c214dd8e702e5295ded7094be5c3273487b8b293d498",
       "url": "https://github.com/qualcomm/GenieX/blob/071f609995470bdb0e0769ab964754adfaab7e47/.github/workflows/_build-sdk.yml"
+    },
+    {
+      "repository": "https://github.com/qualcomm/QAIC",
+      "commit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
+      "path": "README.md",
+      "bytes": 37846,
+      "sha256": "bce26b318f45a1aee6c46b0b94988e2cec8c59fdb17394a5401f964496a5f470",
+      "url": "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/README.md",
+      "license": "BSD-3-Clause-Clear"
+    },
+    {
+      "repository": "https://github.com/qualcomm/QAIC",
+      "commit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
+      "path": "LICENSE.txt",
+      "bytes": 1689,
+      "sha256": "3a15c06f7c0f8e38e884e0a20e739fe0d92c1ac0996928af4ab119170603d1f8",
+      "url": "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/LICENSE.txt",
+      "license": "BSD-3-Clause-Clear"
+    },
+    {
+      "repository": "https://github.com/qualcomm/QAIC",
+      "commit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
+      "path": "src/Makefile",
+      "bytes": 5869,
+      "sha256": "5d7e6960dbe6eff6d46fe256cf4534e594ef7fe3245898dcb674df3650e0e81c",
+      "url": "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Makefile",
+      "license": "BSD-3-Clause-Clear"
+    },
+    {
+      "repository": "https://github.com/qualcomm/QAIC",
+      "commit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
+      "path": "src/qaic.cabal",
+      "bytes": 2942,
+      "sha256": "c27f82fabc467ec8c4eee782e8fb9a4833f02f55d6a83db99117a1810718d910",
+      "url": "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/qaic.cabal",
+      "license": "BSD-3-Clause-Clear"
+    },
+    {
+      "repository": "https://github.com/qualcomm/QAIC",
+      "commit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
+      "path": "src/Language/SO/CStub.c",
+      "bytes": 3111,
+      "sha256": "5f7bd861ad40c089bde8cc93b68d0687e3f3a240cbab1bcff9b60eb494ce4214",
+      "url": "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/SO/CStub.c",
+      "license": "BSD-3-Clause-Clear"
+    },
+    {
+      "repository": "https://github.com/qualcomm/QAIC",
+      "commit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
+      "path": "src/Language/SO/Stub.c",
+      "bytes": 1387,
+      "sha256": "8fcd0627db58983a55b7a359e1d0b3eafbb1908d38a55752d525284eacbf2377",
+      "url": "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/SO/Stub.c",
+      "license": "BSD-3-Clause-Clear"
+    },
+    {
+      "repository": "https://github.com/qualcomm/fastrpc",
+      "commit": "a56e9d4de3614a8d8f4b0e15ff561350c4b686e3",
+      "path": "idl/AEEStdDef.idl",
+      "bytes": 1793,
+      "sha256": "dda9bee2163b148be27365c101c11356cbefa691c3687a34586e705c074c7ddc",
+      "url": "https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/idl/AEEStdDef.idl",
+      "license": "BSD-3-Clause"
+    },
+    {
+      "repository": "https://github.com/qualcomm/fastrpc",
+      "commit": "a56e9d4de3614a8d8f4b0e15ff561350c4b686e3",
+      "path": "idl/remote.idl",
+      "bytes": 1498,
+      "sha256": "43b4130d14dc4152b9b3cafc7899d781e2e3546076383a65159774000275021e",
+      "url": "https://github.com/qualcomm/fastrpc/blob/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/idl/remote.idl",
+      "license": "BSD-3-Clause"
     }
   ],
   "kernelBoundary": {
@@ -289,7 +361,50 @@
       "generatedHostStubIdentity": null,
       "independentWireCaptureIdentity": null,
       "required": "bind-exact-tool-command-inputs-and-generated-host-marshal-or-independent-wire-control-before-Rust-invoke",
-      "declarationAloneAuthorizesInvoke": false
+      "declarationAloneAuthorizesInvoke": false,
+      "independentSourceGeneratorLead": {
+        "repository": "https://github.com/qualcomm/QAIC",
+        "commit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
+        "implementation": "Haskell-with-C-stub-and-skeleton-templates",
+        "license": "BSD-3-Clause-Clear",
+        "licenseNoticeRetentionRequired": true,
+        "licenseExpressPatentGrant": false,
+        "buildRecipe": [
+          "make",
+          "-C",
+          "src",
+          "TARGET_ARCH=x86_64-linux"
+        ],
+        "buildRecipeScope": "documented-source-control-candidate; no-local-build",
+        "ghcIdentity": null,
+        "cabalIdentity": null,
+        "dependencyFreezeIdentity": null,
+        "dependencyConstraintStatus": "upstream-cabal-dependencies-not-version-bounded; pin-GHC-Cabal-index-and-freeze-plan-before-reproducibility-claim",
+        "documentedCommandCandidate": [
+          "qaic",
+          "--map-dll",
+          "--include-path={checked-public-import-directory}",
+          "--output-path={new-output-directory}",
+          "{checked-htp_iface.idl}"
+        ],
+        "preprocessor": "internal-default; no-external-preprocessor-selected",
+        "publicImports": [
+          "qualcomm/fastrpc@a56e9d4de3614a8d8f4b0e15ff561350c4b686e3:idl/AEEStdDef.idl",
+          "qualcomm/fastrpc@a56e9d4de3614a8d8f4b0e15ff561350c4b686e3:idl/remote.idl"
+        ],
+        "expectedOutputs": [
+          "htp_iface.h",
+          "htp_iface_stub.c",
+          "htp_iface_skel.c"
+        ],
+        "sdkImportedIdlEquivalenceQualified": false,
+        "sdkQaicEquivalenceQualified": false,
+        "binaryBuilt": false,
+        "generatorExecuted": false,
+        "generatedOutputIdentity": null,
+        "authority": "independent-model-free-source-control-only; does-not-authorize-device-invoke",
+        "retention": "preserve-reviewed-source-license-and-template-notices; review-actual-generated-output-notices-before-publication"
+      }
     }
   },
   "budgets": {
