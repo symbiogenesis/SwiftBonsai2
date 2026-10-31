@@ -48,7 +48,7 @@ if ($Case -ceq 'Plan') {
     }
 } elseif ($Case -ceq 'Result') {
     $record = @{
-        SchemaVersion = 1; Kind = 'runner-hexagon-dispatch-fixture'; Outcome = 'passed'; Stage = 'completed'; Failure = $null
+        SchemaVersion = 1; Kind = 'runner-hexagon-dispatch-fixture'; Outcome = 'passed'; Stage = 'numeric-dispatch-complete'; Failure = $null; NativeCode = $null
         SourceRevision = '94256114c229674ef96e76eb2dea596e65b43818'; SelfTest = $false; BackendName = 'HTP0'
         DispatchEvidence = 'explicit-hexagon-compute-sync-and-full-output-oracle'; SessionCleanup = 'supervised-process-exit-required'
         DeviceDispatchVerified = $true; CpuFallbackAllowed = $false; ModelLoaded = $false; SwiftQualified = $false; ProfileEligible = $false
@@ -68,6 +68,49 @@ if ($Case -ceq 'Plan') {
     Assert-Failure { Get-BonsaiHexagonDispatchFixtureResult -Json ($changed | ConvertTo-Json -Depth 5) -ExitCode 0 } 'Duplicate fixture passed.'
     $changed = $record.Clone(); $changed.SelfTest = $true; $changed.DeviceDispatchVerified = $false; $changed.BackendName = $null
     Assert-Failure { Get-BonsaiHexagonDispatchFixtureResult -Json ($changed | ConvertTo-Json -Depth 5) -ExitCode 0 } 'Host-only self-test was accepted as device proof.'
+    $pending = $record.Clone(); $pending.Outcome = 'pending'; $pending.Stage = 'allocation'; $pending.Failure = 'hexagon-buffer-allocation-failed'
+    $pending.DeviceDispatchVerified = $false; $pending.Cases = @($record.Cases[0])
+    $partial = Get-BonsaiHexagonDispatchFixtureResult -Json ($pending | ConvertTo-Json -Depth 5) -ExitCode 2
+    Assert ($partial.Cases.Count -eq 1 -and -not $partial.DeviceDispatchVerified) 'A completed first case was lost when the second was unavailable.'
+    $changed = $pending.Clone(); $changed.Cases = @($record.Cases[0].Clone()); $changed.Cases[0].OutputValuesChecked = 1
+    Assert-Failure { Get-BonsaiHexagonDispatchFixtureResult -Json ($changed | ConvertTo-Json -Depth 5) -ExitCode 2 } 'Malformed partial numeric evidence admitted.'
+    foreach ($code in @($true, 1.5, -1, 4294967296)) {
+        $changed = $pending.Clone(); $changed.NativeCode = $code
+        Assert-Failure { Get-BonsaiHexagonDispatchFixtureResult -Json ($changed | ConvertTo-Json -Depth 5) -ExitCode 2 } 'Invalid native error identity admitted.'
+    }
+    $json = $record | ConvertTo-Json -Depth 5 -Compress
+    foreach ($ambiguous in @($json.Replace('"Outcome":"passed"', '"Outcome":"pending","Outcome":"passed"'),
+        $json.Replace('"Outcome":"passed"', '"outcome":"pending","Outcome":"passed"'),
+        $json.Replace('"Rows":32', '"Rows":1,"Rows":32'))) {
+        Assert-Failure { Get-BonsaiHexagonDispatchFixtureResult -Json $ambiguous -ExitCode 0 } 'Duplicate JSON evidence names were accepted.'
+    }
+    $revision = '1' * 40
+    $worker = @{
+        SchemaVersion = 1; Kind = 'runner-hexagon-dispatch-worker'; SourceRevision = $revision
+        Outcome = 'passed'; Stage = 'numeric-dispatch-complete'; Failure = $null; LastFixtureStage = 'readback'
+        CatalogMemberVerified = $true; CatalogMembersVerified = 4
+        CatalogMemberNames = @('libggml-htp-v73.so','libggml-htp-v75.so','libggml-htp-v79.so','libggml-htp-v81.so')
+        SelectedDspArchitecture = 'unknown'; DeviceDispatchVerified = $true; FixtureResult = $record
+        RuntimeFilesVerified = 16; FixtureSha256 = '2' * 64; FixtureSourceSha256 = '3' * 64
+        ManifestSha256 = '4' * 64; LockSha256 = '5' * 64; SigntoolSha256 = '6' * 64
+        ModelLoaded = $false; SwiftQualified = $false; ProfileEligible = $false; DriverInstalled = $false; TrustChanged = $false
+    }
+    $checkedWorker = Get-BonsaiHexagonDispatchWorkerResult -Json ($worker | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision
+    Assert ($checkedWorker.DeviceDispatchVerified) 'Complete worker evidence rejected.'
+    foreach ($field in @('ModelLoaded','SwiftQualified','ProfileEligible','DriverInstalled','TrustChanged')) {
+        $changed = $worker.Clone(); $changed[$field] = 0
+        Assert-Failure { Get-BonsaiHexagonDispatchWorkerResult -Json ($changed | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision } 'A worker boolean was accepted by coercion.'
+    }
+    foreach ($field in @('SourceRevision','CatalogMembersVerified','RuntimeFilesVerified','FixtureSha256','DeviceDispatchVerified','FixtureResult')) {
+        $changed = $worker.Clone(); $changed[$field] = $null
+        Assert-Failure { Get-BonsaiHexagonDispatchWorkerResult -Json ($changed | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision } 'Incomplete worker evidence established device dispatch.'
+    }
+    $changed = $worker.Clone(); $changed.FixtureResult = $pending
+    Assert-Failure { Get-BonsaiHexagonDispatchWorkerResult -Json ($changed | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision } 'Worker result contradicted the completed fixture.'
+    $changed = $worker.Clone(); $changed.Outcome = 'pending'; $changed.DeviceDispatchVerified = $false
+    $changed.Stage = 'device-dispatch'; $changed.FixtureResult = $null
+    $checkedWorker = Get-BonsaiHexagonDispatchWorkerResult -Json ($changed | ConvertTo-Json -Depth 8) -ExpectedRunnerRevision $revision
+    Assert ($checkedWorker.LastFixtureStage -ceq 'readback' -and -not $checkedWorker.DeviceDispatchVerified) 'Interrupted worker lost its distinct progress observation.'
 } elseif ($Case -ceq 'Environment') {
     $environment = Get-BonsaiHexagonDispatchEnvironment -RuntimeDirectory 'C:\runtime' -SystemDirectory 'C:\Windows\System32'
     Assert ($environment.Set.PATH -ceq 'C:\runtime;C:\Windows\System32' -and $environment.Set.ADSP_LIBRARY_PATH -ceq 'C:\runtime') 'Child DLL/HTP lookup escaped fixed directories.'
@@ -88,6 +131,17 @@ Import-Module '__MODULE__'
     $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($normal)))
     $result = Invoke-BonsaiHexagonBoundedCapture -Executable (Join-Path $PSHOME 'pwsh.exe') -ArgumentList $arguments -WorkingDirectory ([IO.Path]::GetTempPath())
     if ($result.ExitCode -ne 0 -or $result.StandardOutput -cne 'ok' -or $result.StandardError -cne 'error') { throw 'Concurrent stream capture failed.' }
+    $progressPath = Join-Path ([IO.Path]::GetTempPath()) ('Bonsai-Hexagon-Progress-' + [guid]::NewGuid().ToString('N') + '.json')
+    try {
+        $progress = [ordered]@{ LastFixtureStage = 'not-started' }
+        # An invalid vendor label must never enter retained evidence; a fixed
+        # marker split across pipe reads must be recovered once its LF arrives.
+        $markers = '[Console]::Error.Write("hexagon-fixture:stage=private-path`nhexagon-fixture:stage=reg"); Start-Sleep -Milliseconds 30; [Console]::Error.Write("istry`n"); exit 2'
+        $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($markers)))
+        $result = Invoke-BonsaiHexagonBoundedCapture -Executable (Join-Path $PSHOME 'pwsh.exe') -ArgumentList $arguments -WorkingDirectory ([IO.Path]::GetTempPath()) -ProgressReceipt $progress -ProgressPath $progressPath
+        $saved = [IO.File]::ReadAllText($progressPath) | ConvertFrom-Json -AsHashtable
+        if ($result.ExitCode -ne 2 -or $progress.LastFixtureStage -cne 'registry' -or $saved.LastFixtureStage -cne 'registry') { throw 'Bounded native progress was not retained.' }
+    } finally { if ([IO.File]::Exists($progressPath)) { [IO.File]::Delete($progressPath) } }
     $overflow = '[Console]::Out.Write("x" * 131073)'
     $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($overflow)))
     $rejected = $false
