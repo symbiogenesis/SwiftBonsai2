@@ -16,6 +16,11 @@ signed device access followed by a same-artifact packed X2 projection, then
 measured CPU/GPU/NPU selection. Qualify X1 independently when competitive; neither
 family names nor nominal TOPS choose a backend or displace the CPU gates below.
 
+The long-term migration target is complete C++ retirement in Runner and Prism,
+including reference tests, generated code, external inference dependencies and
+compiler/build plumbing. Follow the [file-by-file contract and inventory](docs/cpp-retirement.md);
+native reference controls are temporary, with independent evidence retained as data.
+
 The next delivery milestone is an accepted daily-use Swift PQ2 CPU profile on the
 owner-managed hardware. Close the application, isolation, creative-quality, resource
 and installation gates below with reproducible evidence before expanding that profile.
@@ -41,8 +46,9 @@ matching and speech-runner policy. Local compilation exhausted its bounded
 allowance before those cases could execute; formatting and the focused PowerShell
 speech-policy check do not replace them.
 
-The Rust speech tokenizer also needs the hosted full Qwen build/link and owning
-crate checks. Local model-free token parity does not close that integration gate.
+The Rust speech tokenizer and captured Philox control/source guard also need the
+hosted full Qwen build/link and owning-crate checks. Local model-free token/bit
+parity does not close those integration gates.
 
 - Qualify startup, supplied-history streaming, full 8K context and 4K output, long
   conversations, speech, offline restart and recovery. Cover Stop, abandonment,
@@ -204,6 +210,30 @@ identities and leaves missing evidence pending.
 - Qualify replacements against matching pinned-Prism artifacts, adapters and settings
   and all promotion gates, retaining deterministic streams where applicable. Retire old
   build, overlay and FFI paths only after acceptance.
+
+## Complete C++ retirement
+
+Use the [retirement contract](docs/cpp-retirement.md) to track each file's behavior,
+replacement evidence, source identity and remaining consumers. Source deletion does
+not close pending hosted integration or full-model acceptance.
+
+- Replace remaining Runner sampling and tokenizer native oracles with complete,
+  immutable observations plus independent Rust/mathematical controls. Preserve every
+  existing input, exceptional bit pattern, scanner/ID and failure assertion; retire
+  source anchors, fixture stubs and compile/launch references together. Move native
+  ownership and graph-cache checks onto the Rust loading/execution path before
+  removing their last generated-code controls.
+- Retire Prism's native reference families file by file after matching hosted replay
+  of their source-level assertions. Preserve all approved green IDs, full geometry
+  schedules, corrections, unsupported outcomes and numerical/target boundaries.
+  Remove dispatch, native ABI probes, build/cache/source-download paths and linkage
+  only when their retained obligations have replacements.
+- Replace Qwen/GGML TTS and Canary ASR's `transcribe-cpp` inference dependency with
+  native Rust model/audio execution, qualifying exact artifacts, token/PCM/state,
+  cancellation, lifecycle, quality and resource contracts. Then remove compiler,
+  CMake, static/native library and source provisioning paths. Retire publisher/DLL
+  capture tools after immutable controls, Rust acceptance and fallback/promotion
+  gates cover their consumers; moving C++ behind FFI does not complete retirement.
 
 ## Creative quality, adapters and memory
 

@@ -37,6 +37,7 @@ implemented behavior from actual-model, device, quality and isolation acceptance
 | [Swift LoRA](swift-lora.md) | Artifact, basis, cost, storage overlay and paired device/human qualification |
 | [Qwen reference](model-selection.md) | Selection rationale, compatibility/memory checks and stop/reopen conditions |
 | [Native Rust engine](native-rust-engine.md) | Supported graph/API, numerical/state ownership, runtime overhead and promotion evaluator |
+| [C++ retirement](cpp-retirement.md) | File-by-file inventories, independent replacement controls, dependency/build cleanup and remaining integration gates |
 | [Prism conformance](prism-upstream-tests.md) | Source fidelity, broader upstream acceptance and pinned source-reuse review |
 | [OxiBonsai review](oxibonsai-reuse.md) | Pinned source/license, reusable regressions, arithmetic/security transfer limits |
 | [Runtime candidates](runtime-candidates/README.md) | Independent row-parallel and headless-startup patches, manifests, evidence and reproduction |

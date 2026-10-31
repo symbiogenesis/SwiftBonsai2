@@ -105,7 +105,7 @@ logical CPU query remains unchanged; Rust owns the atomic override and fallback
 policy. Exact replacement anchors reject mismatched inputs. The immutable
 provisioned source cache is never patched. Cached native libraries must include
 this overlay; the hosted cache identity covers all build helper sources and
-the embedded pinned Philox, sampling and tokenizer source anchors.
+the Philox source identity and embedded sampling/tokenizer source anchors.
 The build script builds only the external CPU
 static `qwen-core` target; Cargo compiles all Runner-owned glue as Rust. The
 third-party Qwen/GGML inference core still requires a C++ compiler. Shared libraries, dynamic backend
@@ -147,16 +147,22 @@ cases, all accepted counts, rejected updates and source-anchor drift.
 code, allocations or additional dependencies. Both native stochastic samplers
 call its private scalar C ABI export. The build overlay replaces the complete
 native `philox.h` algorithm with that declaration and rewrites each single-draw
-call, preserving the seed, subsequence and counter arguments. Changed source
-anchors reject the build. The probability pipeline and GGML graph stay upstream.
+call, preserving the seed, subsequence and counter arguments. The incoming source
+must match the pinned 3,552-byte LF-normalized SHA-256 identity; the implementation
+is not retained in the checkout. Changed source rejects the build. The probability
+pipeline and GGML graph stay upstream.
 
 Wrapping integer arithmetic, signed seed/subsequence bit patterns and separate
 f32 rounding match the pinned source. Its upper endpoint can round to `1.0`;
 the port deliberately retains this behavior. Known-answer block and rounding
-tests accompany a 4,411-case model-free comparison of the Rust scalar export
-against the unmodified C++ source in `tests/reference/philox.h`. That source is
-compiled only into the independent test oracle. The derived Rust module and
-reference retain the attribution in `LICENSE.qwen-core`.
+tests accompany a 4,411-case model-free replay of independently captured native
+outputs in `tests/fixtures/philox-v1.bin`. The adjacent provenance records exact
+source/driver revisions and hashes, compiler identity/flags, input/output digests
+and record schema. The Rust test checks the fixture digest, framing, complete
+ordered input schedule and scalar ABI result bits without compiling or launching
+a reference process. The original header and standalone oracle are removed;
+`LICENSE.qwen-core` retains their attribution. These are historical captures, not
+fresh execution of the retired reference.
 
 `src/sampling.rs` also ports the pinned `apply_suppress` and
 `apply_repetition_penalty` helpers as safe slice operations. Suppression clips
@@ -179,8 +185,9 @@ under `PLAN.md`; bit parity alone makes no performance claim.
 The remaining checked-in C++ in Runner collects pinned native inference results
 or tests the native overlay. Prism's remaining native files are independent
 conformance bridges and C ABI checks; its serving runtime is already Rust.
-These references retain their native implementation so they can detect Rust
-porting errors. Replacing the speech inference cores requires separate model
+These controls are temporary under the [complete C++ retirement contract](../../docs/cpp-retirement.md).
+Each file needs independent replacement evidence and its operative build/control
+references removed. Replacing the speech inference cores requires separate model
 and lifecycle qualification.
 
 ## Rust speech tokenizer

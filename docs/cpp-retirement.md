@@ -29,9 +29,11 @@ Before deletion:
    input/output identity, schema, counts and digests. They are historical captures,
    not fresh execution of the retired engine. Reports must identify that provider
    honestly rather than relabeling a capture as a newly passing C++ oracle.
-3. Pass focused hosted builds and consumer assertions for the replacement. Preserve
-   numerical ordering/tolerances, signed/exceptional bits, ISA and target boundaries,
-   supported-subset errors, source IDs, approved green floors and exclusions.
+3. Pass focused replacement checks before source removal. Owning hosted consumer
+   builds and assertions remain integration completion gates; record them pending
+   when only local checks ran. Preserve numerical ordering/tolerances, signed and
+   exceptional bits, ISA/target boundaries, subset errors, source IDs, approved green
+   floors and exclusions. Source removal alone does not close those gates.
 4. Remove operative source includes/generators, compiler/link/download/cache paths,
    feature/dependency edges, workflow/control dispatch and stale documentation for
    that file. Retain evidence and notices as data where needed.
@@ -49,14 +51,14 @@ Missing captures or unimplemented assertions remain visible pending/red outcomes
 
 ## Runner checked-in native files
 
-Paths below are relative to Runner. The inventory starts with eleven C++ source
-or header files; generated private-source C++ and external dependencies are tracked
-separately. A candidate label means deletion still depends on its capture commit.
+Paths below are relative to Runner. Nine C++ source/header files remain from an
+initial eleven; the first two rows record removed controls and retained evidence.
+Generated private-source C++ and external dependencies are tracked separately.
 
 | File | Replacement and exit condition |
 | --- | --- |
-| `src/speech-tts/tests/reference/philox.h` | Candidate: replace full-source anchor with normalized-source SHA-256; preserve licensed provenance and all 4,411 ordered scalar observations plus independent block/rounding answers. |
-| `src/speech-tts/tests/philox_oracle.cpp` | Candidate: validate immutable input/output records and fixture identity in Rust, then remove compilation/launch and indirect sampler-oracle inclusion. |
+| `src/speech-tts/tests/reference/philox.h` | Source removed: normalized-source SHA-256 replaces the anchor. Licensed provenance, 4,411 ordered scalar observations and independent block/rounding answers remain. Hosted owning-crate integration remains pending. |
+| `src/speech-tts/tests/philox_oracle.cpp` | Source removed: Rust validates immutable records and fixture identity. Its compilation/launch and indirect sampler-oracle inclusion are removed; provenance is retained as data. |
 | `src/speech-tts/tests/reference/sampling.h` | Freeze existing suppression/repetition bit cases; qualify the remaining probability pipeline separately, replace source anchoring with identity metadata, then remove header use. |
 | `src/speech-tts/tests/sampling_oracle.cpp` | Replay complete ordered logits/history/parameter/output records in Rust, preserving duplicate/invalid IDs, signed zero and exceptional floats. Remove native compilation. |
 | `src/speech-tts/tests/reference/bpe.h` | Freeze scanner chunks, encoded IDs, metadata/special precedence and actual pinned vocabulary captures; retain exact source/license identity as data and qualify the Rust tokenizer consumer. |
@@ -125,6 +127,12 @@ Canary ASR core, including their separate GGML versions. Native Rust replacement
 must retain model verification, audio/token contracts, cancellation, state, output
 quality and actual-device resource acceptance. Reusing a C++ library's Rust binding
 does not satisfy this milestone.
+
+Expand each external family to exact files from its pinned source manifest before
+porting it. Current boundaries include Qwen `src/bpe.h`'s remaining GGUF shim,
+`src/prompt-builder.h`, both sampling headers, pipeline/codec/speaker graphs and
+audio transforms. A Rust policy callback or removed test oracle does not retire
+the downloaded header, generated shim or linked engine that still contains it.
 
 Remove retired paths from `speech-tts/build*.rs`, native-speech provisioning/cache
 actions and scripts, `native_startup.rs`/`speech_build.rs`, compiler/source locks,
