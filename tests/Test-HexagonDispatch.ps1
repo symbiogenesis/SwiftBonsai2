@@ -161,6 +161,12 @@ Import-Module '__MODULE__'
         $result = Invoke-BonsaiHexagonBoundedCapture -Executable (Join-Path $PSHOME 'pwsh.exe') -ArgumentList $arguments -WorkingDirectory ([IO.Path]::GetTempPath()) -ProgressReceipt $progress -ProgressPath $progressPath
         $saved = [IO.File]::ReadAllText($progressPath) | ConvertFrom-Json -AsHashtable
         if ($result.ExitCode -ne 2 -or $progress.LastFixtureStage -cne 'context' -or $saved.LastFixtureStage -cne 'context') { throw 'Bounded native progress was not retained.' }
+        $progress = [ordered]@{ LastNativeStage = 'not-started'; UnsignedProcessRequested = $null }
+        $markers = '[Console]::Error.Write("hexagon-session:stage=private-label`nhexagon-session:stage=reference-process-init-"); Start-Sleep -Milliseconds 30; [Console]::Error.Write("entered`n"); exit 2'
+        $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($markers)))
+        $result = Invoke-BonsaiHexagonBoundedCapture -Executable (Join-Path $PSHOME 'pwsh.exe') -ArgumentList $arguments -WorkingDirectory ([IO.Path]::GetTempPath()) -ProgressReceipt $progress -ProgressPath $progressPath -ProgressKind Session
+        $saved = [IO.File]::ReadAllText($progressPath) | ConvertFrom-Json -AsHashtable
+        if ($result.ExitCode -ne 2 -or $saved.LastNativeStage -cne 'reference-process-init-entered' -or $null -ne $saved.UnsignedProcessRequested) { throw 'An entered reference-process call lost its distinct unknown request outcome.' }
     } finally { if ([IO.File]::Exists($progressPath)) { [IO.File]::Delete($progressPath) } }
     $overflow = '[Console]::Out.Write("x" * 131073)'
     $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($overflow)))

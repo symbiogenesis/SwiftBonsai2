@@ -13,7 +13,7 @@ function Get-BonsaiHexagonSessionPlan {
     #>
     [CmdletBinding()]
     [OutputType([Collections.Specialized.OrderedDictionary])]
-    param([ValidateRange(1,240)][int]$MaximumSeconds = 120)
+    param([ValidateRange(1,240)][int]$MaximumSeconds = 120, [switch]$ReferenceInitialization)
     return [ordered]@{
         SchemaVersion = 1; Kind = 'runner-hexagon-session-plan'; MaximumSeconds = $MaximumSeconds
         CleanupReserveSeconds = 75; Bytes = 4096; MapFlags = 2; SessionId = 0
@@ -22,6 +22,9 @@ function Get-BonsaiHexagonSessionPlan {
         DriverInstallationAllowed = $false; TrustChangesAllowed = $false
         ComputeExecuted = $false; ModelLoaded = $false; ProfileEligible = $false
         Qualification = 'native-signed-session-FD-mapping-only'
+        ReferenceProcessInitializationSelected = [bool]$ReferenceInitialization
+        ReferenceProcessInitializationControl = if ($ReferenceInitialization) { 'DSPRPC_CONTROL_UNSIGNED_MODULE-enable1-default-session-effective-domain-process-only' } else { 'not-selected' }
+        AutomaticFallbackAllowed = $false; AutomaticRetryAllowed = $false
     }
 }
 
@@ -76,26 +79,26 @@ function Get-BonsaiHexagonSessionProbeResult {
     #>
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
-    param([Parameter(Mandatory)][AllowEmptyString()][string]$Json, [Parameter(Mandatory)][int]$ExitCode)
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Json, [Parameter(Mandatory)][int]$ExitCode, [switch]$ReferenceInitialization)
     $record = ConvertFrom-BonsaiHexagonDispatchJson -Json $Json
     if ($ExitCode -ne 0 -or ($record.schemaVersion -isnot [int] -and $record.schemaVersion -isnot [long]) -or $record.schemaVersion -ne 1 -or
         $record.kind -isnot [string] -or $record.kind -cne 'native-fastrpc-session-mapping-probe' -or
         $record.driverDll -isnot [string] -or -not [IO.Path]::IsPathFullyQualified($record.driverDll) -or [IO.Path]::GetFileName($record.driverDll) -ine 'libcdsprpc.dll' -or
-        $record.stage -isnot [string] -or $record.stage -cnotin @('session-metadata-incomplete','module-open-refused-pinned','module-handle-not-written-pinned','allocation-refused','descriptor-refused','allocation-not-page-aligned','cpu-roundtrip-failed','fd-mapping-failed-pinned','fd-unmapping-failed-pinned','session-fd-cycle-completed-owner-pinned','module-close-refused-pinned') -or
+        $record.stage -isnot [string] -or $record.stage -cnotin @('session-metadata-incomplete','reference-process-init-refused-pinned','module-open-refused-pinned','module-handle-not-written-pinned','allocation-refused','descriptor-refused','allocation-not-page-aligned','cpu-roundtrip-failed','fd-mapping-failed-pinned','fd-unmapping-failed-pinned','session-fd-cycle-completed-owner-pinned','module-close-refused-pinned') -or
         $record.metadataStage -isnot [string] -or $record.metadataStage -cnotmatch '^[a-z][a-z0-9-]{0,63}$') { throw 'Invalid native session probe identity or stage.' }
-    foreach ($field in @('passed','metadataPrepared','uriVerified','handleObserved','remoteModuleOpened','allocationSucceeded','descriptorObserved','cpuRoundtripVerified','mappingAttempted','freeCompleted','poisoned','moduleCloseCompleted','ownerPinnedUntilExit','driverLoaded','signedDeploymentVerified','computeExecuted','dmaExecuted','unsignedProcessRequested','sessionTeardownVerified','profileEligible')) {
+    foreach ($field in @('passed','metadataPrepared','uriVerified','handleObserved','remoteModuleOpened','allocationSucceeded','descriptorObserved','cpuRoundtripVerified','mappingAttempted','freeCompleted','poisoned','moduleCloseCompleted','ownerPinnedUntilExit','driverLoaded','signedDeploymentVerified','computeExecuted','dmaExecuted','unsignedProcessRequested','referenceProcessInitializationSelected','sessionTeardownVerified','profileEligible')) {
         if ($record[$field] -isnot [bool]) { throw 'Native session probe requires exact boolean values.' }
     }
-    foreach ($field in @('signedDeploymentVerified','computeExecuted','dmaExecuted','unsignedProcessRequested','sessionTeardownVerified','profileEligible')) {
+    foreach ($field in @('signedDeploymentVerified','computeExecuted','dmaExecuted','sessionTeardownVerified','profileEligible')) {
         if ($record[$field]) { throw 'Native session probe claimed an independent execution or deployment gate.' }
     }
     if (-not $record.driverLoaded) { throw 'Native session probe omitted its loaded driver.' }
-    foreach ($pair in @(@('sessionId',0),@('domainRequestId',14),@('uriRequestId',15),@('bytes',4096),@('heapId',25),@('allocationFlags',1),@('mapFlags',2))) {
+    foreach ($pair in @(@('sessionId',0),@('domainRequestId',14),@('uriRequestId',15),@('bytes',4096),@('heapId',25),@('allocationFlags',1),@('mapFlags',2),@('processInitializationRequestId',2),@('processInitializationEnable',1),@('processInitializationStructureBytes',8))) {
         $value = $record[$pair[0]]
         if (($value -isnot [int] -and $value -isnot [long]) -or $value -ne $pair[1]) { throw 'Native session probe changed a fixed argument.' }
     }
     if (($record.architectureRaw -isnot [int] -and $record.architectureRaw -isnot [long]) -or $record.architectureRaw -lt 0 -or $record.architectureRaw -gt [uint]::MaxValue) { throw 'Invalid raw native architecture.' }
-    foreach ($field in @('domainResult','effectiveDomain','uriResult','moduleOpenResult','descriptorError','mappingResult','unmappingResult','moduleCloseResult')) {
+    foreach ($field in @('domainResult','effectiveDomain','uriResult','moduleOpenResult','descriptorError','mappingResult','unmappingResult','moduleCloseResult','processInitializationResult')) {
         $value = $record[$field]
         if ($null -ne $value -and (($value -isnot [int] -and $value -isnot [long]) -or $value -lt [int]::MinValue -or $value -gt [int]::MaxValue)) { throw 'Invalid raw native session result.' }
     }
@@ -110,8 +113,15 @@ function Get-BonsaiHexagonSessionProbeResult {
         $null -ne $record.uriResult -and $record.uriResult -eq 0 -and $record.uriVerified
     if ($record.metadataPrepared -ne $metadata -or ($metadata -and $record.metadataStage -cne 'session-metadata-prepared')) { throw 'Native session metadata is contradictory.' }
     $openAttempted = $null -ne $record.moduleOpenResult
+    $initializationAttempted = $null -ne $record.processInitializationResult
+    if ($record.referenceProcessInitializationSelected -ne [bool]$ReferenceInitialization -or
+        $record.unsignedProcessRequested -ne $initializationAttempted -or
+        ($initializationAttempted -and -not $ReferenceInitialization) -or
+        ($ReferenceInitialization -and $openAttempted -and (-not $initializationAttempted -or $record.processInitializationResult -ne 0))) {
+        throw 'Native reference-process initialization selection or outcome is contradictory.'
+    }
     $opened = $openAttempted -and $record.moduleOpenResult -eq 0 -and $record.handleObserved -and $metadata
-    if ($record.remoteModuleOpened -ne $opened -or $record.ownerPinnedUntilExit -ne $openAttempted -or
+    if ($record.remoteModuleOpened -ne $opened -or $record.ownerPinnedUntilExit -ne ($openAttempted -or $initializationAttempted) -or
         ($openAttempted -and -not $metadata) -or ($record.handleObserved -and -not $openAttempted) -or
         ($record.allocationSucceeded -and -not $opened)) { throw 'Native session open evidence is contradictory.' }
     if (($record.descriptorObserved -and -not $record.allocationSucceeded) -or
@@ -128,13 +138,15 @@ function Get-BonsaiHexagonSessionProbeResult {
     if ($record.poisoned -ne $uncertain -or ($uncertain -and ($record.freeCompleted -or $null -ne $record.moduleCloseResult)) -or
         ($null -ne $record.moduleCloseResult -and (-not $opened -or ($record.allocationSucceeded -and -not $record.freeCompleted))) -or
         $record.moduleCloseCompleted -ne ($null -ne $record.moduleCloseResult -and $record.moduleCloseResult -eq 0)) { throw 'Native session cleanup evidence is contradictory.' }
-    $passed = $metadata -and $opened -and $record.allocationSucceeded -and $record.descriptorObserved -and
+    $passed = (-not $ReferenceInitialization -or ($initializationAttempted -and $record.processInitializationResult -eq 0)) -and
+        $metadata -and $opened -and $record.allocationSucceeded -and $record.descriptorObserved -and
         $record.cpuRoundtripVerified -and $record.mappingAttempted -and $record.mappingResult -eq 0 -and
         $null -ne $record.unmappingResult -and $record.unmappingResult -eq 0 -and $record.freeCompleted -and
         -not $record.poisoned -and $record.moduleCloseCompleted -and $record.ownerPinnedUntilExit
     if ($record.passed -ne $passed -or ($passed -ne ($record.stage -ceq 'session-fd-cycle-completed-owner-pinned'))) { throw 'Native session completion is contradictory.' }
     $stageMatches = switch -CaseSensitive ($record.stage) {
-        'session-metadata-incomplete' { -not $metadata -and -not $openAttempted }
+        'session-metadata-incomplete' { -not $metadata -and -not $openAttempted -and (-not $initializationAttempted -or $record.processInitializationResult -eq 0) }
+        'reference-process-init-refused-pinned' { $ReferenceInitialization -and $initializationAttempted -and $record.processInitializationResult -ne 0 -and -not $openAttempted }
         'module-open-refused-pinned' { $openAttempted -and $record.moduleOpenResult -ne 0 -and -not $opened }
         'module-handle-not-written-pinned' { $openAttempted -and $record.moduleOpenResult -eq 0 -and -not $record.handleObserved -and -not $opened }
         'allocation-refused' { $opened -and -not $record.allocationSucceeded -and $null -ne $record.moduleCloseResult }
@@ -156,14 +168,14 @@ function Get-BonsaiHexagonSessionWorkerResult {
     #>
     [CmdletBinding()]
     [OutputType([Collections.IDictionary])]
-    param([Parameter(Mandatory)][string]$Json, [Parameter(Mandatory)][string]$ExpectedRunnerRevision)
+    param([Parameter(Mandatory)][string]$Json, [Parameter(Mandatory)][string]$ExpectedRunnerRevision, [switch]$ReferenceInitialization)
     $record = ConvertFrom-BonsaiHexagonDispatchJson -Json $Json
     if (($record.SchemaVersion -isnot [int] -and $record.SchemaVersion -isnot [long]) -or $record.SchemaVersion -ne 1 -or
         $record.Kind -isnot [string] -or $record.Kind -cne 'runner-hexagon-session-worker' -or
         $record.SourceRevision -isnot [string] -or $record.SourceRevision -cne $ExpectedRunnerRevision -or
         $record.Outcome -isnot [string] -or $record.Outcome -cnotin @('passed','pending') -or
         $record.Stage -isnot [string] -or $record.Stage -cnotin @('source-identity','runtime-identity','catalog-verification','driver-inspection','session-mapping','session-mapping-complete') -or
-        $record.LastNativeStage -isnot [string] -or $record.LastNativeStage -cnotin @('not-started','module-open-entered','allocation-entered','descriptor-entered','fd-mapping-entered','fd-unmapping-entered','free-entered','module-close-entered') -or
+        $record.LastNativeStage -isnot [string] -or $record.LastNativeStage -cnotin @('not-started','reference-process-init-entered','module-open-entered','allocation-entered','descriptor-entered','fd-mapping-entered','fd-unmapping-entered','free-entered','module-close-entered') -or
         ($null -ne $record.Failure -and ($record.Failure -isnot [string] -or $record.Failure -cnotmatch '^[a-z][a-z0-9-]{0,95}$'))) {
         throw 'Invalid native session worker identity or stage.'
     }
@@ -173,6 +185,19 @@ function Get-BonsaiHexagonSessionWorkerResult {
     foreach ($field in @('SignedPackageVerified','DriverIdentityVerified','MappingCycleVerified')) {
         if ($record[$field] -isnot [bool]) { throw 'Native session worker requires exact booleans.' }
     }
+    if ($record.ReferenceProcessInitializationSelected -isnot [bool] -or $record.ReferenceProcessInitializationSelected -ne [bool]$ReferenceInitialization -or
+        ($null -ne $record.UnsignedProcessRequested -and $record.UnsignedProcessRequested -isnot [bool]) -or
+        ($null -ne $record.ProcessInitializationResult -and (($record.ProcessInitializationResult -isnot [int] -and $record.ProcessInitializationResult -isnot [long]) -or
+            $record.ProcessInitializationResult -lt [int]::MinValue -or $record.ProcessInitializationResult -gt [int]::MaxValue))) {
+        throw 'Invalid native worker reference-process initialization selection or outcome.'
+    }
+    if (-not $ReferenceInitialization -and ($null -eq $record.UnsignedProcessRequested -or $record.UnsignedProcessRequested -or
+        $null -ne $record.ProcessInitializationResult -or $record.LastNativeStage -ceq 'reference-process-init-entered')) {
+        throw 'Default session worker claimed an unselected reference-process request.'
+    }
+    if ($ReferenceInitialization -and ($null -eq $record.UnsignedProcessRequested -or $record.UnsignedProcessRequested) -and
+        (-not $record.DriverIdentityVerified -or $record.Stage -cnotin @('session-mapping','session-mapping-complete'))) { throw 'Reference-process request escaped signed and guarded native execution.' }
+    if ($null -ne $record.ProcessInitializationResult -and ($null -eq $record.UnsignedProcessRequested -or -not $record.UnsignedProcessRequested)) { throw 'Native process-init outcome omitted its request.' }
     if (($record.RuntimeFilesVerified -isnot [int] -and $record.RuntimeFilesVerified -isnot [long]) -or
         $record.RuntimeFilesVerified -lt 0 -or $record.RuntimeFilesVerified -gt 16 -or
         ($record.SignedPackageVerified -and $record.RuntimeFilesVerified -ne 16)) { throw 'Invalid native package verification count.' }
@@ -185,10 +210,12 @@ function Get-BonsaiHexagonSessionWorkerResult {
         if ($record.SignedPackageVerified -and $null -eq $record[$field]) { throw 'Verified native package omitted source binding.' }
     }
     if ($null -ne $record.NativeResult) {
-        $native = Get-BonsaiHexagonSessionProbeResult -Json ($record.NativeResult | ConvertTo-Json -Depth 12 -Compress) -ExitCode 0
+        $native = Get-BonsaiHexagonSessionProbeResult -Json ($record.NativeResult | ConvertTo-Json -Depth 12 -Compress) -ExitCode 0 -ReferenceInitialization:$ReferenceInitialization
         if (-not $record.DriverIdentityVerified -or $native.driverDll -cne $record.DriverIdentity.Path -or
-            $record.MappingCycleVerified -ne $native.passed) { throw 'Native session result contradicts independently guarded driver evidence.' }
-    } elseif ($record.MappingCycleVerified) { throw 'Native mapping was claimed without its complete result.' }
+            $record.MappingCycleVerified -ne $native.passed -or $null -eq $record.UnsignedProcessRequested -or
+            $record.UnsignedProcessRequested -ne $native.unsignedProcessRequested -or
+            $record.ProcessInitializationResult -ne $native.processInitializationResult) { throw 'Native session result contradicts independently guarded driver evidence.' }
+    } elseif ($record.MappingCycleVerified -or $null -ne $record.ProcessInitializationResult -or $record.UnsignedProcessRequested -eq $true) { throw 'Native mapping or process initialization was claimed without its complete result.' }
     if ($record.MappingCycleVerified -ne ($record.Outcome -ceq 'passed') -or
         ($record.MappingCycleVerified -and ($record.Stage -cne 'session-mapping-complete' -or $null -ne $record.Failure))) {
         throw 'Native session worker completion contradicts its evidence.'
@@ -203,11 +230,14 @@ function Invoke-BonsaiHexagonSessionWorker {
     [CmdletBinding()]
     [OutputType([Collections.Specialized.OrderedDictionary])]
     param([Parameter(Mandatory)][Collections.IDictionary]$Request)
+    if ($Request.ReferenceProcessInitializationSelected -isnot [bool]) { throw 'The reference-process initialization mode requires an explicit boolean selection.' }
     $holds = [Collections.Generic.List[IO.FileStream]]::new()
     $report = [ordered]@{
         SchemaVersion = 1; Kind = 'runner-hexagon-session-worker'; SourceRevision = $Request.ExpectedRunnerRevision
         Outcome = 'pending'; Stage = 'source-identity'; Failure = $null
         LastNativeStage = 'not-started'
+        ReferenceProcessInitializationSelected = $Request.ReferenceProcessInitializationSelected
+        UnsignedProcessRequested = $false; ProcessInitializationResult = $null
         SignedPackageVerified = $false; RuntimeFilesVerified = 0; DriverIdentityVerified = $false; DriverIdentity = $null
         MappingCycleVerified = $false; NativeResult = $null
         ExecutableSha256 = $null; BuildReceiptSha256 = $null; ManifestSha256 = $null; LockSha256 = $null
@@ -306,10 +336,18 @@ function Invoke-BonsaiHexagonSessionWorker {
         # This is the owned child worker's environment only. The query admits
         # exactly the guarded route and rechecks its own module file handles.
         [Environment]::SetEnvironmentVariable('ADSP_LIBRARY_PATH', $Request.PackageDirectory, 'Process')
-        $probe = Invoke-BonsaiHexagonBoundedCapture -Executable $fixturePath -ArgumentList @('--session-mapping-probe', $Request.PackageDirectory) -WorkingDirectory $Request.PackageDirectory -ProgressReceipt $report -ProgressPath $Request.WorkerReceiptPath -ProgressKind Session
-        $native = Get-BonsaiHexagonSessionProbeResult -Json $probe.StandardOutput -ExitCode $probe.ExitCode
+        $mode = if ($Request.ReferenceProcessInitializationSelected) { '--reference-session-mapping-probe' } else { '--session-mapping-probe' }
+        if ($Request.ReferenceProcessInitializationSelected) {
+            # An entered marker alone cannot prove the control call executed.
+            $report.UnsignedProcessRequested = $null
+            Save-BonsaiHexagonDispatchWorkerReceipt -Report $report -Path $Request.WorkerReceiptPath
+        }
+        $probe = Invoke-BonsaiHexagonBoundedCapture -Executable $fixturePath -ArgumentList @($mode, $Request.PackageDirectory) -WorkingDirectory $Request.PackageDirectory -ProgressReceipt $report -ProgressPath $Request.WorkerReceiptPath -ProgressKind Session
+        $native = Get-BonsaiHexagonSessionProbeResult -Json $probe.StandardOutput -ExitCode $probe.ExitCode -ReferenceInitialization:$Request.ReferenceProcessInitializationSelected
         if ($native.driverDll -cne $driverGuard.Identity.Path) { throw 'Native session loaded a different inspected driver.' }
         $report.NativeResult = $native
+        $report.UnsignedProcessRequested = $native.unsignedProcessRequested
+        $report.ProcessInitializationResult = $native.processInitializationResult
         if ($native.passed) {
             $report.MappingCycleVerified = $true
             $report.Outcome = 'passed'

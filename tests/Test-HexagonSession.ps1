@@ -17,6 +17,10 @@ if ($Case -ceq 'Plan') {
         $plan.Bytes -eq 4096 -and $plan.MapFlags -eq 2 -and $plan.SessionId -eq 0) 'Native session probe lost its bounded default-session FD contract.'
     Assert ($plan.CatalogMemberVerificationRequired -and $plan.SourceBoundHostedFixtureRequired -and $plan.IndependentDriverIdentityRequired -and
         -not $plan.DriverInstallationAllowed -and -not $plan.TrustChangesAllowed -and -not $plan.ComputeExecuted -and -not $plan.ModelLoaded -and -not $plan.ProfileEligible) 'Native session plan authorized an independent gate.'
+    Assert (-not $plan.ReferenceProcessInitializationSelected -and -not $plan.AutomaticFallbackAllowed -and -not $plan.AutomaticRetryAllowed) 'The default plan enabled reference initialization or retry.'
+    $referencePlan = & (Join-Path $PSScriptRoot '../scripts/Invoke-HexagonSessionProbe.ps1') -PlanOnly -ReferenceInitialization
+    Assert ($referencePlan.ReferenceProcessInitializationSelected -and $referencePlan.ReferenceProcessInitializationControl -ceq 'DSPRPC_CONTROL_UNSIGNED_MODULE-enable1-default-session-effective-domain-process-only' -and
+        -not $referencePlan.TrustChangesAllowed -and -not $referencePlan.DriverInstallationAllowed -and -not $referencePlan.AutomaticFallbackAllowed) 'The explicit reference initialization changed trust or enabled fallback.'
 } elseif ($Case -ceq 'Build') {
     $revision = '1' * 40
     $digests = @{}
@@ -62,6 +66,8 @@ if ($Case -ceq 'Plan') {
         freeCompleted = $true; poisoned = $false; moduleCloseResult = 0; moduleCloseCompleted = $true; ownerPinnedUntilExit = $true
         driverLoaded = $true; signedDeploymentVerified = $false; computeExecuted = $false; dmaExecuted = $false
         unsignedProcessRequested = $false; sessionTeardownVerified = $false; profileEligible = $false
+        referenceProcessInitializationSelected = $false; processInitializationResult = $null
+        processInitializationRequestId = 2; processInitializationEnable = 1; processInitializationStructureBytes = 8
     }
     $checked = Get-BonsaiHexagonSessionProbeResult -Json ($native | ConvertTo-Json -Depth 8) -ExitCode 0
     Assert ($checked.passed -and -not $checked.computeExecuted -and -not $checked.sessionTeardownVerified) 'FD mapping became compute or vendor teardown evidence.'
@@ -94,10 +100,39 @@ if ($Case -ceq 'Plan') {
     $openRefused.mappingResult = $null; $openRefused.poisoned = $false
     $checked = Get-BonsaiHexagonSessionProbeResult -Json ($openRefused | ConvertTo-Json -Depth 8) -ExitCode 0
     Assert (-not $checked.passed -and -not $checked.mappingAttempted -and $checked.ownerPinnedUntilExit) 'A module-open refusal became mapping or released the owner.'
+    $reference = $native.Clone(); $reference.referenceProcessInitializationSelected = $true
+    $reference.processInitializationResult = 0; $reference.unsignedProcessRequested = $true
+    $checked = Get-BonsaiHexagonSessionProbeResult -Json ($reference | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization
+    Assert ($checked.passed -and $checked.unsignedProcessRequested -and $checked.processInitializationResult -eq 0) 'Explicit reference process initialization lost its separate outcome.'
+    Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($reference | ConvertTo-Json -Depth 8) -ExitCode 0 } 'The default parser admitted an unselected reference-process request.'
+    Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($native | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A default execution was relabeled as explicitly selected reference initialization.'
+    foreach ($field in @('processInitializationRequestId','processInitializationEnable','processInitializationStructureBytes')) {
+        $changed = $reference.Clone(); $changed[$field] = 0
+        Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'Changed fixed reference process initialization ABI admitted.'
+    }
+    $referenceRefused = $openRefused.Clone(); $referenceRefused.referenceProcessInitializationSelected = $true
+    $referenceRefused.unsignedProcessRequested = $true; $referenceRefused.processInitializationResult = 14
+    $referenceRefused.stage = 'reference-process-init-refused-pinned'; $referenceRefused.metadataPrepared = $false
+    $referenceRefused.metadataStage = 'effective-domain-prepared'; $referenceRefused.uriResult = $null; $referenceRefused.uriVerified = $false
+    $referenceRefused.moduleOpenResult = $null
+    $checked = Get-BonsaiHexagonSessionProbeResult -Json ($referenceRefused | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization
+    Assert (-not $checked.passed -and $checked.processInitializationResult -eq 14 -and $checked.ownerPinnedUntilExit -and -not $checked.remoteModuleOpened) 'A refused reference request was confused with module opening or released ownership.'
+    $changed = $referenceRefused.Clone(); $changed.ownerPinnedUntilExit = $false
+    Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A completed reference-process request released its owner.'
+    $referenceUriRefused = $referenceRefused.Clone(); $referenceUriRefused.stage = 'session-metadata-incomplete'; $referenceUriRefused.metadataStage = 'session-uri-refused'
+    $referenceUriRefused.processInitializationResult = 0; $referenceUriRefused.uriResult = 14
+    $checked = Get-BonsaiHexagonSessionProbeResult -Json ($referenceUriRefused | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization
+    Assert ($checked.processInitializationResult -eq 0 -and $checked.uriResult -eq 14 -and -not $checked.remoteModuleOpened) 'Reference initialization success erased the separately refused URI request.'
+    $referenceDomainRefused = $referenceRefused.Clone(); $referenceDomainRefused.stage = 'session-metadata-incomplete'; $referenceDomainRefused.metadataStage = 'effective-domain-refused'
+    $referenceDomainRefused.unsignedProcessRequested = $false; $referenceDomainRefused.processInitializationResult = $null
+    $referenceDomainRefused.ownerPinnedUntilExit = $false; $referenceDomainRefused.domainResult = 14; $referenceDomainRefused.effectiveDomain = $null
+    $checked = Get-BonsaiHexagonSessionProbeResult -Json ($referenceDomainRefused | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization
+    Assert ($checked.referenceProcessInitializationSelected -and -not $checked.unsignedProcessRequested -and $null -eq $checked.processInitializationResult) 'Selecting reference initialization became an actual request before its prerequisites.'
     $revision = '1' * 40
     $worker = @{
         SchemaVersion = 1; Kind = 'runner-hexagon-session-worker'; SourceRevision = $revision
         Outcome = 'passed'; Stage = 'session-mapping-complete'; Failure = $null; LastNativeStage = 'module-close-entered'
+        ReferenceProcessInitializationSelected = $false; UnsignedProcessRequested = $false; ProcessInitializationResult = $null
         SignedPackageVerified = $true; RuntimeFilesVerified = 16; DriverIdentityVerified = $true
         DriverIdentity = @{ Path = $driverPath; Bytes = 65536; Sha256 = '2' * 64; SignatureStatus = 'Valid'; Publisher = 'Microsoft Windows Hardware Compatibility Publisher'; SignerThumbprint = '3' * 40; FileHeldAgainstMutation = $true }
         MappingCycleVerified = $true; NativeResult = $native; ExecutableSha256 = '4' * 64; BuildReceiptSha256 = '5' * 64; ManifestSha256 = '6' * 64; LockSha256 = '7' * 64
@@ -113,5 +148,17 @@ if ($Case -ceq 'Plan') {
     $changed.NativeResult = $null; $changed.LastNativeStage = 'fd-mapping-entered'
     $checked = Get-BonsaiHexagonSessionWorkerResult -Json ($changed | ConvertTo-Json -Depth 12) -ExpectedRunnerRevision $revision
     Assert ($checked.LastNativeStage -ceq 'fd-mapping-entered' -and -not $checked.MappingCycleVerified) 'Interrupted native call lost its distinct entered-stage evidence.'
+    $referenceWorker = $worker.Clone(); $referenceWorker.ReferenceProcessInitializationSelected = $true
+    $referenceWorker.UnsignedProcessRequested = $true; $referenceWorker.ProcessInitializationResult = 0; $referenceWorker.NativeResult = $reference
+    $checked = Get-BonsaiHexagonSessionWorkerResult -Json ($referenceWorker | ConvertTo-Json -Depth 12) -ExpectedRunnerRevision $revision -ReferenceInitialization
+    Assert ($checked.UnsignedProcessRequested -and $checked.MappingCycleVerified -and -not $checked.TrustChanged) 'Explicit reference initialization lost its actual request or changed trust.'
+    Assert-Failure { Get-BonsaiHexagonSessionWorkerResult -Json ($referenceWorker | ConvertTo-Json -Depth 12) -ExpectedRunnerRevision $revision } 'Default supervision admitted reference-process initialization.'
+    $interrupted = $referenceWorker.Clone(); $interrupted.Outcome = 'pending'; $interrupted.Stage = 'session-mapping'; $interrupted.MappingCycleVerified = $false
+    $interrupted.NativeResult = $null; $interrupted.LastNativeStage = 'reference-process-init-entered'
+    $interrupted.UnsignedProcessRequested = $null; $interrupted.ProcessInitializationResult = $null
+    $checked = Get-BonsaiHexagonSessionWorkerResult -Json ($interrupted | ConvertTo-Json -Depth 12) -ExpectedRunnerRevision $revision -ReferenceInitialization
+    Assert ($null -eq $checked.UnsignedProcessRequested -and $checked.LastNativeStage -ceq 'reference-process-init-entered') 'An entered reference call became a completed actual request.'
+    $changed = $interrupted.Clone(); $changed.UnsignedProcessRequested = $true
+    Assert-Failure { Get-BonsaiHexagonSessionWorkerResult -Json ($changed | ConvertTo-Json -Depth 12) -ExpectedRunnerRevision $revision -ReferenceInitialization } 'A native progress marker claimed an actual request without completed evidence.'
 }
 "Focused native Hexagon session $Case checks passed without loading a device."

@@ -20,6 +20,7 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'Execute')][string]$SigntoolPath,
     [Parameter(Mandatory, ParameterSetName = 'Execute')][ValidatePattern('^[a-f0-9]{40}$')][string]$ExpectedRunnerRevision,
     [ValidateRange(1,240)][int]$MaximumSeconds = 120,
+    [switch]$ReferenceInitialization,
     [Parameter(Mandatory, ParameterSetName = 'Plan')][switch]$PlanOnly
 )
 $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -29,7 +30,7 @@ $PSNativeCommandUseErrorActionPreference = $true
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.HexagonSession.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Native.psm1')
-$plan = Get-BonsaiHexagonSessionPlan -MaximumSeconds $MaximumSeconds
+$plan = Get-BonsaiHexagonSessionPlan -MaximumSeconds $MaximumSeconds -ReferenceInitialization:$ReferenceInitialization
 if ($PlanOnly) { return $plan }
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64' -or
     [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') { throw 'The session probe requires native Windows ARM64.' }
@@ -49,6 +50,8 @@ $report = [ordered]@{
     WorkerAllowanceSeconds = 0; ElapsedMilliseconds = 0; WorkerAttempted = $false; OwnedJobTeardown = 'not-started'
     Worker = $null; MappingCycleVerified = $false; ModelLoaded = $false; SwiftQualified = $false; ProfileEligible = $false
     DriverInstalled = $false; TrustChanged = $false
+    ReferenceProcessInitializationSelected = [bool]$ReferenceInitialization
+    UnsignedProcessRequested = $false; ProcessInitializationResult = $null
 }
 try {
     $allowance = [int][Math]::Floor($MaximumSeconds - $clock.Elapsed.TotalSeconds - 75)
@@ -61,6 +64,7 @@ try {
         NativeSourceDirectory = Join-Path $repo 'tools/hexagon/native_rpc'
         ManifestPath = Join-Path $repo 'tools/hexagon/diagnostic.manifest'
         WorkerReceiptPath = Join-Path $OutputDirectory 'worker.json'
+        ReferenceProcessInitializationSelected = [bool]$ReferenceInitialization
     }
     $requestPath = Join-Path $OutputDirectory 'worker-request.json'
     [IO.File]::WriteAllText($requestPath, ($request | ConvertTo-Json -Depth 5))
@@ -70,6 +74,7 @@ try {
         'Invoke-BonsaiHexagonSessionWorker -Request $r | ConvertTo-Json -Depth 16 -Compress'
     $report.WorkerAllowanceSeconds = $allowance
     $report.WorkerAttempted = $true
+    if ($ReferenceInitialization) { $report.UnsignedProcessRequested = $null }
     $report.OwnedJobTeardown = 'unconfirmed'
     # The existing trusted trampoline waits for Job assignment before starting
     # this model-free worker. No uncontained retry is available.
@@ -79,11 +84,13 @@ try {
     if ($owned.ExitCode -ne 0 -or $owned.StandardOutput.Length -gt 131072 -or $owned.StandardError.Length -gt 65536) {
         throw 'The owned worker failed its bounded output contract.'
     }
-    $worker = Get-BonsaiHexagonSessionWorkerResult -Json $owned.StandardOutput -ExpectedRunnerRevision $ExpectedRunnerRevision
+    $worker = Get-BonsaiHexagonSessionWorkerResult -Json $owned.StandardOutput -ExpectedRunnerRevision $ExpectedRunnerRevision -ReferenceInitialization:$ReferenceInitialization
     $report.Worker = $worker
     $report.Outcome = $worker.Outcome
     $report.Failure = $worker.Failure
     $report.MappingCycleVerified = $worker.MappingCycleVerified
+    $report.UnsignedProcessRequested = $worker.UnsignedProcessRequested
+    $report.ProcessInitializationResult = $worker.ProcessInitializationResult
 } catch {
     $report.Outcome = 'pending'
     $report.Failure = 'owned-session-probe-incomplete'
@@ -96,7 +103,9 @@ try {
             if ($partial.Length -le 65536) {
                 $buffer = [byte[]]::new([int]$partial.Length)
                 $partial.ReadExactly($buffer)
-                $report.Worker = Get-BonsaiHexagonSessionWorkerResult -Json ([Text.UTF8Encoding]::new($false, $true).GetString($buffer)) -ExpectedRunnerRevision $ExpectedRunnerRevision
+                $report.Worker = Get-BonsaiHexagonSessionWorkerResult -Json ([Text.UTF8Encoding]::new($false, $true).GetString($buffer)) -ExpectedRunnerRevision $ExpectedRunnerRevision -ReferenceInitialization:$ReferenceInitialization
+                $report.UnsignedProcessRequested = $report.Worker.UnsignedProcessRequested
+                $report.ProcessInitializationResult = $report.Worker.ProcessInitializationResult
             }
         } catch { $report.Worker = $null } finally { $partial.Dispose() }
     }

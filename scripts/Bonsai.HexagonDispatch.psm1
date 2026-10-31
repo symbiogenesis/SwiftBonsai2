@@ -330,7 +330,7 @@ function Invoke-BonsaiHexagonBoundedCapture {
                             # abort/hang must not erase the last entered fixture stage.
                             $progress = [Text.Encoding]::UTF8.GetString($channel.Store.ToArray())
                             $pattern = if ($ProgressKind -ceq 'Session') {
-                                '(?m)^hexagon-session:stage=(module-open-entered|allocation-entered|descriptor-entered|fd-mapping-entered|fd-unmapping-entered|free-entered|module-close-entered)\r?\n'
+                                '(?m)^hexagon-session:stage=(reference-process-init-entered|module-open-entered|allocation-entered|descriptor-entered|fd-mapping-entered|fd-unmapping-entered|free-entered|module-close-entered)\r?\n'
                             } else { '(?m)^hexagon-fixture:stage=(load|registry|backend-init|context|allocation|transfer|dispatch|readback)\r?\n' }
                             $markers = [regex]::Matches($progress, $pattern)
                             if ($markers.Count) {
