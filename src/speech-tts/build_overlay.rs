@@ -24,6 +24,7 @@ type Transform = fn(&str) -> io::Result<String>;
 // and exact build anchor. Production replaces the entire header with this
 // declaration; both sampler callers draw directly from the Rust scalar export.
 const PHILOX_REFERENCE: &str = include_str!("tests/reference/philox.h");
+const SAMPLING_REFERENCE: &str = include_str!("tests/reference/sampling.h");
 const PHILOX_DECLARATION: &str = "#pragma once\n#include <cstdint>\n\n// Runner's allocation-free safe Rust Philox4x32-10 implementation.\nextern \"C\" float bonsai_qt_philox_uniform(int64_t seed, int64_t subsequence, uint32_t counter);\n";
 const SEMANTIC_DRAW: &str = "    philox_uniform_fill(seed, philox_subseq, 0u, &u, 1);";
 const PREDICTOR_DRAW: &str =
@@ -37,12 +38,25 @@ fn philox(text: &str) -> io::Result<String> {
 }
 
 fn semantic_sampling(text: &str) -> io::Result<String> {
+    if text.replace("\r\n", "\n") != SAMPLING_REFERENCE.replace("\r\n", "\n") {
+        return Err(io::Error::other("Pinned Qwen sampler source differs."));
+    }
+    let start = text
+        .find("// Mask logits in [lo, hi)")
+        .ok_or_else(|| io::Error::other("Pinned Qwen sampler source differs."))?;
+    let end = text
+        .find("// Stochastic sampler.")
+        .ok_or_else(|| io::Error::other("Pinned Qwen sampler source differs."))?;
+    let text = format!("{}{}{}", &text[..start], SAMPLING_HELPERS, &text[end..]);
     replace_once(
-        text,
+        &text,
         SEMANTIC_DRAW,
         "    u = bonsai_qt_philox_uniform(seed, philox_subseq, 0u);",
     )
 }
+
+// Native code retains only reusable storage and delegates slice policy to Rust.
+const SAMPLING_HELPERS: &str = "// Runner owns the masking and unique-history repetition policy.\nextern \"C\" void bonsai_qt_apply_suppress(float * logits, int V, int lo, int hi, int keep);\nextern \"C\" void bonsai_qt_apply_repetition_penalty(float * logits, int V, const int32_t * history, int n_history, float penalty, uint8_t * seen);\n\nstatic inline void apply_suppress(float * logits, int V, int lo, int hi, int keep) {\n    bonsai_qt_apply_suppress(logits, V, lo, hi, keep);\n}\n\nstatic inline void apply_repetition_penalty(float * logits, int V, const int32_t * history, int n_history, float penalty) {\n    if (penalty == 1.0f || n_history <= 0) { return; }\n    static thread_local std::vector<uint8_t> seen_buf;\n    seen_buf.resize((size_t) V);\n    bonsai_qt_apply_repetition_penalty(logits, V, history, n_history, penalty, seen_buf.data());\n}\n\n";
 
 fn predictor_sampling(text: &str) -> io::Result<String> {
     replace_once(
@@ -147,8 +161,8 @@ fn redirected(metadata: &fs::Metadata) -> bool {
 mod tests {
     use super::{
         DECODE_GRAPH, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION, PHILOX_REFERENCE, PREDICTOR_DRAW,
-        SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE, backend, decode_graphs, philox,
-        predictor_sampling, prepare, semantic_sampling, vectors,
+        SAMPLING_REFERENCE, SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE, backend, decode_graphs,
+        philox, predictor_sampling, prepare, semantic_sampling, vectors,
     };
 
     #[test]
@@ -172,7 +186,7 @@ mod tests {
         fs::write(source.join("src/qwen.cpp"), "extern \"C\" {\n}")?;
         fs::write(source.join("src/talker-forward.h"), DECODE_GRAPH)?;
         fs::write(source.join("src/philox.h"), PHILOX_REFERENCE)?;
-        fs::write(source.join("src/sampling.h"), SEMANTIC_DRAW)?;
+        fs::write(source.join("src/sampling.h"), SAMPLING_REFERENCE)?;
         fs::write(source.join("src/sampling-graph.h"), PREDICTOR_DRAW)?;
         fs::create_dir_all(source.join("ggml/src/ggml-cpu"))?;
         fs::write(
@@ -228,19 +242,101 @@ mod tests {
             assert!(philox(changed).is_err());
         }
         let draws: [(super::Transform, &str); 2] = [
-            (semantic_sampling, SEMANTIC_DRAW),
+            (semantic_sampling, SAMPLING_REFERENCE),
             (predictor_sampling, PREDICTOR_DRAW),
         ];
         for (transform, draw) in draws {
-            let original = format!("before\n{draw}\nafter\n");
+            let original = if draw == SAMPLING_REFERENCE {
+                draw.to_owned()
+            } else {
+                format!("before\n{draw}\nafter\n")
+            };
             let patched = transform(&original)?;
-            assert!(patched.starts_with("before\n") && patched.ends_with("\nafter\n"));
-            assert!(!patched.contains("philox_uniform_fill"));
+            if draw != SAMPLING_REFERENCE {
+                assert!(patched.starts_with("before\n") && patched.ends_with("\nafter\n"));
+            }
+            if draw == SAMPLING_REFERENCE {
+                assert!(!patched.contains(SEMANTIC_DRAW));
+            } else {
+                assert!(!patched.contains("philox_uniform_fill"));
+            }
             assert!(patched.contains("bonsai_qt_philox_uniform"));
             assert!(transform(&patched).is_err());
             assert!(transform("changed").is_err());
             assert!(transform(&original.repeat(2)).is_err());
         }
+        Ok(())
+    }
+
+    #[test]
+    fn sampler_helpers_move_policy_to_rust_and_reject_source_drift() -> std::io::Result<()> {
+        let patched = semantic_sampling(SAMPLING_REFERENCE)?;
+        assert!(patched.contains("bonsai_qt_apply_suppress(logits, V, lo, hi, keep);"));
+        assert!(patched.contains("bonsai_qt_apply_repetition_penalty(logits, V, history, n_history, penalty, seen_buf.data());"));
+        assert!(!patched.contains("logits[i] = -INFINITY;\n    }\n}"));
+        assert!(!patched.contains("seen_buf[(size_t) tok]"));
+        assert!(patched.contains("std::nth_element"));
+        assert!(patched.contains("std::sort(sorted_buf.begin()"));
+        assert!(patched.contains("u = bonsai_qt_philox_uniform(seed, philox_subseq, 0u);"));
+        assert!(
+            semantic_sampling(&SAMPLING_REFERENCE.replace("if (lo < 0)", "if (lo <= 0)")).is_err()
+        );
+        assert!(
+            semantic_sampling(&SAMPLING_REFERENCE.replace("s * penalty", "s / penalty")).is_err()
+        );
+        assert!(semantic_sampling(&patched).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn generated_sampler_header_compiles_with_private_rust_declarations()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use std::{
+            env, fs,
+            path::PathBuf,
+            process::Command,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+
+        let compiler = PathBuf::from(
+            env::var_os("BONSAI_TTS_COMPILER")
+                .or_else(|| option_env!("BONSAI_TTS_COMPILER").map(Into::into))
+                .ok_or(
+                    "Set the provisioned BONSAI_TTS_COMPILER for the sampler build regression.",
+                )?,
+        );
+        assert!(compiler.is_absolute() && compiler.is_file());
+        let working = env::temp_dir().join(format!(
+            "Bonsai-Qwen-SamplerBuild-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        assert!(working.is_absolute() && !working.to_string_lossy().contains('%'));
+        fs::create_dir(&working)?;
+        fs::write(working.join("philox.h"), PHILOX_DECLARATION)?;
+        fs::write(
+            working.join("sampling.h"),
+            semantic_sampling(SAMPLING_REFERENCE)?,
+        )?;
+        let source = working.join("probe.cpp");
+        fs::write(
+            &source,
+            "#include \"sampling.h\"\nvoid probe(float * logits, int V, const int32_t * history, int count) {\n    (void) &sample_top_k_p;\n    apply_suppress(logits, V, -1, V, 2);\n    apply_repetition_penalty(logits, V, history, count, 1.05f);\n}\n",
+        )?;
+        let compile = Command::new(compiler)
+            .args(["/nologo", "/std:c++17", "/EHsc", "/W4", "/WX", "/c"])
+            .arg(source)
+            .arg(format!("/Fo{}", working.join("probe.obj").display()))
+            .current_dir(&working)
+            .output()?;
+        fs::write(working.join("compiler.stdout"), &compile.stdout)?;
+        fs::write(working.join("compiler.stderr"), &compile.stderr)?;
+        assert!(
+            compile.status.success(),
+            "Generated sampler header failed to compile; retained {}",
+            working.display()
+        );
+        fs::remove_dir_all(&working)?;
         Ok(())
     }
 
