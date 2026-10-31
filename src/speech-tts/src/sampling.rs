@@ -3,9 +3,10 @@
 //! Ported from `src/sampling.h` in qwentts.cpp revision
 //! `5916bf7c79dbb4e66fc059cdc507a79a23a28bb4`, under the MIT license reproduced
 //! in `LICENSE.qwen-core` (Copyright 2023-2026 The omnivoice.cpp authors).
-//! The complete unmodified header remains an independent test oracle and exact
-//! build anchor in `tests/reference/sampling.h`. Native storage supplies the
-//! reusable seen workspace; this policy performs no allocation.
+//! Immutable independently captured observations retain the native control;
+//! `build_overlay.rs` guards the downloaded source by normalized length and
+//! SHA-256. The remaining probability pipeline stays native. Native storage
+//! supplies the reusable seen workspace; this policy performs no allocation.
 //! Original header SHA-256:
 //! `9812a8b428efffcfe3d832409f3eae092cb3be90bfeefbf141f75df0320e2241`.
 #![forbid(unsafe_code)]

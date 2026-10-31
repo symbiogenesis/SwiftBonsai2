@@ -35,12 +35,18 @@ const PHILOX_SHA256: [u8; 32] = [
     0x41, 0xa9, 0x55, 0xe4, 0x26, 0x7e, 0xba, 0x8d, 0x1c, 0x1a, 0x4b, 0x55, 0xa0, 0xb8, 0x96, 0x4c,
     0x4a, 0x7b, 0xd2, 0x8f, 0x38, 0x0f, 0xaa, 0xe5, 0xf9, 0x81, 0x15, 0x24, 0x03, 0xc8, 0x1d, 0xe7,
 ];
-const SAMPLING_REFERENCE: &str = include_str!("tests/reference/sampling.h");
 // Exact normalized identity of the retired pinned native tokenizer header.
 const BPE_BYTES: usize = 22533;
 const BPE_SHA256: [u8; 32] = [
     0x27, 0x31, 0xaa, 0xe2, 0x55, 0xbb, 0x95, 0xab, 0x93, 0x48, 0x35, 0xf1, 0x14, 0x91, 0x42, 0x9d,
     0x67, 0xc9, 0xd9, 0xf1, 0x2e, 0xa9, 0xf3, 0x3d, 0xbd, 0xb4, 0x5d, 0x67, 0x37, 0xee, 0x24, 0x03,
+];
+// This identifies the downloaded source; its probability pipeline remains
+// native. Captured controls retain the retired checked-in copy's observations.
+const SAMPLING_BYTES: usize = 6906;
+const SAMPLING_SHA256: [u8; 32] = [
+    0x98, 0x12, 0xa8, 0xb4, 0x28, 0xef, 0xff, 0xcf, 0xe3, 0xd8, 0x32, 0x40, 0x9f, 0x3e, 0xae, 0x09,
+    0x2c, 0xb3, 0xbe, 0x90, 0xbf, 0xee, 0xfb, 0xf1, 0x41, 0xf7, 0x5d, 0xf0, 0x32, 0x0e, 0x22, 0x41,
 ];
 const PHILOX_DECLARATION: &str = "#pragma once\n#include <cstdint>\n\n// Runner's allocation-free safe Rust Philox4x32-10 implementation.\nextern \"C\" float bonsai_qt_philox_uniform(int64_t seed, int64_t subsequence, uint32_t counter);\n";
 const SEMANTIC_DRAW: &str = "    philox_uniform_fill(seed, philox_subseq, 0u, &u, 1);";
@@ -81,9 +87,19 @@ pub(super) const fn tokenizer_header_for_test() -> &'static str {
 }
 
 fn semantic_sampling(text: &str) -> io::Result<String> {
-    if text.replace("\r\n", "\n") != SAMPLING_REFERENCE.replace("\r\n", "\n") {
+    semantic_sampling_with_identity(text, SAMPLING_BYTES, SAMPLING_SHA256)
+}
+
+fn semantic_sampling_with_identity(
+    text: &str,
+    expected_bytes: usize,
+    expected_sha256: [u8; 32],
+) -> io::Result<String> {
+    let normalized = text.replace("\r\n", "\n");
+    if !matches_source(&normalized, expected_bytes, expected_sha256) {
         return Err(io::Error::other("Pinned Qwen sampler source differs."));
     }
+    let text = normalized.as_str();
     let start = text
         .find("// Mask logits in [lo, hi)")
         .ok_or_else(|| io::Error::other("Pinned Qwen sampler source differs."))?;
@@ -238,9 +254,9 @@ fn redirected(metadata: &fs::Metadata) -> bool {
 mod tests {
     use super::{
         DECODE_GRAPH, DECODE_GRAPH_DECLARATIONS, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION,
-        PREDICTOR_DRAW, RUST_DECODE_GRAPH, SAMPLING_REFERENCE, SEMANTIC_DRAW, THREAD_COUNT,
-        THREAD_OVERRIDE, TRANSFORMS, backend, decode_graphs, matches_source, philox,
-        predictor_sampling, prepare_with, semantic_sampling, tokenizer, vectors,
+        PREDICTOR_DRAW, RUST_DECODE_GRAPH, SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE,
+        TRANSFORMS, backend, decode_graphs, matches_source, philox, predictor_sampling,
+        prepare_with, semantic_sampling, semantic_sampling_with_identity, tokenizer, vectors,
     };
 
     // Published SHA-256 known-answer vector; contains no native source code.
@@ -250,6 +266,40 @@ mod tests {
         0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00,
         0x15, 0xad,
     ];
+
+    // A minimal transform/compile scaffold, never a probability implementation
+    // or a numerical reference. Production accepts only the pinned source hash.
+    const SAMPLER_FIXTURE: &str = r#"#pragma once
+#include "philox.h"
+#include <algorithm>
+#include <cstdint>
+#include <vector>
+// Mask logits in [lo, hi)
+// Synthetic removable source markers: if (lo < 0), s * penalty.
+// Stochastic sampler.
+static int sample_top_k_p(float * logits, int V, float temperature,
+                          int64_t seed, int64_t philox_subseq) {
+    if (temperature <= 0.0f) {
+        return (int) (std::max_element(logits, logits + V) - logits);
+    }
+    std::vector<float> tmp(logits, logits + V);
+    std::nth_element(tmp.begin(), tmp.begin(), tmp.end());
+    std::vector<float> sorted_buf(tmp);
+    std::sort(sorted_buf.begin(), sorted_buf.end());
+    float u = 0.0f;
+    philox_uniform_fill(seed, philox_subseq, 0u, &u, 1);
+    return u > 0.0f ? 0 : V - 1;
+}
+"#;
+    const SAMPLER_FIXTURE_SHA256: [u8; 32] = [
+        0xcc, 0x28, 0x74, 0x46, 0xd8, 0xe1, 0x17, 0x46, 0xb4, 0x79, 0xfc, 0x96, 0x01, 0xcd, 0xdc,
+        0x30, 0x41, 0x61, 0xe8, 0x36, 0x3a, 0xb9, 0x26, 0xa7, 0x97, 0x70, 0xdf, 0xe6, 0xb1, 0x58,
+        0x28, 0x1c,
+    ];
+
+    fn fixture_semantic_sampling(text: &str) -> std::io::Result<String> {
+        semantic_sampling_with_identity(text, SAMPLER_FIXTURE.len(), SAMPLER_FIXTURE_SHA256)
+    }
 
     fn fixture_philox(text: &str) -> std::io::Result<String> {
         if !matches_source(text, FIXTURE_SOURCE.len(), FIXTURE_SHA256) {
@@ -286,7 +336,7 @@ mod tests {
         fs::write(source.join("src/qwen.cpp"), "extern \"C\" {\n}")?;
         fs::write(source.join("src/talker-forward.h"), DECODE_GRAPH)?;
         fs::write(source.join("src/philox.h"), FIXTURE_SOURCE)?;
-        fs::write(source.join("src/sampling.h"), SAMPLING_REFERENCE)?;
+        fs::write(source.join("src/sampling.h"), SAMPLER_FIXTURE)?;
         fs::write(source.join("src/bpe.h"), FIXTURE_SOURCE)?;
         fs::write(source.join("src/sampling-graph.h"), PREDICTOR_DRAW)?;
         fs::create_dir_all(source.join("ggml/src/ggml-cpu"))?;
@@ -301,6 +351,8 @@ mod tests {
                 *transform = fixture_philox;
             } else if *relative == "src/bpe.h" {
                 *transform = fixture_tokenizer;
+            } else if *relative == "src/sampling.h" {
+                *transform = fixture_semantic_sampling;
             }
         }
         prepare_with(&source, &copy, &transforms)?;
@@ -386,20 +438,20 @@ mod tests {
             assert!(philox(changed).is_err());
         }
         let draws: [(super::Transform, &str); 2] = [
-            (semantic_sampling, SAMPLING_REFERENCE),
+            (fixture_semantic_sampling, SAMPLER_FIXTURE),
             (predictor_sampling, PREDICTOR_DRAW),
         ];
         for (transform, draw) in draws {
-            let original = if draw == SAMPLING_REFERENCE {
+            let original = if draw == SAMPLER_FIXTURE {
                 draw.to_owned()
             } else {
                 format!("before\n{draw}\nafter\n")
             };
             let patched = transform(&original)?;
-            if draw != SAMPLING_REFERENCE {
+            if draw != SAMPLER_FIXTURE {
                 assert!(patched.starts_with("before\n") && patched.ends_with("\nafter\n"));
             }
-            if draw == SAMPLING_REFERENCE {
+            if draw == SAMPLER_FIXTURE {
                 assert!(!patched.contains(SEMANTIC_DRAW));
             } else {
                 assert!(!patched.contains("philox_uniform_fill"));
@@ -427,7 +479,7 @@ mod tests {
 
     #[test]
     fn sampler_helpers_move_policy_to_rust_and_reject_source_drift() -> std::io::Result<()> {
-        let patched = semantic_sampling(SAMPLING_REFERENCE)?;
+        let patched = fixture_semantic_sampling(SAMPLER_FIXTURE)?;
         assert!(patched.contains("bonsai_qt_apply_suppress(logits, V, lo, hi, keep);"));
         assert!(patched.contains("bonsai_qt_apply_repetition_penalty(logits, V, history, n_history, penalty, seen_buf.data());"));
         assert!(!patched.contains("logits[i] = -INFINITY;\n    }\n}"));
@@ -438,18 +490,33 @@ mod tests {
         assert!(patched.contains("std::sort(sorted_buf.begin()"));
         assert!(patched.contains("u = bonsai_qt_philox_uniform(seed, philox_subseq, 0u);"));
         assert!(
-            semantic_sampling(&SAMPLING_REFERENCE.replace("if (lo < 0)", "if (lo <= 0)")).is_err()
+            fixture_semantic_sampling(&SAMPLER_FIXTURE.replace("if (lo < 0)", "if (lo <= 0)"))
+                .is_err()
         );
         assert!(
-            semantic_sampling(&SAMPLING_REFERENCE.replace("s * penalty", "s / penalty")).is_err()
+            fixture_semantic_sampling(&SAMPLER_FIXTURE.replace("s * penalty", "s / penalty"))
+                .is_err()
         );
-        assert!(semantic_sampling(&patched).is_err());
+        assert!(fixture_semantic_sampling(&patched).is_err());
+        assert!(fixture_semantic_sampling("changed").is_err());
+        assert!(fixture_semantic_sampling(&SAMPLER_FIXTURE.repeat(2)).is_err());
+        assert!(semantic_sampling(SAMPLER_FIXTURE).is_err());
+        assert!(semantic_sampling(&"x".repeat(super::SAMPLING_BYTES)).is_err());
+        assert!(matches_source(
+            SAMPLER_FIXTURE,
+            SAMPLER_FIXTURE.len(),
+            SAMPLER_FIXTURE_SHA256
+        ));
+        let crlf = SAMPLER_FIXTURE.replace('\n', "\r\n");
+        assert_eq!(fixture_semantic_sampling(&crlf)?, patched);
         Ok(())
     }
 
     #[test]
-    fn generated_sampler_header_compiles_with_private_rust_declarations()
+    fn generated_sampler_scaffold_compiles_with_private_rust_declarations()
     -> Result<(), Box<dyn std::error::Error>> {
+        // This validates transformed Rust-call wiring only. The complete pinned
+        // source build/link remains an owning hosted integration gate.
         use std::{
             env, fs,
             path::PathBuf,
@@ -475,12 +542,12 @@ mod tests {
         fs::write(working.join("philox.h"), PHILOX_DECLARATION)?;
         fs::write(
             working.join("sampling.h"),
-            semantic_sampling(SAMPLING_REFERENCE)?,
+            fixture_semantic_sampling(SAMPLER_FIXTURE)?,
         )?;
         let source = working.join("probe.cpp");
         fs::write(
             &source,
-            "#include \"sampling.h\"\nvoid probe(float * logits, int V, const int32_t * history, int count) {\n    (void) &sample_top_k_p;\n    apply_suppress(logits, V, -1, V, 2);\n    apply_repetition_penalty(logits, V, history, count, 1.05f);\n}\n",
+            "#include \"sampling.h\"\nvoid probe(float * logits, int V, const int32_t * history, int count) {\n    (void) &sample_top_k_p;\n    apply_suppress(logits, V, -1, V, 2);\n    apply_repetition_penalty(logits, V, history, count, 1.05f);\n    (void) sample_top_k_p(logits, V, 0.0f, 0, 0);\n    (void) sample_top_k_p(logits, V, 1.0f, 0, 0);\n}\n",
         )?;
         let compile = Command::new(compiler)
             .args(["/nologo", "/std:c++17", "/EHsc", "/W4", "/WX", "/c"])
@@ -492,7 +559,7 @@ mod tests {
         fs::write(working.join("compiler.stderr"), &compile.stderr)?;
         assert!(
             compile.status.success(),
-            "Generated sampler header failed to compile; retained {}",
+            "Generated sampler scaffold failed to compile; retained {}",
             working.display()
         );
         fs::remove_dir_all(&working)?;
