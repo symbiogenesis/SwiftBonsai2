@@ -513,12 +513,20 @@ mod tests {
         let mut input = vec![0.0; 5120];
         input[0] = 32.0;
         input[1024] = -64.0;
+        // Nonzero coordinate binds interior butterfly/lane order independently
+        // of the implementation: H[i,j] = (-1)^popcount(i & j) / sqrt(1024).
+        input[2048 + 37] = 96.0;
         let mut signs = vec![1; 5120];
         signs[0] = -1;
+        signs[2048 + 37] = -1;
         let transformed = transform_input(&input, &signs)?;
         assert!(transformed[..1024].iter().all(|&value| value == -1.0));
         assert!(transformed[1024..2048].iter().all(|&value| value == -2.0));
-        assert!(transformed[2048..].iter().all(|&value| value == 0.0));
+        for (index, &value) in transformed[2048..3072].iter().enumerate() {
+            let odd = (index & 37).count_ones() % 2 == 1;
+            assert_eq!(value, if odd { 3.0 } else { -3.0 });
+        }
+        assert!(transformed[3072..].iter().all(|&value| value == 0.0));
         signs[17] = 0;
         assert_eq!(transform_input(&input, &signs), Err(Error::Signs));
         assert_eq!(transform_input(&input, &signs[..1024]), Err(Error::Signs));

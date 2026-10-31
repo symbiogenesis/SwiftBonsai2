@@ -48,6 +48,7 @@
     "proposedDoubleBufferedVtcmBytes": 18752,
     "proposedActivationTransferBytes": 3176960,
     "vtcmBoundExcludes": ["DMA-descriptors", "runtime-session-and-queue-storage", "mappings", "allocator-overhead"],
+    "additionalHostMemoryCharges": ["callers-retained-output-capacity", "borrowed-input-and-weights", "optional-transformed-F32-input", "sign-arrays", "Vec-metadata-capacity-rounding-and-allocator-retention"],
     "actualTransfersObserved": false,
     "persistentRepackedWeightBytes": 0,
     "stateOwner": "CPU",

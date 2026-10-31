@@ -62,6 +62,15 @@ allocator overhead or actual CPU/device synchronization. Those are additional
 charges, including resources outside the Job; they must be added before timing
 or admission. An observed VTCM page size is not an effective allocation.
 
+The host ledger's private-output extent is not a complete peak-memory total.
+`output.clear()` keeps any caller-owned output capacity until final publication,
+so charge that live allocation in addition to the private pending result.
+The borrowed F32 input and weights are existing CPU allocations; optional
+`transform_input` adds another F32 vector (20,480 bytes for K5120), and caller-owned
+sign arrays, Vec metadata/capacity rounding and allocator retention add separate
+charges. The proposed VTCM figure is neither a bound on those CPU allocations nor
+a complete admitted service-memory bound.
+
 Hosted ARM64 CI owns full controls:
 
 ```powershell
@@ -76,6 +85,12 @@ opposite-sign maxima ties, unaligned storage, partial row/column tiles at K5120,
 preserved reduction carry, cancellation at every tile/commit boundary, late
 invalid scales and bounded reservations/refusal. The first-projection ledger
 does not execute an actual model matrix. No timing claim follows from any case.
+The expanded numerical reference independently checks packed traversal and tile
+reduction order; it shares Q8_K preparation, half expansion and FMA arithmetic.
+It does not independently qualify those shared routines. The retained native
+captures independently bind preparation/FMA only for their original captured
+cases. The Walsh impulse control at coordinate 37 uses the closed-form parity
+of `popcount(i & 37)` to bind interior butterfly ordering across separate blocks.
 Actual packed/sign arrays, independent transform/activation/logit/full-state
 parity, signed custom kernels, DMA64, mapping, ownership/failure recovery,
 resources and measured whole-request benefit remain open.
