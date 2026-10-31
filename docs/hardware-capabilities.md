@@ -172,6 +172,14 @@ qualify driver access. This newer capture, its exact supervisor and Runner sourc
 raw output and independent review have a digest-verified owner archive. The older
 receipt remains separate evidence.
 
+The [2026-10-30 follow-up](evidence/x2-followup-20261030.json) again retains
+instance-creation `-9` with unchanged 24-module snapshots. GDI32 appears in both,
+but the independent `GetModuleHandleExW` reference acquisition fails with Windows
+error `126`; the graphics count call is never reached. Count and NTSTATUS stay
+unknown. This preserves the exact failed lookup without proving GDI32 absent or
+identifying the Vulkan failure cause. The final tool, source and raw output are
+included in the digest-verified owner archive; GPU worker access remains unqualified.
+
 ### Native OpenCL observations
 
 The same `-ToolPath` adds `NativeOpenClObservations` from bounded `host-opencl`: GPU information

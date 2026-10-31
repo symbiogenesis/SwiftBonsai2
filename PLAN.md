@@ -306,9 +306,10 @@ LoRA gates; calibration proves neither quality nor reduced admission.
   has none. Qualify the complete short screen within one shared setup, verification,
   loading, comparison and cleanup budget; leave broader thread choices pending.
   Resolve legacy `0xC0000142` startup with shell DLL audits and bounded `--version`
-  probes under unchanged mitigations. Follow the [retained exact-candidate X2
-  model-free startup](docs/runtime-candidates/README.md#bounded-x2-model-free-startup)
-  with model loading and inference qualification. Integrate and release the [headless UCRT
+  probes under unchanged mitigations. Extend the [exact-candidate X2
+  model smoke](docs/runtime-candidates/README.md#explicit-x2-candidate-model-smoke)
+  to Unicode model paths, effective thinking control, continuation/state, adapters
+  and cancellation qualification. Integrate and release the [headless UCRT
   candidate](docs/runtime-candidates/README.md#headless-ucrt-argv-candidate) upstream;
   qualify its exact binary before repinning Runner.
 - Qualify scalar/NEON, optional ISA and phase-specific thread, batch, wait and power
@@ -401,6 +402,9 @@ Follow [Adreno contracts](docs/adreno.md); discovery alone changes no CPU profil
   emulation and preserving unknowns and conservative admission. Resolve X2 `host-gpu`
   headless-worker `instance-creation` failure (`VK_ERROR_INCOMPATIBLE_DRIVER`), using
   retained stage/result diagnostics and bounded current-worker module snapshots;
+  resolve protected GDI32 reference lookup error `126` despite module-snapshot
+  presence; the count-only graphics query was not reached. Do not treat that
+  lookup failure as proof of the Vulkan failure cause or ICD identity;
   retain bounded on-disk loader/new-module hashes for dependency review. Module names
   and on-disk hashes do not identify failed DLLs, bind mapped-image bytes or establish
   signature and dependency provenance.

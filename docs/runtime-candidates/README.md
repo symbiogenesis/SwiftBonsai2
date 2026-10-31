@@ -311,3 +311,14 @@ cancellation, quality, speed or release/pin promotion. Diagnostic timing lines a
 retained only as execution evidence; no performance comparison is evaluated.
 Requested reasoning controls do not establish the embedded template's effective
 thinking mode; that remains separately unqualified.
+
+The [2026-10-30 X2 follow-up](../evidence/x2-followup-20261030.json) retains a
+successful native candidate completion: 58 prompt tokens, four sampled output
+tokens and three decode evaluations. Its original startup receipt remains failed
+because the executed parser rejected timestamp-prefixed logs after native success.
+A separate digest-bound post-run check verifies those saved counters without
+rerunning the model. The exact executed script, both attempts, supervisors, source
+snapshots and independent review are durably archived. The final parser and receipt
+repair were tested with retained logs rather than another model invocation.
+The embedded template still exposed a thinking prefix despite requesting thinking
+off; effective control and all broader qualification and release gates remain pending.
