@@ -53,6 +53,12 @@ full Qwen build/link and owning-crate checks. Local model-free token/bit
 parity does not close those integration gates. Preserve the captured Windows
 ARM64 MSVC exceptional-float behavior when qualifying other compiler versions.
 
+Run the hosted owning-crate Release analyzer, documentation and integration checks
+after the standard-library decoding, Philox, typed-block and HTTP-framing changes.
+Focused local decoding, captured Philox/tokenizer, projection and header-fragment
+checks pass; the source-bound speech/UI checks do not replace full native linking
+or the application acceptance gates above.
+
 The Rust PTQ1 DLL collector also needs the hosted source-bound build/test bundle
 and main-only numerical workflow. Its pinned-DLL probe and complete 369-record
 ABI/default/configuration comparison pass locally without weights; this does not
