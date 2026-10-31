@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "kind": "prism-main-integration-and-retained-runner-source-gates",
+  "recordedDate": "2026-10-31",
+  "scope": "Reviewed source and owning hosted controls; actual-model, released-byte and default-runtime qualification remain separate.",
+  "mergedCandidates": {
+    "prism": {
+      "pullRequest": "https://github.com/symbiogenesis/prism-inference/pull/7",
+      "mergeRevision": "e071d96a6a2bbdd2f3d4b2c0e8920a56ffd96aa0",
+      "candidateRevision": "fffcd05b6ea9a618465317bed0abfff951299c53",
+      "candidateRun": "https://github.com/symbiogenesis/prism-inference/actions/runs/41176550777",
+      "candidateConclusion": "success",
+      "implemented": ["native Windows complete GGUF SHA-256 verification", "explicit latest-live-prefix reuse with default reset policy retained"]
+    },
+    "runner": {
+      "pullRequest": "https://github.com/symbiogenesis/SwiftBonsai2Runner/pull/6",
+      "mergeRevision": "d6c4246f4c38841d2575015d1b998b4dee04aca8",
+      "candidateRevision": "d52f4ee78405f7712730a4d473d97e3fcbdaafb1",
+      "candidateRun": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41177085742",
+      "candidateConclusion": "success",
+      "implemented": ["worker-checkout fingerprint exclusion", "native Windows artifact SHA-256", "required adapter scale/history acceptance profile", "promotion worker-count and serving-policy identity binding"]
+    }
+  },
+  "retainedRunnerOwningControls": {
+    "revision": "53f717e887e80fb1c4042db4296c46b67af8097f",
+    "run": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41172604342",
+    "conclusion": "success",
+    "jobs": ["changes", "broker / ui", "broker / core", "maintenance", "standards", "speech / tts", "speech / asr", "release-integration", "scripts / native", "scripts / foundation", "foundation"],
+    "reviewedControls": {
+      "uiTestsPassed": 229,
+      "ttsTestsPassed": 51,
+      "ttsNativeBuildLinked": true,
+      "releaseAnalyzersDocumentationTestsBuildsPassed": true,
+      "uiTtsAsrSourceChangedThroughRunnerMergeRevision": false,
+      "scope": "Historical main source obligations for speech tokenizer/cache/owner controls, UI Find/Unicode/layout and borrowed transport/PCM. Subsequent changed consumers need their own settled-main checks; no transfer of model or device evidence."
+    },
+    "archive": {
+      "directory": "C:\\Users\\symbi\\AppData\\Local\\SwiftBonsai2\\qualification\\prism-main-20261031",
+      "manifest": "file-manifest.json",
+      "manifestSha256": "7f35d8f6fa9d3887b4dfb0bd2e87724597adab219e7e9f1813b5b6145c066c16",
+      "fileCount": 22,
+      "retainedBytes": 107960,
+      "contents": "Run identity plus source-bound UI/core/TTS check receipts and complete correctness/analyzer/documentation/build logs. No credentials or model weights."
+    }
+  },
+  "nextRelease": {
+    "version": "0.1.10",
+    "sourceRevision": "749a5f5b43bf77764a29682557ec91a8de8dcdef",
+    "additionalControl": "Mixed full-attention/recurrent prefix reuse, sealed KV pages, stop draws and sampler continuation against fresh computation.",
+    "foundationRun": "https://github.com/symbiogenesis/prism-inference/actions/runs/41178893822",
+    "conformanceRun": "https://github.com/symbiogenesis/prism-inference/actions/runs/41178893812",
+    "status": "owning-main-ci-pending",
+    "registryDelivery": "Pending native-hash publication, a new GGUF registry version and updated exact runtime dependency; GitHub binary packaging uses the reviewed path dependencies."
+  },
+  "runnerCleanupFollowup": {
+    "pullRequest": "https://github.com/symbiogenesis/SwiftBonsai2Runner/pull/7",
+    "sourceRevision": "adcb3b77b2c580b231649ad8a1c2f2ff85ae59b5",
+    "behavior": "All adapter HTTP phases reserve 30 seconds for owned Stop; expired work is dropped and completed observations retained in a failed receipt.",
+    "status": "candidate-owning-ci-pending"
+  },
+  "defaultRuntimeChanged": false,
+  "runtimeLockChanged": false,
+  "promotionReady": false,
+  "modelExecutions": 0,
+  "benchmarkExecutions": 0
+}

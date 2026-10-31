@@ -537,8 +537,9 @@ and original PQ2 model, provisioned with `config/swift-assessment.lock.json`.
 It fixes batch/microbatch to 128/64, an 11.5 GiB Job cap and 15.5 GiB admission,
 including the 4 GiB reserve. Add `--use-abliterate-lora` for the pinned adapter
 and per-request scale (default 1.3); the native UI requests it automatically,
-while direct broker launches omit it. Publisher Prism accepts the adapter with
-PQ2 or explicit `--use-repacked-ptq1`; native Rust rejects adapters and PTQ1.
+while direct broker launches omit it. Publisher Prism and the pinned native Rust
+service both accept the approved adapter with PQ2 or explicit
+`--use-repacked-ptq1`; native Rust verifies representation and adapter readiness.
 The [runtime-selection table](#runtime-selection) lists app options. Profile names
 are exact; arbitrary adapters, models, runtimes and inference overrides reject.
 
