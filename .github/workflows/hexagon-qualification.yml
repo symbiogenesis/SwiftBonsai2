@@ -8,6 +8,7 @@ on:
       - scripts/*Hexagon*
       - tests/Test-HexagonPreflight.ps1
       - tests/Test-HexagonDispatch.ps1
+      - tests/Test-HexagonSession.ps1
       - src/cpu-policy/**
       - config/hexagon-experiment.lock.json
       - config/hexagon-dispatch.lock.json
@@ -19,6 +20,10 @@ on:
         default: false
       run_dispatch:
         description: Run only the two tiny signed-package F32 access fixtures after hosted preparation
+        type: boolean
+        default: false
+      run_session_probe:
+        description: Open the fixed signed module and probe one 4 KiB FD mapping in that session
         type: boolean
         default: false
       package_directory:
@@ -43,9 +48,9 @@ jobs:
         with:
           toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
       - name: Require one owner operation within the shared device budget
-        if: inputs.run_device && inputs.run_dispatch
+        if: (inputs.run_device && inputs.run_dispatch) || (inputs.run_session_probe && (inputs.run_device || inputs.run_dispatch))
         shell: pwsh
-        run: throw 'Select inventory or dispatch, not two owner jobs for one investigation.'
+        run: throw 'Select exactly one owner operation within the shared five-minute investigation budget.'
       - name: Validate packed layout and bounded inventory supervision without models
         shell: pwsh
         run: |
@@ -58,6 +63,9 @@ jobs:
           ./tests/Test-HexagonPreflight.ps1
           foreach ($case in @('Plan','Build','Result','Environment','Capture')) {
             ./tests/Test-HexagonDispatch.ps1 -Case $case
+          }
+          foreach ($case in @('Plan','Build','Result','Environment')) {
+            ./tests/Test-HexagonSession.ps1 -Case $case
           }
       - name: Validate comparative CPU GPU NPU ranking without opening a device
         shell: pwsh
@@ -101,9 +109,78 @@ jobs:
             ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/packed-projection
           if-no-files-found: warn
           retention-days: 90
+      - name: Retain the source-bound native session probe bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hexagon-native-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/native-rpc-bundle
+          if-no-files-found: error
+          retention-days: 90
+  session-probe:
+    needs: controls
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.run_session_probe && !inputs.run_device && !inputs.run_dispatch
+    runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
+    timeout-minutes: 5
+    concurrency:
+      group: swift-lora-snapdragon
+      cancel-in-progress: false
+    steps:
+      - name: Start the single owner budget before checkout and intake
+        shell: pwsh
+        run: |
+          "BONSAI_HEXAGON_JOB_STARTED_UTC=$([DateTime]::UtcNow.ToString('o'))" >> $env:GITHUB_ENV
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: hexagon-native-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/SwiftBonsai-Hexagon-Native-Bundle
+      - name: Verify same-run native probe and test the signed established-session FD path
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          HEXAGON_PACKAGE_DIRECTORY: ${{ inputs.package_directory }}
+          HEXAGON_SIGNTOOL_PATH: ${{ inputs.signtool_path }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $started = [DateTimeOffset]::Parse($env:BONSAI_HEXAGON_JOB_STARTED_UTC, [Globalization.CultureInfo]::InvariantCulture)
+          $bundle = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Hexagon-Native-Bundle'
+          $build = Get-Content -LiteralPath (Join-Path $bundle 'native-build.json') -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate
+          if ($build.RunnerRevision -cne $env:GITHUB_SHA -or $build.RunId -cne $env:GITHUB_RUN_ID -or $build.RunAttempt -cne $env:GITHUB_RUN_ATTEMPT) {
+            throw 'Native probe intake differs from this exact hosted run and revision.'
+          }
+          $setup = ([DateTimeOffset]::UtcNow - $started).TotalSeconds
+          $allowance = [int][Math]::Floor([Math]::Min(120, 270 - $setup))
+          if ($setup -lt 0 -or $allowance -le 75) { throw 'Owner setup exhausted the verified teardown reserve; session mapping remains pending.' }
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-Hexagon-Session-' + [guid]::NewGuid().ToString('N'))
+          "BONSAI_HEXAGON_SESSION_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          $result = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-HexagonSessionProbe.ps1') -PackageDirectory $env:HEXAGON_PACKAGE_DIRECTORY -FixtureDirectory $bundle -OutputDirectory $evidence -SigntoolPath $env:HEXAGON_SIGNTOOL_PATH -ExpectedRunnerRevision $env:GITHUB_SHA -MaximumSeconds $allowance
+          [ordered]@{
+            SchemaVersion = 1; RunnerRevision = $env:GITHUB_SHA; RunId = $env:GITHUB_RUN_ID; RunAttempt = $env:GITHUB_RUN_ATTEMPT
+            WholeJobMaximumSeconds = 300; PreparationElapsedMilliseconds = [Math]::Ceiling($setup * 1000)
+            ProbeAggregateAllowanceSeconds = $allowance; PostProcessReserveSeconds = 30; TrustedSameRunIntake = $true
+            Outcome = $result.Outcome; SwiftQualified = $false; ProfileEligible = $false
+          } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidence 'host.json') -Encoding utf8NoBOM
+          @('One native Rust signed-module open and terminal 4 KiB FD mapping probe; no compute or model.',
+            'Missing signed-session mapping, vendor teardown or custom packed-kernel evidence keeps admission disabled.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          if ($result.Outcome -cne 'passed') { throw 'Native signed-session access remains pending; inspect the retained stage receipt.' }
+      - name: Retain credential-free native signed-session mapping evidence
+        if: always() && env.BONSAI_HEXAGON_SESSION_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hexagon-native-session-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.BONSAI_HEXAGON_SESSION_EVIDENCE }}/session.json
+            ${{ env.BONSAI_HEXAGON_SESSION_EVIDENCE }}/worker.json
+            ${{ env.BONSAI_HEXAGON_SESSION_EVIDENCE }}/host.json
+          if-no-files-found: warn
+          retention-days: 90
   inventory:
     needs: controls
-    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.run_device && !inputs.run_dispatch
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.run_device && !inputs.run_dispatch && !inputs.run_session_probe
     runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
     timeout-minutes: 5
     concurrency:
@@ -167,7 +244,7 @@ jobs:
           retention-days: 90
   dispatch:
     needs: controls
-    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.run_dispatch && !inputs.run_device
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.run_dispatch && !inputs.run_device && !inputs.run_session_probe
     runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
     timeout-minutes: 5
     concurrency:
