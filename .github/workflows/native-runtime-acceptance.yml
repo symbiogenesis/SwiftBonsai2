@@ -9,6 +9,16 @@ on:
         options: [pq2-no-adapter, ptq1-adapter, pq2-adapter-row4]
         default: pq2-no-adapter
         required: false
+      bounded_history:
+        description: PQ2 no-adapter only; 128 history repetitions, four-token stream and same-owner reuse within the same budget
+        type: boolean
+        default: false
+        required: false
+      stalled_consumer:
+        description: PQ2 no-adapter only; Stop after first visible content and one second without reads, then fresh-owner recovery
+        type: boolean
+        default: false
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -52,7 +62,16 @@ jobs:
           $artifacts = @(Get-Content -LiteralPath $messages | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.reason -ceq 'compiler-artifact' -and $_.target.name -ceq 'native_model' -and $_.executable })
           if ($artifacts.Count -ne 1) { throw 'Exactly one native_model test binary is required.' }
           Copy-Item -LiteralPath $artifacts[0].executable -Destination (Join-Path $package 'native-model-acceptance.exe')
-          foreach ($case in @('native_profile_selection_and_scale_receipts_preserve_bounded_scope', 'native_row4_profile_is_explicit_original_pq2_and_one_stream_only')) {
+          $modelFreeCases = @(& (Join-Path $package 'native-model-acceptance.exe') --list)
+          if ($LASTEXITCODE -ne 0) { throw 'Hosted acceptance case inventory failed.' }
+          foreach ($case in @('native_profile_selection_and_scale_receipts_preserve_bounded_scope', 'native_row4_profile_is_explicit_original_pq2_and_one_stream_only',
+              'native_bounded_history_and_stall_requests_preserve_distinct_output_limits',
+              'native_extended_acceptance_distinguishes_output_usage_from_delta_count',
+              'native_stalled_consumer_retains_fragmented_prefix_connection_until_dropped',
+              'native_stalled_consumer_never_qualifies_natural_completion_as_interruption',
+              'native_stalled_consumer_rejects_error_or_unframed_stream_headers',
+              'native_case_budget_cancels_owned_tasks_before_followup')) {
+            if ($modelFreeCases -cnotcontains ($case + ': test')) { throw 'Required hosted acceptance regression was not found.' }
             & (Join-Path $package 'native-model-acceptance.exe') $case --exact
             if ($LASTEXITCODE -ne 0) { throw 'Hosted acceptance profile/argument checks failed.' }
           }
@@ -139,8 +158,8 @@ jobs:
         working-directory: ${{ env.BONSAI_NATIVE_WORK }}
         env:
           BONSAI_NATIVE_PROFILE: ${{ inputs.profile }}
-          BONSAI_NATIVE_EXTENDED: 'false'
-          BONSAI_NATIVE_STALLED_CONSUMER: 'false'
+          BONSAI_NATIVE_EXTENDED: ${{ inputs.bounded_history }}
+          BONSAI_NATIVE_STALLED_CONSUMER: ${{ inputs.stalled_consumer }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
@@ -154,13 +173,14 @@ jobs:
             Os=[Environment]::OSVersion.VersionString
             Architecture=[Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
             Profile=$env:BONSAI_NATIVE_PROFILE
-            ExtendedHistoryRequested=($env:BONSAI_NATIVE_EXTENDED -eq 'true')
+            BoundedHistoryRequested=($env:BONSAI_NATIVE_EXTENDED -eq 'true')
             StalledConsumerRequested=($env:BONSAI_NATIVE_STALLED_CONSUMER -eq 'true')
             AcceptanceProcessExitCode=$null; AggregateBudgetExpired=$false
             StartupDiagnosticsReceipt='startup-diagnostics.json'
             StartupDiagnosticsReady=$false; StartupDiagnosticsClassification='not-collected'
             StartupFailureMarkers=@()
             Passed=$false; DefaultRuntimeQualified=$false
+            AllRequestedWorkloadsPassed=$null
           }
           try {
             $case = switch -CaseSensitive ($env:BONSAI_NATIVE_PROFILE) {
@@ -225,6 +245,10 @@ jobs:
             if ($code -ne 0) { throw 'Actual-model application acceptance failed.' }
             $receipt = Join-Path $env:BONSAI_NATIVE_EVIDENCE 'acceptance.json'
             if (-not (Test-Path -LiteralPath $receipt -PathType Leaf)) { throw 'Actual-model acceptance receipt is missing.' }
+            if ($env:BONSAI_NATIVE_PROFILE -ceq 'pq2-no-adapter') {
+              $accepted = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+              $hostReport.AllRequestedWorkloadsPassed = $accepted.allRequestedWorkloadsPassed
+            }
             $hostReport.Passed = $true
           } finally {
             $env:BONSAI_NATIVE_DIAGNOSTICS_READY = 'false'
@@ -252,11 +276,12 @@ jobs:
           }
           @('Bounded actual-model Rust application lifecycle passed under required native containment.',
             ('Explicit acceptance profile: ' + $env:BONSAI_NATIVE_PROFILE),
-            'All setup, model loading, execution and cleanup share one five-minute job; actual-model cases have one 240-second aggregate soft deadline. Long optional workloads are disabled. Do not split a matrix into repeated jobs.',
-            ('Long supplied-history/full output reservation requested: ' + $env:BONSAI_NATIVE_EXTENDED),
+            'All setup, model loading, execution and cleanup share one five-minute job; actual-model cases and selected bounded workloads share one 240-second aggregate soft deadline. Do not split a matrix into repeated jobs.',
+            ('Bounded supplied history (128 repetitions, four-token cap) requested: ' + $env:BONSAI_NATIVE_EXTENDED),
             ('Explicit Stop with a nonreading connected client requested: ' + $env:BONSAI_NATIVE_STALLED_CONSUMER),
             'The stalled-client workload requires an interrupted broker operation, bounded owned shutdown and fresh-owner recovery; it does not prove socket-buffer saturation or that the backend was still generating at Stop.',
-            'The optional workload records framing, termination and reported output usage; a requested 4096 cap does not prove 4096 generated tokens or exact 8K occupancy.',
+            'Bounded history records framing, termination and reported output usage. The stalled request reserves 4096 tokens but Stop follows its first visible prefix; neither workload proves 4096 generated tokens or exact 8K occupancy.',
+            'Each optional workload requires more than 120 seconds remaining for cleanup and fresh-owner recovery; skipped requests remain pending. Read allRequestedWorkloadsPassed independently of lifecycle success in acceptance.json.',
             $profileScope,
             'This workflow cannot promote the default runtime.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
       - name: Retain only credential-free acceptance receipts

@@ -31,6 +31,8 @@ const CASE_BUDGET: Duration = Duration::from_secs(240);
 const OPTIONAL_RESERVE: Duration = Duration::from_secs(120);
 const WAIT: Duration = Duration::from_secs(600);
 const EXTENDED_COMPLETION_CAP: u32 = 4096;
+const BOUNDED_HISTORY_REPETITIONS: usize = 128;
+const SHORT_COMPLETION_CAP: u32 = 4;
 const STALLED_CONSUMER_PAUSE: Duration = Duration::from_secs(1);
 const STOP_WAIT: Duration = Duration::from_secs(30);
 
@@ -124,6 +126,12 @@ fn key(owner: &LaunchedService) -> String {
 fn request(messages: Value, streaming: bool, limit: u32) -> Value {
     let mut body = json!({"stream": streaming, "max_completion_tokens": limit});
     body["messages"] = messages;
+    body
+}
+
+fn short_request(messages: Value, streaming: bool) -> Value {
+    let mut body = request(messages, streaming, SHORT_COMPLETION_CAP);
+    body["enable_thinking"] = json!(false);
     body
 }
 
@@ -249,8 +257,12 @@ fn extended_history(repetitions: usize) -> Value {
     json!([
         {"role":"user", "content":"Keep the following fictional forest notes for the next scene."},
         {"role":"assistant", "content":format!("Forest notes:{}", " tree".repeat(repetitions))},
-        {"role":"user", "content":"Write a long, detailed story continuing these notes. Develop several scenes, characters and a complete ending."}
+        {"role":"user", "content":"Name a tree from these notes."}
     ])
+}
+
+fn bounded_history_request() -> Value {
+    short_request(extended_history(BOUNDED_HISTORY_REPETITIONS), true)
 }
 
 async fn extended_acceptance(port: u16, credential: &str) -> Value {
@@ -266,28 +278,23 @@ async fn extended_acceptance(port: u16, credential: &str) -> Value {
         json_response(&rejected, "HTTP/1.1 413 Content Too Large")["error"]["code"],
         "context_length_exceeded"
     );
-    let summary = streamed_response(
-        &exchange(
-            port,
-            credential,
-            &request(extended_history(3900), true, EXTENDED_COMPLETION_CAP),
-        )
-        .await,
+    let summary = streamed_response(&exchange(port, credential, &bounded_history_request()).await);
+    assert!(
+        summary
+            .completion_tokens
+            .is_none_or(|count| count <= u64::from(SHORT_COMPLETION_CAP))
     );
-    assert!(summary.completion_tokens.is_none_or(|count| count <= 4096));
-    // A successful long request must leave the same model instance usable.
-    streamed_response(
-        &exchange(
-            port,
-            credential,
-            &request(json!([{"role":"user", "content":"Name a bird."}]), true, 16),
-        )
-        .await,
-    );
+    // A bounded supplied-history request must leave the same instance usable.
+    let reused = short_request(json!([{"role":"user", "content":"Name a bird."}]), true);
+    streamed_response(&exchange(port, credential, &reused).await);
     json!({
-        "enabled":true, "scope":"supplied-history-and-full-output-reservation",
-        "rejectedHistoryRepetitions":4500, "admittedHistoryRepetitions":3900,
-        "requestedCompletionCap":EXTENDED_COMPLETION_CAP,
+        "enabled":true, "requested":true, "status":"passed",
+        "scope":"bounded-supplied-history-and-same-owner-reuse",
+        "rejectedHistoryRepetitions":4500,
+        "rejectedRequestedCompletionCap":EXTENDED_COMPLETION_CAP,
+        "admittedHistoryRepetitions":BOUNDED_HISTORY_REPETITIONS,
+        "requestedCompletionCap":SHORT_COMPLETION_CAP,
+        "thinkingEnabled":false,
         "finishReason":summary.finish_reason, "visibleContentBytes":summary.content_bytes,
         "reportedCompletionTokens":summary.completion_tokens,
         "postCompletionRequestPassed":true,
@@ -376,8 +383,10 @@ fn stalled_stop_summary(
     assert_eq!(report.failed, failed_before + 1);
     assert!(content_bytes > 0);
     json!({
-        "enabled":true, "scope":"explicit-stop-with-nonreading-client",
+        "enabled":true, "requested":true, "status":"interrupted-awaiting-recovery",
+        "scope":"explicit-stop-with-nonreading-client",
         "requestedCompletionCap":EXTENDED_COMPLETION_CAP,
+        "thinkingEnabled":false,
         "observedVisiblePrefixBytes":content_bytes,
         "nonreadingPauseMilliseconds":STALLED_CONSUMER_PAUSE.as_millis(),
         "stopCompletionBoundSeconds":STOP_WAIT.as_secs(),
@@ -391,12 +400,20 @@ fn stalled_stop_summary(
     })
 }
 
-async fn nonreading_prefix(port: u16, credential: &str) -> (BufReader<TcpStream>, usize) {
-    let body = request(
+fn stalled_request() -> Value {
+    let mut body = request(
         json!([{"role":"user", "content":"Write a long, detailed story about a cedar forest. Develop several scenes, characters and a complete ending."}]),
         true,
         EXTENDED_COMPLETION_CAP,
     );
+    // Preserve a large output reservation without spending the laptop budget
+    // generating it. Stop follows the first visible prefix and a fixed pause.
+    body["enable_thinking"] = json!(false);
+    body
+}
+
+async fn nonreading_prefix(port: u16, credential: &str) -> (BufReader<TcpStream>, usize) {
+    let body = stalled_request();
     let observed = timeout(WAIT, async {
         let client = connect(port, credential, &body).await;
         read_until_content(client).await
@@ -415,15 +432,20 @@ async fn supplied_history_acceptance(port: u16, credential: &str) {
         {"role":"assistant", "content":"I will remember cedar.", "reasoning_content":"The supplied word is cedar."},
         {"role":"user", "content":"Write one sentence about cedar."}
     ]);
-    streamed_response(&exchange(port, credential, &request(history, true, 32)).await);
+    streamed_response(&exchange(port, credential, &short_request(history, true)).await);
 }
 
-async fn acceptance(data: &Path, evidence: &Path, workloads: &Workloads) -> Value {
+async fn acceptance(data: &Path, evidence: &Path, workloads: &Workloads, report: &mut Value) {
+    let deadline = tokio::time::Instant::now() + CASE_BUDGET;
+    report["phase"] = json!("initial-owner-startup");
+    save_acceptance_report(evidence, report);
     let owner = start(data, evidence).await;
     let port = owner.port();
     let credential = key(&owner);
     let (stop, stopped) = oneshot::channel();
     let running = spawn_local(owner.run(async { stopped.await.map_err(io::Error::other) }));
+    report["phase"] = json!("supplied-history-and-context-rejection-reuse");
+    save_acceptance_report(evidence, report);
     supplied_history_acceptance(port, &credential).await;
     // Exact tokenizer counting must reject before generation, then permit a
     // fresh request in the same owned model instance. This is not an 8K decode.
@@ -433,11 +455,7 @@ async fn acceptance(data: &Path, evidence: &Path, workloads: &Workloads) -> Valu
         json_response(&rejected, "HTTP/1.1 413 Content Too Large")["error"]["code"],
         "context_length_exceeded"
     );
-    let small = request(
-        json!([{"role":"user", "content":"Name a tree."}]),
-        false,
-        16,
-    );
+    let small = short_request(json!([{"role":"user", "content":"Name a tree."}]), false);
     let completed = json_response(
         &exchange(port, &credential, &small).await,
         "HTTP/1.1 200 OK",
@@ -450,39 +468,71 @@ async fn acceptance(data: &Path, evidence: &Path, workloads: &Workloads) -> Valu
     assert!(
         ["length", "stop"].contains(&completed["choices"][0]["finish_reason"].as_str().unwrap())
     );
-    let extended_report = if workloads.extended_history {
+    let extended_enabled = optional_workload_enabled(
+        workloads.extended_history,
+        deadline.saturating_duration_since(tokio::time::Instant::now()),
+    );
+    let extended_report = if extended_enabled {
+        report["phase"] = json!("bounded-history-and-same-owner-reuse");
+        save_acceptance_report(evidence, report);
         extended_acceptance(port, &credential).await
     } else {
-        json!({"enabled":false})
+        skipped_workload(workloads.extended_history)
     };
-    let stalled = if workloads.stalled_consumer {
+    report["extendedWorkload"] = extended_report;
+    save_acceptance_report(evidence, report);
+    let stalled_enabled = optional_workload_enabled(
+        workloads.stalled_consumer,
+        deadline.saturating_duration_since(tokio::time::Instant::now()),
+    );
+    let stalled = if stalled_enabled {
+        report["phase"] = json!("stalled-consumer-first-content-and-pause");
+        save_acceptance_report(evidence, report);
         Some(nonreading_prefix(port, &credential).await)
     } else {
         None
     };
+    report["phase"] = json!("initial-owner-stop");
+    save_acceptance_report(evidence, report);
     stop.send(()).unwrap();
     let stopped_report = timeout(STOP_WAIT, running).await.unwrap().unwrap().unwrap();
     assert_eq!(stopped_report.exit, RunExit::Shutdown);
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
     let mut stalled_report = if let Some((client, content_bytes)) = stalled {
-        let extra = usize::from(workloads.extended_history);
+        let extra = usize::from(extended_enabled);
         let summary =
             stalled_stop_summary(&stopped_report, 2 + 2 * extra, 1 + extra, content_bytes);
         // The client handle stays held through owned shutdown/listener cleanup.
         drop(client);
         summary
     } else {
-        json!({"enabled":false})
+        skipped_workload(workloads.stalled_consumer)
     };
+    report["stalledConsumerWorkload"] = stalled_report.clone();
+    fresh_owner_recovery(data, evidence, report).await;
+    if stalled_enabled {
+        stalled_report["freshRestartAfterStopPassed"] = json!(true);
+        stalled_report["status"] = json!("passed");
+    }
+    report["stalledConsumerWorkload"] = stalled_report;
+    report["phase"] = json!("completed");
+    report["lifecyclePassed"] = json!(true);
+    report["allRequestedWorkloadsPassed"] = json!(
+        (!workloads.extended_history || extended_enabled)
+            && (!workloads.stalled_consumer || stalled_enabled)
+    );
+    report["passed"] = report["allRequestedWorkloadsPassed"].clone();
+    save_acceptance_report(evidence, report);
+}
+
+async fn fresh_owner_recovery(data: &Path, evidence: &Path, report: &mut Value) {
+    report["phase"] = json!("fresh-owner-abandonment");
+    save_acceptance_report(evidence, report);
     let owner = start(data, evidence).await;
     let port = owner.port();
     let credential = key(&owner);
     let running = spawn_local(owner.run(pending::<io::Result<()>>()));
-    let long = request(
-        json!([{"role":"user", "content":"Write a long story about a cedar forest."}]),
-        true,
-        4096,
-    );
+    let long = stalled_request();
     let client = connect(port, &credential, &long).await;
     drop(timeout(WAIT, read_until_content(client)).await.unwrap());
     assert_eq!(
@@ -492,6 +542,8 @@ async fn acceptance(data: &Path, evidence: &Path, workloads: &Workloads) -> Valu
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
 
     // Fresh ownership after a cancelled generation must work without replay.
+    report["phase"] = json!("fresh-owner-complete-stream-and-cleanup");
+    save_acceptance_report(evidence, report);
     let owner = start(data, evidence).await;
     let port = owner.port();
     let credential = key(&owner);
@@ -501,11 +553,7 @@ async fn acceptance(data: &Path, evidence: &Path, workloads: &Workloads) -> Valu
         &exchange(
             port,
             &credential,
-            &request(
-                json!([{"role":"user", "content":"Name a flower."}]),
-                true,
-                16,
-            ),
+            &short_request(json!([{"role":"user", "content":"Name a flower."}]), true),
         )
         .await,
     );
@@ -515,10 +563,17 @@ async fn acceptance(data: &Path, evidence: &Path, workloads: &Workloads) -> Valu
         RunExit::Shutdown
     );
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
-    if workloads.stalled_consumer {
-        stalled_report["freshRestartAfterStopPassed"] = json!(true);
-    }
-    json!({"extendedWorkload":extended_report, "stalledConsumerWorkload":stalled_report})
+}
+
+fn optional_workload_enabled(requested: bool, remaining: Duration) -> bool {
+    requested && remaining > OPTIONAL_RESERVE
+}
+
+fn skipped_workload(requested: bool) -> Value {
+    json!({"enabled":false, "requested":requested,
+        "status":if requested {"pending"} else {"not-requested"},
+        "reason":if requested {Some("insufficient-cleanup-and-recovery-reserve")} else {None},
+        "requiredRemainingBudgetSeconds":OPTIONAL_RESERVE.as_secs()})
 }
 
 #[test]
@@ -689,10 +744,46 @@ fn native_extended_acceptance_distinguishes_output_usage_from_delta_count() {
     );
     let duplicate = framed(&format!("{content}{terminal_usage}{usage}{done}"));
     assert!(std::panic::catch_unwind(|| streamed_response(duplicate.as_bytes())).is_err());
-    let body = request(extended_history(3900), true, EXTENDED_COMPLETION_CAP);
-    assert_eq!(body["max_completion_tokens"], 4096);
+}
+
+#[test]
+fn native_bounded_history_and_stall_requests_preserve_distinct_output_limits() {
+    let body = bounded_history_request();
+    assert_eq!(body["max_completion_tokens"], 4);
+    assert_eq!(body["enable_thinking"], false);
     assert_eq!(body["messages"].as_array().unwrap().len(), 3);
     assert_eq!(body["messages"][1]["role"], "assistant");
+    assert_eq!(
+        body["messages"][1]["content"],
+        format!("Forest notes:{}", " tree".repeat(128))
+    );
+    let stalled = stalled_request();
+    assert_eq!(stalled["max_completion_tokens"], 4096);
+    assert_eq!(stalled["enable_thinking"], false);
+    assert_eq!(STALLED_CONSUMER_PAUSE, Duration::from_secs(1));
+    assert_eq!(STOP_WAIT, Duration::from_secs(30));
+    assert_eq!(CASE_BUDGET, Duration::from_secs(240));
+    let skipped = skipped_workload(true);
+    assert_eq!(skipped["status"], "pending");
+    assert_eq!(
+        skipped["reason"],
+        "insufficient-cleanup-and-recovery-reserve"
+    );
+    assert_eq!(skipped["requiredRemainingBudgetSeconds"], 120);
+    assert_eq!(skipped_workload(false)["status"], "not-requested");
+    assert!(!optional_workload_enabled(false, CASE_BUDGET));
+    assert!(!optional_workload_enabled(true, OPTIONAL_RESERVE));
+    assert!(!optional_workload_enabled(true, Duration::ZERO));
+    assert!(optional_workload_enabled(
+        true,
+        OPTIONAL_RESERVE + Duration::from_secs(1)
+    ));
+    for (extended, stalled) in [(false, false), (true, false), (false, true), (true, true)] {
+        assert_eq!(
+            profile_case("pq2-no-adapter", extended, stalled),
+            Some(CASE)
+        );
+    }
 }
 
 #[test]
@@ -727,32 +818,40 @@ fn pinned_native_model_streams_recovers_and_restarts_in_required_sandbox() {
         ),
         Some(CASE)
     );
-    let workload_report = runtime.block_on(LocalSet::new().run_until(async {
-        timeout(CASE_BUDGET, acceptance(data, evidence, &workloads))
-            .await
-            .unwrap()
-    }));
-    let report = json!({
+    let mut report = json!({
         "schemaVersion":1, "case":CASE, "revision":env::var("GITHUB_SHA").unwrap(),
         "runId":env::var("GITHUB_RUN_ID").unwrap(), "runAttempt":env::var("GITHUB_RUN_ATTEMPT").unwrap(),
-        "scope":"bounded-actual-model-runner-lifecycle", "passed":true,
+        "scope":"bounded-actual-model-runner-lifecycle", "passed":false,
+        "lifecyclePassed":false, "allRequestedWorkloadsPassed":false,
+        "aggregateModelCaseBudgetSeconds":CASE_BUDGET.as_secs(), "wholeJobMaximumSeconds":300,
+        "boundedHistoryRequested":workloads.extended_history,
+        "stalledConsumerRequested":workloads.stalled_consumer,
         "runtimeLock":serde_json::from_str::<Value>(include_str!("../../../config/prism-inference.lock.json")).unwrap(),
         "modelSha256":"5912bb739217cf25b4283a098c7b893d9baff36bdf2e72d3dbf4cb999d5633d5",
         "requiredNativeSandbox":true, "adapterEnabled":false, "fullContextQualified":false,
         "fullModelNumericalParityQualified":false, "performanceQualified":false,
         "dailyServiceIsolationQualified":false, "defaultRuntimeQualified":false,
-        "extendedWorkload":workload_report["extendedWorkload"],
-        "stalledConsumerWorkload":workload_report["stalledConsumerWorkload"]
+        "extendedWorkload":{"enabled":false, "requested":workloads.extended_history, "status":"pending"},
+        "stalledConsumerWorkload":{"enabled":false, "requested":workloads.stalled_consumer, "status":"pending"}
     });
-    fs::write(
-        evidence.join("acceptance.json"),
-        serde_json::to_vec_pretty(&report).unwrap(),
-    )
-    .unwrap();
+    runtime.block_on(LocalSet::new().run_until(async {
+        timeout(
+            CASE_BUDGET,
+            acceptance(data, evidence, &workloads, &mut report),
+        )
+        .await
+        .unwrap();
+    }));
+    // Cleanup and fresh-owner recovery finish before a skipped requested gate
+    // fails the CI case. A successful core lifecycle cannot qualify that gate.
+    assert_eq!(
+        report["passed"], true,
+        "A requested workload remains pending."
+    );
 }
 
 fn profile_case(profile: &str, extended: bool, stalled: bool) -> Option<&'static str> {
-    if extended || stalled {
+    if profile != "pq2-no-adapter" && (extended || stalled) {
         return None;
     }
     match profile {
@@ -840,7 +939,7 @@ fn adapter_summary(label: &str, scale: f64, cap: u32, summary: &StreamSummary) -
         "reportedCompletionTokens":summary.completion_tokens})
 }
 
-fn save_adapter_report(evidence: &Path, report: &Value) {
+fn save_acceptance_report(evidence: &Path, report: &Value) {
     fs::write(
         evidence.join("acceptance.json"),
         serde_json::to_vec_pretty(report).unwrap(),
@@ -881,12 +980,12 @@ async fn bounded_adapter_acceptance(
 ) {
     let deadline = tokio::time::Instant::now() + CASE_BUDGET;
     report["phase"] = json!("initial-owner-startup");
-    save_adapter_report(evidence, report);
+    save_acceptance_report(evidence, report);
     let owner = start_adapter(profile, data, evidence).await;
     report["verifiedReadinessObserved"] = json!(true);
     report["adapterEnabled"] = json!(true);
     report["phase"] = json!("required-scale-1.3-stream");
-    save_adapter_report(evidence, report);
+    save_acceptance_report(evidence, report);
     let port = owner.port();
     let credential = key(&owner);
     let (stop, stopped) = oneshot::channel();
@@ -894,20 +993,20 @@ async fn bounded_adapter_acceptance(
     let mut streams =
         vec![adapter_stream(port, &credential, 1.3, "required-scale-1.3-stream", 4).await];
     report["streams"] = json!(streams);
-    save_adapter_report(evidence, report);
+    save_acceptance_report(evidence, report);
     // Optional requests share this one aggregate budget; no matrix or restart
     // can continue in another job. Preserve a conservative teardown reserve.
     if profile.optional_requests
         && deadline.saturating_duration_since(tokio::time::Instant::now()) > OPTIONAL_RESERVE
     {
         report["phase"] = json!("optional-scale-zero");
-        save_adapter_report(evidence, report);
+        save_acceptance_report(evidence, report);
         streams.push(adapter_stream(port, &credential, 0.0, "optional-scale-zero", 2).await);
         report["streams"] = json!(streams);
-        save_adapter_report(evidence, report);
+        save_acceptance_report(evidence, report);
         if deadline.saturating_duration_since(tokio::time::Instant::now()) > OPTIONAL_RESERVE {
             report["phase"] = json!("optional-invalid-scale-and-reuse");
-            save_adapter_report(evidence, report);
+            save_acceptance_report(evidence, report);
             let mut body =
                 adapter_request(json!([{"role":"user","content":"Name a tree."}]), 1.3, 2);
             body["abliteration_scale"] = json!(2.000_000_01);
@@ -917,27 +1016,27 @@ async fn bounded_adapter_acceptance(
             );
             assert!(rejected["error"].is_object());
             report["invalidScaleRejected"] = json!(true);
-            save_adapter_report(evidence, report);
+            save_acceptance_report(evidence, report);
             streams.push(
                 adapter_stream(port, &credential, 1.3, "same-owner-after-invalid-scale", 2).await,
             );
             report["streams"] = json!(streams);
             report["sameOwnerAfterInvalidScalePassed"] = json!(true);
-            save_adapter_report(evidence, report);
+            save_acceptance_report(evidence, report);
         }
     }
     report["phase"] = json!("owned-cleanup");
-    save_adapter_report(evidence, report);
+    save_acceptance_report(evidence, report);
     report["initialCleanup"] = adapter_owned_stop(stop, running, port).await;
     report["phase"] = json!("completed");
     report["passed"] = json!(true);
-    save_adapter_report(evidence, report);
+    save_acceptance_report(evidence, report);
 }
 
 #[test]
 fn native_profile_selection_and_scale_receipts_preserve_bounded_scope() {
     assert_eq!(profile_case("pq2-no-adapter", false, false), Some(CASE));
-    assert_eq!(profile_case("pq2-no-adapter", true, true), None);
+    assert_eq!(profile_case("pq2-no-adapter", true, true), Some(CASE));
     assert_eq!(
         profile_case("ptq1-adapter", false, false),
         Some(PTQ1_ADAPTER_CASE)

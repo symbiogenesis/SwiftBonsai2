@@ -41,8 +41,19 @@ verifies their run/revision, SHA-256 and native architecture before direct execu
 with no Cargo build on the laptop.
 
 The workflow defaults to `profile: pq2-no-adapter`, preserving the original case
-within that aggregate bound. Both long optional workloads are disabled for all
-profiles pending a budget-compliant design. Explicit `profile: ptq1-adapter`
+within that aggregate bound. Explicit `bounded_history` and `stalled_consumer`
+dispatch inputs add reduced workloads only to `pq2-no-adapter`; both default to
+false and share the existing lifecycle case's budget, including its three owned
+startups and cleanup. They are not separate jobs or a way to partition a longer
+qualification matrix. They remain unqualified until successful device evidence
+is retained. Before either optional workload starts, more than 120 seconds must
+remain for cleanup and fresh-owner recovery. A skipped requested workload records
+`status: pending` and `insufficient-cleanup-and-recovery-reserve`; lifecycle
+success remains separate from `allRequestedWorkloadsPassed`. Core successful
+responses use four-token caps with thinking disabled to preserve that reserve.
+Skipped requested workloads leave `passed: false` and fail the case only after
+owned cleanup and fresh-owner recovery, even when `lifecyclePassed: true`.
+Explicit `profile: ptq1-adapter`
 selects a minimal required-sandbox smoke case for the exact current-weight export
 and approved adapter: one scale-1.3 streamed request with a four-token cap and
 owned cleanup. A scale-zero two-token request and invalid-scale HTTP 400/reuse
@@ -80,21 +91,25 @@ argument or key content is copied into those classifications.
 | Workload | Required behavior | Evidence limit |
 | --- | --- | --- |
 | Default | Valid streaming, context rejection/reuse, owned shutdown, abandonment and fresh restart | Short outputs do not qualify 8K/4K, numerical state, LoRA, sustained resources, speed or broker-only isolation. |
-| Disabled `extended_history` (pending bounded redesign) | Admit 3,900 synthetic forest-note repetitions in assistant history with the full 4,096-token output reserve; reject 4,500, then reuse the same instance for a short request | Fixture repetitions are not tokens. Record visible bytes, terminal reason and usage when supplied; missing usage is unknown, events are not tokens, early completion does not prove 4K generation/exact 8K occupancy. |
-| Disabled `stalled_consumer` (pending bounded redesign) | Request the full 4,096-token output reservation, read first nonempty content, retain the connection without reads for one second, then explicit owner Stop. Finish within 30 seconds with empty Job/released listener; require one additional failed operation and no completed operation, require generated content from a fresh owner after Stop and a further successful fresh-owner request after the existing abandonment trial | Natural completion cannot qualify interruption. The receipt proves unfinished broker forwarding, not backend activity at Stop, socket saturation, maximum backlog or measured cancellation latency. |
+| Optional `bounded_history` (`BONSAI_NATIVE_EXTENDED` internally) | Reject 4,500 synthetic forest-note repetitions with a 4,096-token reservation; admit 128 repetitions in assistant history with a four-token cap and thinking disabled; complete another four-token non-thinking stream in the same instance | This replaces the larger disabled 3,900-repetition/4K-generation workload. Fixture repetitions are not tokens. Record visible bytes, terminal reason and usage when supplied; missing usage is unknown and events are not tokens. Bounded history does not qualify long-history behavior, 4K generation or exact 8K occupancy. |
+| Optional `stalled_consumer` | Request the full 4,096-token output reservation with thinking disabled, read first nonempty content, retain the connection without reads for one second, then explicit owner Stop. Finish within 30 seconds with empty Job/released listener; require one additional failed operation and no completed operation, require generated content from a fresh owner after Stop and a further successful fresh-owner request after the existing abandonment trial | The output cap reserves capacity; this workload never waits for 4K generation. Natural completion cannot qualify interruption. The receipt proves unfinished broker forwarding, not backend activity at Stop, socket saturation, maximum backlog or measured cancellation latency. |
 
 The original per-request safety limits, 8K context, 64-token margin, output,
 memory and containment limits remain; the shorter aggregate device budget takes
 precedence over every longer timeout. Streams require complete HTTP framing, a supported
 terminal reason and `[DONE]`. Interrupted instances never reopen admission or replay
 the request. Optional workloads remain unqualified until successful device CI
-receipts are retained. The [promotion evaluator](native-rust-engine.md#default-runtime-promotion) keeps exits independent.
+receipts are retained. The credential-free `acceptance.json` is saved before
+startup and at each workload/cleanup/recovery phase with `passed: false`; only
+complete success changes it to true. A timeout/failure retains the latest phase
+and completed observations without claiming unrun checks. The [promotion evaluator](native-rust-engine.md#default-runtime-promotion) keeps exits independent.
 
 Model-free acceptance regressions:
 
 | Exact case | Property |
 | --- | --- |
 | `native_extended_acceptance_distinguishes_output_usage_from_delta_count` | Fixture policy; usage separate from bytes/events |
+| `native_bounded_history_and_stall_requests_preserve_distinct_output_limits` | Bounded history has 128 repetitions/four tokens; stopped stream reserves 4K; both disable thinking and stay in one aggregate lifecycle case |
 | `native_stalled_consumer_retains_fragmented_prefix_connection_until_dropped` | Fragmented UTF-8/SSE intake and retained connection |
 | `native_stalled_consumer_never_qualifies_natural_completion_as_interruption` | Operation-counter interruption guard |
 | `native_stalled_consumer_rejects_error_or_unframed_stream_headers` | HTTP 200 and chunked event-stream framing before accepting content |
