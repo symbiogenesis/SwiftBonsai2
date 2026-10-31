@@ -256,11 +256,11 @@ not close pending hosted integration or full-model acceptance.
   top-p tie ordering, sequential `expf` arithmetic and accumulation, Philox draws,
   exceptional floats and the captured masking/penalty/greedy controls. Qualify actual
   pinned tokenizer vocabularies as well as the complete model-free scanner/ID captures.
-  Qualify Rust graph-cache resource ownership and synchronized compute leases in
-  the full hosted Qwen consumer, including native graph-build failure, cancellation
-  and model lifecycle recovery. Qualify the Rust tokenizer loading/ownership
-  boundary in that consumer and actual-model speech lifecycle; model-free metadata,
-  callback and lifetime checks do not close those integration gates.
+  Qualify Rust graph-cache resource ownership, synchronized compute leases and
+  tokenizer loading/ownership during actual-model speech lifecycle, including
+  native graph-build failure, cancellation and model recovery. Preserve the
+  passing full hosted Qwen consumer controls; its model-free metadata, callback
+  and lifetime checks do not close actual-model acceptance.
 - Retire Prism's native reference families file by file after matching hosted replay
   of their source-level assertions. Preserve all approved green IDs, full geometry
   schedules, corrections, unsupported outcomes and numerical/target boundaries.
