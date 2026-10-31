@@ -34,7 +34,12 @@ const PHILOX_SHA256: [u8; 32] = [
     0x4a, 0x7b, 0xd2, 0x8f, 0x38, 0x0f, 0xaa, 0xe5, 0xf9, 0x81, 0x15, 0x24, 0x03, 0xc8, 0x1d, 0xe7,
 ];
 const SAMPLING_REFERENCE: &str = include_str!("tests/reference/sampling.h");
-const BPE_REFERENCE: &str = include_str!("tests/reference/bpe.h");
+// Exact normalized identity of the retired pinned native tokenizer header.
+const BPE_BYTES: usize = 22533;
+const BPE_SHA256: [u8; 32] = [
+    0x27, 0x31, 0xaa, 0xe2, 0x55, 0xbb, 0x95, 0xab, 0x93, 0x48, 0x35, 0xf1, 0x14, 0x91, 0x42, 0x9d,
+    0x67, 0xc9, 0xd9, 0xf1, 0x2e, 0xa9, 0xf3, 0x3d, 0xbd, 0xb4, 0x5d, 0x67, 0x37, 0xee, 0x24, 0x03,
+];
 const PHILOX_DECLARATION: &str = "#pragma once\n#include <cstdint>\n\n// Runner's allocation-free safe Rust Philox4x32-10 implementation.\nextern \"C\" float bonsai_qt_philox_uniform(int64_t seed, int64_t subsequence, uint32_t counter);\n";
 const SEMANTIC_DRAW: &str = "    philox_uniform_fill(seed, philox_subseq, 0u, &u, 1);";
 const PREDICTOR_DRAW: &str =
@@ -57,7 +62,8 @@ fn matches_source(text: &str, expected_bytes: usize, expected_sha256: [u8; 32]) 
 }
 
 fn tokenizer(text: &str) -> io::Result<String> {
-    if text.replace("\r\n", "\n") != BPE_REFERENCE.replace("\r\n", "\n") {
+    let normalized = text.replace("\r\n", "\n");
+    if !matches_source(&normalized, BPE_BYTES, BPE_SHA256) {
         return Err(io::Error::other("Pinned Qwen tokenizer source differs."));
     }
     Ok(tokenizer_overlay::SOURCE.to_owned())
@@ -68,8 +74,8 @@ fn tokenizer(text: &str) -> io::Result<String> {
     clippy::redundant_pub_crate,
     reason = "Expose the generated header only to sibling model-free tokenizer tests."
 )]
-pub(super) fn tokenizer_header_for_test() -> io::Result<String> {
-    tokenizer(BPE_REFERENCE)
+pub(super) const fn tokenizer_header_for_test() -> &'static str {
+    tokenizer_overlay::SOURCE
 }
 
 fn semantic_sampling(text: &str) -> io::Result<String> {
@@ -215,10 +221,10 @@ fn redirected(metadata: &fs::Metadata) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        BPE_REFERENCE, DECODE_GRAPH, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION, PREDICTOR_DRAW,
-        SAMPLING_REFERENCE, SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE, TRANSFORMS, backend,
-        decode_graphs, matches_source, philox, predictor_sampling, prepare_with, semantic_sampling,
-        tokenizer, vectors,
+        DECODE_GRAPH, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION, PREDICTOR_DRAW, SAMPLING_REFERENCE,
+        SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE, TRANSFORMS, backend, decode_graphs,
+        matches_source, philox, predictor_sampling, prepare_with, semantic_sampling, tokenizer,
+        vectors,
     };
 
     // Published SHA-256 known-answer vector; contains no native source code.
@@ -234,6 +240,13 @@ mod tests {
             return Err(std::io::Error::other("Test source fixture differs."));
         }
         Ok(PHILOX_DECLARATION.to_owned())
+    }
+
+    fn fixture_tokenizer(text: &str) -> std::io::Result<String> {
+        if !matches_source(text, FIXTURE_SOURCE.len(), FIXTURE_SHA256) {
+            return Err(std::io::Error::other("Test tokenizer fixture differs."));
+        }
+        Ok(super::tokenizer_header_for_test().to_owned())
     }
 
     #[test]
@@ -258,7 +271,7 @@ mod tests {
         fs::write(source.join("src/talker-forward.h"), DECODE_GRAPH)?;
         fs::write(source.join("src/philox.h"), FIXTURE_SOURCE)?;
         fs::write(source.join("src/sampling.h"), SAMPLING_REFERENCE)?;
-        fs::write(source.join("src/bpe.h"), BPE_REFERENCE)?;
+        fs::write(source.join("src/bpe.h"), FIXTURE_SOURCE)?;
         fs::write(source.join("src/sampling-graph.h"), PREDICTOR_DRAW)?;
         fs::create_dir_all(source.join("ggml/src/ggml-cpu"))?;
         fs::write(
@@ -270,6 +283,8 @@ mod tests {
         for (relative, transform) in &mut transforms {
             if *relative == "src/philox.h" {
                 *transform = fixture_philox;
+            } else if *relative == "src/bpe.h" {
+                *transform = fixture_tokenizer;
             }
         }
         prepare_with(&source, &copy, &transforms)?;
@@ -306,7 +321,10 @@ mod tests {
             assert!(fs::read_to_string(source.join(relative))?.contains("philox_uniform_fill"));
             assert!(fs::read_to_string(copy.join(relative))?.contains("bonsai_qt_philox_uniform"));
         }
-        assert_eq!(fs::read_to_string(source.join("src/bpe.h"))?, BPE_REFERENCE);
+        assert_eq!(
+            fs::read_to_string(source.join("src/bpe.h"))?,
+            FIXTURE_SOURCE
+        );
         let tokenizer = fs::read_to_string(copy.join("src/bpe.h"))?;
         assert!(tokenizer.contains("bonsai_qt_bpe_encode"));
         assert!(!tokenizer.contains("std::unordered_map"));
@@ -319,7 +337,7 @@ mod tests {
 
     #[test]
     fn tokenizer_overlay_removes_native_policy_and_rejects_source_drift() -> std::io::Result<()> {
-        let patched = tokenizer(BPE_REFERENCE)?;
+        let patched = fixture_tokenizer(FIXTURE_SOURCE)?;
         assert!(patched.contains("gguf_get_arr_str"));
         assert!(patched.contains("~BPETokenizer() { bonsai_qt_bpe_free(owner); }"));
         assert!(patched.contains("BPETokenizer(const BPETokenizer &) = delete;"));
@@ -334,11 +352,12 @@ mod tests {
         ] {
             assert!(!patched.contains(policy));
         }
-        assert!(tokenizer(&BPE_REFERENCE.replace("best_rank = INT_MAX", "best_rank = 0")).is_err());
-        assert!(tokenizer(&BPE_REFERENCE.replace("0x024F", "0x024E")).is_err());
+        assert!(fixture_tokenizer("abd").is_err());
+        assert!(tokenizer(FIXTURE_SOURCE).is_err());
+        assert!(tokenizer(&"x".repeat(super::BPE_BYTES)).is_err());
         assert!(tokenizer(&patched).is_err());
         assert!(tokenizer("changed").is_err());
-        assert!(tokenizer(&BPE_REFERENCE.repeat(2)).is_err());
+        assert!(fixture_tokenizer(&FIXTURE_SOURCE.repeat(2)).is_err());
         Ok(())
     }
 

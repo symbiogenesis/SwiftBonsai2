@@ -1,4 +1,8 @@
-//! Exact model-free tokenizer comparisons against the complete pinned header.
+//! Model-free tokenizer replay of immutable independently captured native observations.
+//!
+//! The complete original input schedule and native metadata/chunk/ID bytes are
+//! retained in `tests/fixtures/tokenizer-v1.*`; provenance binds source and target.
+//! The generated GGUF shim still has its separate native lifecycle regression.
 #![forbid(unsafe_code)]
 
 use std::{
@@ -11,6 +15,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use sha2::{Digest, Sha256};
+
 use super::tokenizer::{
     bonsai_qt_bpe_add_merge, bonsai_qt_bpe_add_special, bonsai_qt_bpe_add_special_id,
     bonsai_qt_bpe_add_token, bonsai_qt_bpe_encode, bonsai_qt_bpe_finish, bonsai_qt_bpe_free,
@@ -20,6 +26,17 @@ use super::tokenizer::{
 use crate::tokenizer::{Tokenizer, pretokenize};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+const CAPTURED_INPUTS: &[u8] = include_bytes!("../../tests/fixtures/tokenizer-v1.inputs.bin");
+const CAPTURED_OUTPUTS: &[u8] = include_bytes!("../../tests/fixtures/tokenizer-v1.expected.bin");
+const INPUT_SHA256: [u8; 32] = [
+    0x1b, 0x09, 0x0f, 0x66, 0x12, 0x8d, 0xb8, 0x23, 0x27, 0xd8, 0xcf, 0x40, 0x2b, 0x8c, 0x73, 0x07,
+    0x8d, 0x83, 0x7e, 0x5d, 0xea, 0x8e, 0x22, 0xc6, 0xc1, 0x22, 0x56, 0x36, 0x11, 0x39, 0x2e, 0x95,
+];
+const OUTPUT_SHA256: [u8; 32] = [
+    0xe9, 0x55, 0xba, 0x85, 0xea, 0xb3, 0x41, 0xef, 0x13, 0x57, 0x4b, 0x98, 0x3b, 0xce, 0xc8, 0xc7,
+    0xaa, 0x79, 0xf1, 0xc7, 0xfc, 0xa5, 0x2d, 0x8a, 0x24, 0xfa, 0xa7, 0x04, 0x7d, 0x3a, 0x10, 0xe8,
+];
 
 struct Fixture {
     tokens: Vec<Vec<u8>>,
@@ -414,11 +431,13 @@ impl<'a> Reader<'a> {
     }
 }
 
-fn compile_fixture(working: &Path, header: &[u8], source: &[u8]) -> Result<PathBuf> {
+fn compile_lifecycle_fixture(working: &Path, header: &[u8], source: &[u8]) -> Result<PathBuf> {
     let compiler = PathBuf::from(
         env::var_os("BONSAI_TTS_COMPILER")
             .or_else(|| option_env!("BONSAI_TTS_COMPILER").map(Into::into))
-            .ok_or("Set the provisioned BONSAI_TTS_COMPILER for the tokenizer oracle.")?,
+            .ok_or(
+                "Set the provisioned BONSAI_TTS_COMPILER for the native tokenizer shim lifecycle.",
+            )?,
     );
     assert!(compiler.is_absolute() && compiler.is_file());
     for (name, bytes) in [
@@ -431,11 +450,11 @@ fn compile_fixture(working: &Path, header: &[u8], source: &[u8]) -> Result<PathB
             "qt-error.h",
             include_bytes!("../../tests/tokenizer-error.h").as_slice(),
         ),
-        ("oracle.cpp", source),
+        ("lifecycle.cpp", source),
     ] {
         fs::write(working.join(name), bytes)?;
     }
-    let executable = working.join("oracle.exe");
+    let executable = working.join("lifecycle.exe");
     let compile = Command::new(compiler)
         .args([
             "/nologo",
@@ -447,7 +466,7 @@ fn compile_fixture(working: &Path, header: &[u8], source: &[u8]) -> Result<PathB
             "/fp:precise",
             "/UNDEBUG",
         ])
-        .arg(working.join("oracle.cpp"))
+        .arg(working.join("lifecycle.cpp"))
         .arg(format!("/Fe{}", executable.display()))
         .current_dir(working)
         .output()?;
@@ -455,41 +474,27 @@ fn compile_fixture(working: &Path, header: &[u8], source: &[u8]) -> Result<PathB
     fs::write(working.join("compiler.stderr"), &compile.stderr)?;
     assert!(
         compile.status.success(),
-        "Tokenizer oracle compilation failed; retained {}",
+        "Tokenizer shim lifecycle compilation failed; retained {}",
         working.display()
     );
     Ok(executable)
 }
 
 #[test]
-fn rust_tokenizer_core_and_abi_match_original_cpp() -> Result<()> {
-    let working = env::temp_dir().join(format!(
-        "Bonsai-Tokenizer-{}-{}",
-        std::process::id(),
-        SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
-    ));
-    assert!(working.is_absolute() && !working.to_string_lossy().contains('%'));
-    fs::create_dir(&working)?;
-    let executable = compile_fixture(
-        &working,
-        include_bytes!("../../tests/reference/bpe.h"),
-        include_bytes!("../../tests/tokenizer_oracle.cpp"),
-    )?;
+fn rust_tokenizer_core_and_abi_match_captured_native_observations() -> Result<()> {
     let fixtures = fixtures()?;
-    let input = working.join("cases.bin");
-    fs::write(&input, fixture_bytes(&fixtures)?)?;
-    let oracle = Command::new(executable)
-        .arg(input)
-        .current_dir(&working)
-        .output()?;
-    fs::write(working.join("oracle.stderr"), &oracle.stderr)?;
-    fs::write(working.join("oracle.bin"), &oracle.stdout)?;
-    assert!(
-        oracle.status.success(),
-        "Tokenizer oracle failed; retained {}",
-        working.display()
-    );
-    let mut reader = Reader(&oracle.stdout);
+    assert_eq!(fixtures.len(), 5);
+    assert!(fixtures.iter().all(|fixture| fixture.requests.len() == 367));
+    // Preserve every exact metadata byte, request and EOS bit from the original
+    // independent schedule; neither reordering nor a smaller corpus can pass.
+    assert_eq!(fixture_bytes(&fixtures)?, CAPTURED_INPUTS);
+    let input_digest: [u8; 32] = Sha256::digest(CAPTURED_INPUTS).into();
+    let output_digest: [u8; 32] = Sha256::digest(CAPTURED_OUTPUTS).into();
+    assert_eq!(input_digest, INPUT_SHA256);
+    assert_eq!(output_digest, OUTPUT_SHA256);
+    assert_eq!(CAPTURED_INPUTS.len(), 71250);
+    assert_eq!(CAPTURED_OUTPUTS.len(), 298339);
+    let mut reader = Reader(CAPTURED_OUTPUTS);
     for (model_index, fixture) in fixtures.iter().enumerate() {
         let safe = safe_tokenizer(fixture)?;
         let native = NativeTokenizer::new(fixture)?;
@@ -511,26 +516,22 @@ fn rust_tokenizer_core_and_abi_match_original_cpp() -> Result<()> {
             assert_eq!(
                 pretokenize(text)?,
                 chunks,
-                "scanner mismatch in model {model_index} request {request_index}; retained {}",
-                working.display()
+                "captured scanner mismatch in model {model_index} request {request_index}"
             );
             let expected = reader.words()?;
             assert_eq!(
                 safe.encode(text, *eos)?,
                 expected,
-                "safe tokenizer mismatch in model {model_index} request {request_index}; retained {}",
-                working.display()
+                "captured safe tokenizer mismatch in model {model_index} request {request_index}"
             );
             assert_eq!(
                 native.encode(text, *eos)?,
                 expected,
-                "native ABI mismatch in model {model_index} request {request_index}; retained {}",
-                working.display()
+                "captured native ABI mismatch in model {model_index} request {request_index}"
             );
         }
     }
     assert_eq!(reader.0, []);
-    fs::remove_dir_all(working)?;
     Ok(())
 }
 
@@ -600,8 +601,8 @@ fn generated_native_tokenizer_header_preserves_metadata_and_raii() -> Result<()>
     ));
     assert!(working.is_absolute() && !working.to_string_lossy().contains('%'));
     fs::create_dir(&working)?;
-    let header = crate::build_overlay::tokenizer_header_for_test()?;
-    let executable = compile_fixture(
+    let header = crate::build_overlay::tokenizer_header_for_test();
+    let executable = compile_lifecycle_fixture(
         &working,
         header.as_bytes(),
         include_bytes!("../../tests/tokenizer_lifecycle.cpp"),

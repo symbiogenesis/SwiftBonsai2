@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "purpose": "Frozen independent native tokenizer observations; Rust replays the complete original model-free input schedule without compiling the retired oracle.",
+  "source": {
+    "repository": "https://github.com/ServeurpersoCom/qwentts.cpp",
+    "revision": "5916bf7c79dbb4e66fc059cdc507a79a23a28bb4",
+    "path": "src/bpe.h",
+    "license_file": "../../LICENSE.qwen-core",
+    "bytes_normalized_lf": 22533,
+    "sha256_normalized_lf": "2731aae255bb95ab934835f11491429d67c9d9f12ea9f33dbdb45d6737ee2403"
+  },
+  "retired_reference": {
+    "repository": "https://github.com/symbiogenesis/SwiftBonsai2Runner",
+    "revision": "a5afa99bdf02302804ed7e5e50eee28fc527ba97",
+    "header": {
+      "path": "src/speech-tts/tests/reference/bpe.h",
+      "bytes_normalized_lf": 22533,
+      "sha256_normalized_lf": "2731aae255bb95ab934835f11491429d67c9d9f12ea9f33dbdb45d6737ee2403"
+    },
+    "driver": {
+      "path": "src/speech-tts/tests/tokenizer_oracle.cpp",
+      "bytes_normalized_lf": 4782,
+      "sha256_normalized_lf": "edeeee66da6f8dcad7f4dce979c15d8f58a49af83c6b79da046b14fce59fa430"
+    },
+    "gguf_fixture": {
+      "path": "src/speech-tts/tests/tokenizer-gguf.h",
+      "bytes_normalized_lf": 2203,
+      "sha256_normalized_lf": "224597b07d40b1f3af679ff459042f8530b597d392f072c5164265d4179c871c"
+    },
+    "error_fixture": {
+      "path": "src/speech-tts/tests/tokenizer-error.h",
+      "bytes_normalized_lf": 325,
+      "sha256_normalized_lf": "9320fcde703cad79b3954e1778f5c3cb429ac246f41377587a9808934a915c6a"
+    }
+  },
+  "capture": {
+    "time_utc": "2026-10-31T02:56:13.736126+00:00",
+    "target": "aarch64-pc-windows-msvc",
+    "compiler_version": "Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36260 for ARM64",
+    "compiler_executable_sha256": "9f36f48c99f07158a62f3d013247095f318d3560b0c31555f3664f0de25ebbcb",
+    "compiler_flags": [
+      "/nologo",
+      "/std:c++17",
+      "/EHsc",
+      "/W4",
+      "/WX",
+      "/O2",
+      "/fp:precise",
+      "/UNDEBUG"
+    ],
+    "msvc_tools": "14.51.36231",
+    "windows_sdk": "10.0.26100.0",
+    "compile_exit_code": 0,
+    "oracle_exit_code": 0,
+    "expected_outputs_generated_by": "Original unmodified C++ bpe.h and tokenizer_oracle.cpp; Rust generated only the existing input schedule, never the expected output.",
+    "models_loaded": false,
+    "model_free_vocabularies": 5,
+    "requests_per_vocabulary": 367,
+    "requests": 1835,
+    "observations": [
+      "original loader vocabulary count, EOS ID, reverse spellings and special registration order",
+      "every scanner chunk in request order",
+      "every encoded token ID in request order including EOS, merge ranks, byte fallback, duplicate vocabulary holes and special-token precedence"
+    ],
+    "elapsed_seconds_input_generator_compile_and_native_capture": 2.3920348
+  },
+  "inputs": {
+    "file": "tokenizer-v1.inputs.bin",
+    "bytes": 71250,
+    "sha256": "1b090f66128db82327d8cf402b8c73078d837e5dea8e22c6c122563611392e95",
+    "schema": "All integers little-endian u32, signed IDs retained as raw bits. Model count; per model: token and merge counted byte-string arrays, counted (key byte-string, ID) pairs, requested-key byte-string array, special (byte-string, ID) pairs, counted (text byte-string, EOS bool u32) requests. Each byte-string is length u32 then exact bytes. No trailing data."
+  },
+  "outputs": {
+    "file": "tokenizer-v1.expected.bin",
+    "bytes": 298339,
+    "sha256": "e955ba85eab341ef13574b983bcec8c7aa79f1c7fca52d8a24faa7047d3a10e8",
+    "schema": "For each input model: vocabulary count, EOS ID, reverse-spelling counted byte-string array, counted (special byte-string, ID) pairs; for each input request: counted scanner byte-string chunks then counted i32 token IDs. Integers little-endian u32, IDs preserved as raw bits. No trailing data."
+  },
+  "qualification_boundary": "Historical model-free capture only. Actual pinned vocabulary/model captures, hosted full owning-crate build/link, GGUF loading shim ownership, full-model speech quality, lifecycle and device resource gates remain pending."
+}
