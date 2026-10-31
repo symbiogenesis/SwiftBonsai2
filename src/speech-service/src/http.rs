@@ -17,6 +17,23 @@ use subtle::ConstantTimeEq as _;
 const MAX_HEAD: usize = 16 * 1024;
 const INTAKE: Duration = Duration::from_secs(10);
 const WRITE: Duration = Duration::from_secs(5);
+const RETAINED_WIRE_BYTES: usize = 64 * 1024;
+
+/// One bounded intake allocation reused between synchronous requests.
+#[derive(Default)]
+pub(super) struct Scratch {
+    wire: Vec<u8>,
+}
+
+impl Scratch {
+    fn recycle(&mut self) {
+        self.wire.clear();
+        // Large transcription uploads need no idle retained wire allocation.
+        if self.wire.capacity() > RETAINED_WIRE_BYTES {
+            self.wire = Vec::new();
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct Error {
@@ -63,9 +80,16 @@ impl HeaderEnd {
     }
 }
 
-pub(super) fn handle(peer: &mut TcpStream, port: u16, key: &[u8; 64], engine: &mut impl Engine) {
-    let result = receive(peer, port, key, engine.kind())
+pub(super) fn handle(
+    peer: &mut TcpStream,
+    port: u16,
+    key: &[u8; 64],
+    engine: &mut impl Engine,
+    scratch: &mut Scratch,
+) {
+    let result = receive(peer, port, key, engine.kind(), scratch)
         .and_then(|prepared| respond(engine, &prepared, peer));
+    scratch.recycle();
     if let Err(error) = result {
         if error.status == 0 {
             return;
@@ -82,7 +106,7 @@ pub(super) fn handle(peer: &mut TcpStream, port: u16, key: &[u8; 64], engine: &m
 
 fn respond(
     engine: &mut impl Engine,
-    prepared: &Prepared,
+    prepared: &Prepared<'_>,
     peer: &mut TcpStream,
 ) -> Result<(), Error> {
     let kind = engine.kind();
@@ -195,12 +219,21 @@ fn stream(
         .map_err(|_| Error::new(0, "response_failed"))
 }
 
-fn receive(peer: &mut TcpStream, port: u16, key: &[u8; 64], kind: Kind) -> Result<Prepared, Error> {
+fn receive<'a>(
+    peer: &mut TcpStream,
+    port: u16,
+    key: &[u8; 64],
+    kind: Kind,
+    scratch: &'a mut Scratch,
+) -> Result<Prepared<'a>, Error> {
     let until = Instant::now() + INTAKE;
-    let mut wire = Vec::with_capacity(MAX_HEAD);
+    let wire = &mut scratch.wire;
+    wire.clear();
+    wire.try_reserve_exact(MAX_HEAD)
+        .map_err(|_| Error::new(503, "allocation_failed"))?;
     let mut header_end = HeaderEnd::default();
     let end = loop {
-        if let Some(end) = header_end.find(&wire) {
+        if let Some(end) = header_end.find(wire) {
             break end;
         }
         if wire.len() >= MAX_HEAD {
@@ -222,15 +255,15 @@ fn receive(peer: &mut TcpStream, port: u16, key: &[u8; 64], kind: Kind) -> Resul
     if head.health {
         return Ok(Prepared::Health);
     }
-    let mut body = body_buffer(wire, end, head.length)?;
+    body_buffer(wire, end, head.length)?;
     let mut filled = prefix;
     while filled < head.length {
-        filled += read(peer, &mut body[filled..], until)?;
+        filled += read(peer, &mut wire[filled..], until)?;
     }
-    request::body(kind, &head.media, &body)
+    request::body(kind, &head.media, wire)
 }
 
-fn body_buffer(mut wire: Vec<u8>, end: usize, length: usize) -> Result<Vec<u8>, Error> {
+fn body_buffer(wire: &mut Vec<u8>, end: usize, length: usize) -> Result<(), Error> {
     // Reuse the authorized header allocation for the body, including coalesced
     // bytes. Large audio intake then retains one wire buffer, and reading into
     // its final slice avoids a second per-read staging copy.
@@ -239,7 +272,7 @@ fn body_buffer(mut wire: Vec<u8>, end: usize, length: usize) -> Result<Vec<u8>, 
     wire.try_reserve_exact(length - wire.len())
         .map_err(|_| Error::new(503, "allocation_failed"))?;
     wire.resize(length, 0);
-    Ok(wire)
+    Ok(())
 }
 
 fn read(peer: &mut TcpStream, buffer: &mut [u8], until: Instant) -> Result<usize, Error> {
@@ -467,7 +500,24 @@ fn write_before(peer: &mut TcpStream, mut remaining: &[u8], until: Instant) -> i
 
 #[cfg(test)]
 mod intake_tests {
-    use super::{Error, HeaderEnd, Kind, MAX_HEAD, body_buffer, parse_head};
+    use super::{
+        Error, HeaderEnd, Kind, MAX_HEAD, RETAINED_WIRE_BYTES, Scratch, body_buffer, parse_head,
+    };
+
+    #[test]
+    fn intake_scratch_reuses_small_requests_and_releases_large_uploads() {
+        let mut scratch = Scratch {
+            wire: vec![b'x'; MAX_HEAD],
+        };
+        let storage = scratch.wire.as_ptr();
+        scratch.recycle();
+        assert!(scratch.wire.is_empty());
+        assert_eq!(scratch.wire.as_ptr(), storage);
+        scratch.wire.resize(RETAINED_WIRE_BYTES + 1, b'x');
+        scratch.recycle();
+        assert!(scratch.wire.is_empty());
+        assert_eq!(scratch.wire.capacity(), 0);
+    }
 
     #[test]
     fn fragmented_headers_scan_each_window_once_and_preserve_coalesced_audio() {
@@ -517,9 +567,9 @@ mod intake_tests {
             assert!(!parsed.health);
             assert_eq!(parsed.length, 4);
             assert_eq!(parsed.media, "multipart/form-data; boundary=a");
-            let body = body_buffer(wire, end, parsed.length)?;
-            assert_eq!(body, b"\0\x80\xff\x7f");
-            assert_eq!(body.as_ptr(), storage);
+            body_buffer(&mut wire, end, parsed.length)?;
+            assert_eq!(wire, b"\0\x80\xff\x7f");
+            assert_eq!(wire.as_ptr(), storage);
         }
         Ok(())
     }
@@ -530,16 +580,16 @@ mod intake_tests {
         wire.extend_from_slice(b"headers\r\n\r\n\0\x80\xff\x7f");
         let storage = wire.as_ptr();
         let capacity = wire.capacity();
-        let body = body_buffer(wire, 11, 12)?;
-        assert_eq!(body.as_ptr(), storage);
-        assert_eq!(body.capacity(), capacity);
-        assert_eq!(&body[..4], b"\0\x80\xff\x7f");
-        assert_eq!(&body[4..], &[0; 8]);
+        body_buffer(&mut wire, 11, 12)?;
+        assert_eq!(wire.as_ptr(), storage);
+        assert_eq!(wire.capacity(), capacity);
+        assert_eq!(&wire[..4], b"\0\x80\xff\x7f");
+        assert_eq!(&wire[4..], &[0; 8]);
 
-        let body = body_buffer(body, 0, 1024 * 1024)?;
-        assert_eq!(body.len(), 1024 * 1024);
-        assert_eq!(&body[..4], b"\0\x80\xff\x7f");
-        assert!(body[4..].iter().all(|byte| *byte == 0));
+        body_buffer(&mut wire, 0, 1024 * 1024)?;
+        assert_eq!(wire.len(), 1024 * 1024);
+        assert_eq!(&wire[..4], b"\0\x80\xff\x7f");
+        assert!(wire[4..].iter().all(|byte| *byte == 0));
         Ok(())
     }
 }

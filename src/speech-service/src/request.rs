@@ -2,15 +2,15 @@
 
 use crate::{CANARY_MODEL, Kind, Request, TTS_MODEL, http::Error, wave};
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
-pub(super) enum Prepared {
+pub(super) enum Prepared<'a> {
     Health,
     Transcribe(Vec<f32>),
-    Synthesize(Speech),
+    Synthesize(Speech<'a>),
 }
 
-impl Prepared {
+impl Prepared<'_> {
     pub(super) fn streaming_pcm(&self) -> bool {
         matches!(self, Self::Synthesize(speech) if speech.response_format == "pcm")
     }
@@ -33,15 +33,20 @@ impl Prepared {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Speech {
-    model: String,
-    input: String,
-    voice_description: String,
-    language: String,
-    response_format: String,
+pub(super) struct Speech<'a> {
+    #[serde(borrow)]
+    model: Cow<'a, str>,
+    #[serde(borrow)]
+    input: Cow<'a, str>,
+    #[serde(borrow)]
+    voice_description: Cow<'a, str>,
+    #[serde(borrow)]
+    language: Cow<'a, str>,
+    #[serde(borrow)]
+    response_format: Cow<'a, str>,
 }
 
-pub(super) fn body(kind: Kind, media: &str, bytes: &[u8]) -> Result<Prepared, Error> {
+pub(super) fn body<'a>(kind: Kind, media: &str, bytes: &'a [u8]) -> Result<Prepared<'a>, Error> {
     match kind {
         Kind::Canary => multipart(media, bytes).map(Prepared::Transcribe),
         Kind::QwenTts => {
@@ -50,12 +55,12 @@ pub(super) fn body(kind: Kind, media: &str, bytes: &[u8]) -> Result<Prepared, Er
             {
                 return Err(Error::new(415, "unsupported_media_type"));
             }
-            let speech: Speech =
+            let speech: Speech<'_> =
                 serde_json::from_slice(bytes).map_err(|_| Error::bad("invalid_json"))?;
             if speech.model != TTS_MODEL {
                 return Err(Error::bad("unsupported_model"));
             }
-            if !matches!(speech.response_format.as_str(), "wav" | "pcm") {
+            if !matches!(speech.response_format.as_ref(), "wav" | "pcm") {
                 return Err(Error::bad("unsupported_audio_format"));
             }
             if speech.language != "Auto" {
@@ -243,7 +248,36 @@ fn disposition_field(bytes: &[u8]) -> Result<(&str, bool), Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, multipart, multipart_parts, split_bytes};
+    use super::{
+        Cow, Error, Kind, Prepared, TTS_MODEL, body, multipart, multipart_parts, split_bytes,
+    };
+
+    #[test]
+    fn synthesis_fields_borrow_plain_json_and_own_escaped_unicode() -> Result<(), Error> {
+        let bytes = format!(
+            r#"{{"model":"{TTS_MODEL}","input":"Hello 🌱","voice_description":"Warm and clear.","language":"Auto","response_format":"wav"}}"#
+        );
+        let Prepared::Synthesize(speech) =
+            body(Kind::QwenTts, "application/json", bytes.as_bytes())?
+        else {
+            return Err(Error::bad("unexpected_request"));
+        };
+        assert!(matches!(speech.model, Cow::Borrowed(_)));
+        assert!(matches!(speech.input, Cow::Borrowed(_)));
+        assert!(matches!(speech.voice_description, Cow::Borrowed(_)));
+        assert!(matches!(speech.language, Cow::Borrowed(_)));
+        assert!(matches!(speech.response_format, Cow::Borrowed(_)));
+        assert_eq!(speech.input, "Hello 🌱");
+        let escaped = bytes.replace("Hello 🌱", r"Hello \ud83c\udf31\n");
+        let Prepared::Synthesize(speech) =
+            body(Kind::QwenTts, "application/json", escaped.as_bytes())?
+        else {
+            return Err(Error::bad("unexpected_request"));
+        };
+        assert!(matches!(speech.input, Cow::Owned(_)));
+        assert_eq!(speech.input, "Hello 🌱\n");
+        Ok(())
+    }
 
     #[test]
     fn memory_multipart_parts_borrow_a_fixed_number_of_fields() -> Result<(), Error> {

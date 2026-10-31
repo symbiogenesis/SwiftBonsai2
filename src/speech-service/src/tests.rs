@@ -99,7 +99,13 @@ fn streaming_pcm_frames_complete_output_and_leaves_failures_incomplete() -> io::
         let port = listener.local_addr()?.port();
         let server = thread::spawn(move || -> io::Result<()> {
             let (mut peer, _) = listener.accept()?;
-            http::handle(&mut peer, port, &KEY, &mut StreamFake { failure, invalid });
+            http::handle(
+                &mut peer,
+                port,
+                &KEY,
+                &mut StreamFake { failure, invalid },
+                &mut http::Scratch::default(),
+            );
             Ok(())
         });
         let body = String::from_utf8(speech())
@@ -200,7 +206,13 @@ fn exchange_engine(
     let port = listener.local_addr()?.port();
     let server = thread::spawn(move || -> io::Result<()> {
         let (mut peer, _) = listener.accept()?;
-        http::handle(&mut peer, port, &KEY, &mut engine);
+        http::handle(
+            &mut peer,
+            port,
+            &KEY,
+            &mut engine,
+            &mut http::Scratch::default(),
+        );
         Ok(())
     });
     let mut peer = TcpStream::connect((Ipv4Addr::LOCALHOST, port))?;
@@ -566,7 +578,13 @@ fn completed_response_child() -> io::Result<()> {
     let mut engine = CompletionFake(false);
     for _ in 0..COMPLETED_REQUESTS {
         let (mut peer, _) = listener.accept()?;
-        http::handle(&mut peer, port, &KEY, &mut engine);
+        http::handle(
+            &mut peer,
+            port,
+            &KEY,
+            &mut engine,
+            &mut http::Scratch::default(),
+        );
     }
     Ok(())
 }

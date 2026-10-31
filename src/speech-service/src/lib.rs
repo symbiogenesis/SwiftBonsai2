@@ -181,11 +181,18 @@ pub fn serve_with_ready(
     socket.listen(1)?;
     let listener: TcpListener = socket.into();
     on_ready(port)?;
+    let mut scratch = http::Scratch::default();
     loop {
         let (mut peer, address) = listener.accept()?;
         if address.ip() != Ipv4Addr::LOCALHOST {
             continue;
         }
-        http::handle(&mut peer, port, credential.bytes(), &mut engine);
+        http::handle(
+            &mut peer,
+            port,
+            credential.bytes(),
+            &mut engine,
+            &mut scratch,
+        );
     }
 }
