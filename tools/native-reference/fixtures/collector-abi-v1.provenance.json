@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "purpose": "Immutable native public-ABI layout/default observations; historical control, never model qualification.",
+  "source": {
+    "repository": "https://github.com/PrismML-Eng/llama.cpp",
+    "revision": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+    "license": "MIT; see pinned source LICENSE",
+    "headers": {
+      "include/llama.h": {
+        "bytes": 85506,
+        "sha256": "50d9375b080df279b9a5d93df9e489f18785b0b9fa98a51045a7c637433e0d9c"
+      },
+      "ggml/include/ggml.h": {
+        "bytes": 116499,
+        "sha256": "dc753f24e9dcf7b391e03ffa29c890e427b39f150d8f8473c08b7ecdf8f55856"
+      },
+      "ggml/include/ggml-backend.h": {
+        "bytes": 25374,
+        "sha256": "46d84cb998105f871240864fd0f55446939a2fe86c5c281afa63a010fb1f65a2"
+      }
+    },
+    "retired_collector_source": {
+      "path": "tools/native-reference/swift_ptq1_reference.cpp",
+      "sha256_normalized_lf": "87d2b2b3b0c7b77b0b6293e138ed7ba0ca9dbc76f203003f0d5efea5e05164d0"
+    },
+    "license_file": {
+      "file": "LICENSE.llama-reference",
+      "upstream_path": "LICENSE",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "copyright": "Copyright (c) 2023-2026 The ggml authors"
+    }
+  },
+  "capture": {
+    "time_utc": "2026-10-31T03:14:22.990132+00:00",
+    "target": "aarch64-pc-windows-msvc",
+    "compiler_executable_sha256": "d5487944bbd56cea6ac4fdde2496f58b32802a3276c24b32e231e0d72e2122c9",
+    "compiler_flags": [
+      "/nologo",
+      "/std:c++17",
+      "/EHsc",
+      "/W4",
+      "/WX",
+      "/O2",
+      "/fp:precise"
+    ],
+    "msvc_tools": "14.51.36231",
+    "windows_sdk": "10.0.26100.0",
+    "inspector_bytes": 29275,
+    "inspector_sha256": "9af20063a102e67c306fe8522226ff369edddec300dbaa18ce1d050d14e7d93a",
+    "inspector_implementation": "offsetof/sizeof/alignof and type traits directly from exact pinned headers; typed dynamic calls to pinned DLL default-return and batch-return functions. Generated source retained only in external capture scratch.",
+    "compile_exit_code": 0,
+    "probe_exit_code": 0,
+    "models_loaded": false,
+    "runtime_dlls": {
+      "ggml-base.dll": {
+        "bytes": 665088,
+        "sha256": "cef62eabf27b1e6f78e024f293e7f9c34adf13d51a499490304ec4ccc2b2c5d7"
+      },
+      "ggml.dll": {
+        "bytes": 78848,
+        "sha256": "3e0caeb96473fed052832f3c0cd013301de408ed29b706ab2072bfe403f9cb29"
+      },
+      "ggml-cpu.dll": {
+        "bytes": 842240,
+        "sha256": "701b354a38b25e5c6dc57a1559f71cd26b2d0f8d69c1576a0e77a59a4273d2ab"
+      },
+      "llama.dll": {
+        "bytes": 2760192,
+        "sha256": "923a518137e50be427ef6c7de9ebdeb3535d6e6f00d709a3e31d0b475d07a9d1"
+      }
+    },
+    "elapsed_seconds_compile_and_probe": 1.2430859999985842,
+    "elapsed_seconds_configured_capture": 4.898153199999797,
+    "configured_parameter_control": "Every assignment to model_params/context_params extracted from the original checked-in collector; complete resulting structs are observed field by field, including unchanged defaults. Fixed token, adapter-scale bits, vocabulary and snapshot bound also retained.",
+    "total_seconds_all_compile_probe_attempts": 6.907
+  },
+  "fixture": {
+    "file": "collector-abi-v1.txt",
+    "bytes": 10985,
+    "sha256": "c1481b9101d5de3e05fccf53d04080f3a73e5b113949af964bbfe3cb041d175f",
+    "ordered_records": 369,
+    "schema": "ASCII LF key=decimal-u64 lines. size/align/offset/width in bytes. Signed scalar/enum values sign-extend before conversion to u64; f32 values use exact u32 bits. *_null and signed fields are 0/1. No padding bytes or process pointer addresses are serialized. *.configured.* and *.configured_null.* observe the original fixed collector overrides, using identical encoding to defaults. config.* records fixed workload parameters.",
+    "fields": {
+      "model": [
+        "dspark_head_source",
+        "devices",
+        "tensor_buft_overrides",
+        "n_gpu_layers",
+        "split_mode",
+        "load_mode",
+        "main_gpu",
+        "tensor_split",
+        "progress_callback",
+        "progress_callback_user_data",
+        "kv_overrides",
+        "vocab_only",
+        "check_tensors",
+        "use_extra_bufts",
+        "no_host",
+        "no_alloc",
+        "load_mtp"
+      ],
+      "context": [
+        "n_ctx",
+        "n_batch",
+        "n_ubatch",
+        "n_seq_max",
+        "n_rs_seq",
+        "n_outputs_max",
+        "n_outputs_max_per_seq",
+        "n_threads",
+        "n_threads_batch",
+        "ctx_type",
+        "rope_scaling_type",
+        "pooling_type",
+        "attention_type",
+        "flash_attn_type",
+        "rope_freq_base",
+        "rope_freq_scale",
+        "yarn_ext_factor",
+        "yarn_attn_factor",
+        "yarn_beta_fast",
+        "yarn_beta_slow",
+        "yarn_orig_ctx",
+        "defrag_thold",
+        "cb_eval",
+        "cb_eval_user_data",
+        "type_k",
+        "type_v",
+        "path_kv_mean_center",
+        "abort_callback",
+        "abort_callback_data",
+        "embeddings",
+        "offload_kqv",
+        "no_perf",
+        "op_offload",
+        "swa_full",
+        "kv_unified",
+        "samplers",
+        "n_samplers",
+        "ctx_other"
+      ],
+      "batch": [
+        "n_tokens",
+        "token",
+        "embd",
+        "pos",
+        "n_seq_id",
+        "seq_id",
+        "logits"
+      ]
+    },
+    "enums": {
+      "llama_split_mode": [
+        "LLAMA_SPLIT_MODE_NONE",
+        "LLAMA_SPLIT_MODE_LAYER",
+        "LLAMA_SPLIT_MODE_ROW",
+        "LLAMA_SPLIT_MODE_TENSOR"
+      ],
+      "llama_load_mode": [
+        "LLAMA_LOAD_MODE_AUTO",
+        "LLAMA_LOAD_MODE_NONE",
+        "LLAMA_LOAD_MODE_MMAP",
+        "LLAMA_LOAD_MODE_MLOCK",
+        "LLAMA_LOAD_MODE_MMAP_MLOCK",
+        "LLAMA_LOAD_MODE_DIRECT_IO"
+      ],
+      "llama_context_type": [
+        "LLAMA_CONTEXT_TYPE_DEFAULT",
+        "LLAMA_CONTEXT_TYPE_MTP"
+      ],
+      "llama_rope_scaling_type": [
+        "LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED",
+        "LLAMA_ROPE_SCALING_TYPE_NONE",
+        "LLAMA_ROPE_SCALING_TYPE_LINEAR",
+        "LLAMA_ROPE_SCALING_TYPE_YARN",
+        "LLAMA_ROPE_SCALING_TYPE_LONGROPE",
+        "LLAMA_ROPE_SCALING_TYPE_MAX_VALUE"
+      ],
+      "llama_pooling_type": [
+        "LLAMA_POOLING_TYPE_UNSPECIFIED",
+        "LLAMA_POOLING_TYPE_NONE",
+        "LLAMA_POOLING_TYPE_MEAN",
+        "LLAMA_POOLING_TYPE_CLS",
+        "LLAMA_POOLING_TYPE_LAST",
+        "LLAMA_POOLING_TYPE_RANK"
+      ],
+      "llama_attention_type": [
+        "LLAMA_ATTENTION_TYPE_UNSPECIFIED",
+        "LLAMA_ATTENTION_TYPE_CAUSAL",
+        "LLAMA_ATTENTION_TYPE_NON_CAUSAL"
+      ],
+      "llama_flash_attn_type": [
+        "LLAMA_FLASH_ATTN_TYPE_AUTO",
+        "LLAMA_FLASH_ATTN_TYPE_DISABLED",
+        "LLAMA_FLASH_ATTN_TYPE_ENABLED"
+      ],
+      "ggml_type": [
+        "GGML_TYPE_F32",
+        "GGML_TYPE_F16",
+        "GGML_TYPE_Q4_0",
+        "GGML_TYPE_Q4_1",
+        "GGML_TYPE_Q5_0",
+        "GGML_TYPE_Q5_1",
+        "GGML_TYPE_Q8_0",
+        "GGML_TYPE_Q8_1",
+        "GGML_TYPE_Q2_K",
+        "GGML_TYPE_Q3_K",
+        "GGML_TYPE_Q4_K",
+        "GGML_TYPE_Q5_K",
+        "GGML_TYPE_Q6_K",
+        "GGML_TYPE_Q8_K",
+        "GGML_TYPE_IQ2_XXS",
+        "GGML_TYPE_IQ2_XS",
+        "GGML_TYPE_IQ3_XXS",
+        "GGML_TYPE_IQ1_S",
+        "GGML_TYPE_IQ4_NL",
+        "GGML_TYPE_IQ3_S",
+        "GGML_TYPE_IQ2_S",
+        "GGML_TYPE_IQ4_XS",
+        "GGML_TYPE_I8",
+        "GGML_TYPE_I16",
+        "GGML_TYPE_I32",
+        "GGML_TYPE_I64",
+        "GGML_TYPE_F64",
+        "GGML_TYPE_IQ1_M",
+        "GGML_TYPE_BF16",
+        "GGML_TYPE_TQ1_0",
+        "GGML_TYPE_TQ2_0",
+        "GGML_TYPE_MXFP4",
+        "GGML_TYPE_NVFP4",
+        "GGML_TYPE_Q1_0",
+        "GGML_TYPE_Q2_0",
+        "GGML_TYPE_PQ2_0",
+        "GGML_TYPE_PTQ1_0",
+        "GGML_TYPE_COUNT"
+      ]
+    }
+  },
+  "qualification_boundary": "Layout, defaults, primitive signedness and returned-by-value ABI controls only. Native DLL execution provider remains the pinned C++ engine. Full hosted build/link and actual-model logits/state numerical comparison remain separate pending gates."
+}

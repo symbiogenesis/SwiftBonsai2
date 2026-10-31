@@ -2,3 +2,8 @@
 docs/evidence/hexagon-advance-controls.json text eol=lf
 docs/evidence/hexagon-x2-dispatch.json text eol=lf
 docs/evidence/hexagon-x2-session-metadata.json text eol=lf
+
+# Keep native collector ABI observations and provenance byte-identical.
+tools/native-reference/fixtures/collector-abi-v1.txt text eol=lf
+tools/native-reference/fixtures/collector-abi-v1.provenance.json text eol=lf
+tools/native-reference/fixtures/LICENSE.llama-reference text eol=lf
