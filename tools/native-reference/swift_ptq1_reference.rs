@@ -12,7 +12,7 @@ compile_error!("The pinned native collector requires little-endian Windows ARM64
 use std::{
     ffi::{OsStr, OsString},
     io::{self, Write as _},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::ExitCode,
 };
 
@@ -146,7 +146,7 @@ fn report(record: &str) -> String {
 mod native {
     use std::{
         ffi::{CStr, CString, c_char, c_void},
-        io::{self, Write as _},
+        io,
         marker::PhantomData,
         mem::{align_of, offset_of, size_of, size_of_val},
         os::windows::ffi::OsStrExt as _,
