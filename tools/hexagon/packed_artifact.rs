@@ -241,11 +241,16 @@ fn extract(model: &Path, output: &Path) -> Result<String> {
         return Err(bad("Binding manifest exceeds its byte bound."));
     }
     fs::create_dir(output)?;
-    // Keep all output files held against mutation through final receipt creation.
-    // A failure retains bounded partial files but no complete binding manifest.
+    // Keep data files held against mutation through final manifest publication.
+    // Data/manifest write or sync failure retains only bounded partial outputs;
+    // the final manifest name appears only after all three files were synced.
     let _weights = write_new(&output.join("weights.pq2"), &weights)?;
     let _signs = write_new(&output.join("signs.i8"), &signs)?;
-    let _manifest = write_new(&output.join("binding.json"), manifest.as_bytes())?;
+    let pending = output.join("binding.pending");
+    let manifest_file = write_new(&pending, manifest.as_bytes())?;
+    // Windows deny-delete sharing must be released before the atomic rename.
+    drop(manifest_file);
+    fs::rename(pending, output.join("binding.json"))?;
     Ok(manifest)
 }
 
