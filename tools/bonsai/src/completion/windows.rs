@@ -180,35 +180,6 @@ impl Budget {
     }
 }
 
-#[cfg(test)]
-mod budget_tests {
-    use super::*;
-
-    #[test]
-    fn aggregate_budget_charges_elapsed_work_and_reserves_owned_teardown() -> Result<()> {
-        let started = Instant::now()
-            .checked_sub(Duration::from_secs(20))
-            .ok_or("Cannot construct elapsed-work fixture.")?;
-        let budget = Budget {
-            started,
-            total: Some(Duration::from_secs(40)),
-        };
-        assert!(budget.ensure(Duration::from_secs(1)).is_ok());
-        assert!(budget.ensure(Duration::from_secs(21)).is_err());
-        let exhausted = Budget {
-            started,
-            total: Some(Duration::from_secs(10)),
-        };
-        assert!(exhausted.ensure(Duration::ZERO).is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn absent_aggregate_budget_preserves_existing_per_sample_only_calls() {
-        assert!(Budget::new(None).ensure(Duration::MAX).is_ok());
-    }
-}
-
 fn verify_artifact(
     artifact: &Artifact,
     parent: &ParentProcess,
@@ -582,5 +553,34 @@ pub(super) fn run(value: Value) -> Result<Value> {
                 request.evidence_directory.display()
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+
+    #[test]
+    fn aggregate_budget_charges_elapsed_work_and_reserves_owned_teardown() -> Result<()> {
+        let started = Instant::now()
+            .checked_sub(Duration::from_secs(20))
+            .ok_or("Cannot construct elapsed-work fixture.")?;
+        let budget = Budget {
+            started,
+            total: Some(Duration::from_secs(40)),
+        };
+        assert!(budget.ensure(Duration::from_secs(1)).is_ok());
+        assert!(budget.ensure(Duration::from_secs(21)).is_err());
+        let exhausted = Budget {
+            started,
+            total: Some(Duration::from_secs(10)),
+        };
+        assert!(exhausted.ensure(Duration::ZERO).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn absent_aggregate_budget_preserves_existing_per_sample_only_calls() {
+        assert!(Budget::new(None).ensure(Duration::MAX).is_ok());
     }
 }
