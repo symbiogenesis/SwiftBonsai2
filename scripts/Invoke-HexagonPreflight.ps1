@@ -73,7 +73,7 @@ try {
         }
     } finally { $process.Dispose() }
 }
-$report = New-BonsaiHexagonReceipt -Inventory $inventory -CollectionStatus $status -MaximumSeconds $MaximumSeconds -ElapsedMilliseconds $timer.ElapsedMilliseconds
+$report = Get-BonsaiHexagonReceipt -Inventory $inventory -CollectionStatus $status -MaximumSeconds $MaximumSeconds -ElapsedMilliseconds $timer.ElapsedMilliseconds
 if ($OutputPath) {
     $file = [IO.File]::Open($OutputPath, 'CreateNew', 'Write', 'None')
     try {

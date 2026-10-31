@@ -13,11 +13,11 @@ Import-Module (Join-Path $PSScriptRoot '../scripts/Bonsai.Hexagon.psm1')
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('Bonsai-Hexagon-Preflight-Test-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($scratch)
 try {
-    $receipt = New-BonsaiHexagonReceipt -Inventory $null -CollectionStatus 'deadline-expired' -MaximumSeconds 5 -ElapsedMilliseconds 3000
+    $receipt = Get-BonsaiHexagonReceipt -Inventory $null -CollectionStatus 'deadline-expired' -MaximumSeconds 5 -ElapsedMilliseconds 3000
     Assert ($receipt.Qualification -ceq 'pending' -and -not $receipt.ProfileEligible -and $receipt.Execution -ceq 'not-attempted') 'Timeout admitted an accelerator.'
-    Assert ($receipt.Inventory -eq $null -and $receipt.Blockers.Count -ge 4) 'Unknown evidence or blockers were dropped.'
+    Assert ($null -eq $receipt.Inventory -and $receipt.Blockers.Count -ge 4) 'Unknown evidence or blockers were dropped.'
     $facts = @{ OsArchitecture = 'Arm64'; ProcessArchitecture = 'Arm64'; Drivers = @(@{ IsSigned = $true }); Package = @{ Status = 'inventoried'; Files = @(@{ Name = 'libggml-htp-v81.so'; Signature = @{ Status = 'Valid' } }) } }
-    $receipt = New-BonsaiHexagonReceipt -Inventory $facts -CollectionStatus 'collected' -MaximumSeconds 5 -ElapsedMilliseconds 1
+    $receipt = Get-BonsaiHexagonReceipt -Inventory $facts -CollectionStatus 'collected' -MaximumSeconds 5 -ElapsedMilliseconds 1
     Assert (-not $receipt.ProfileEligible -and $receipt.Execution -ceq 'not-attempted' -and $receipt.Blockers.Count -eq 3) 'Signed-looking inventory was treated as deployment/execution proof.'
     Assert (-not $receipt.TrustChanged -and -not $receipt.DriverInstalled -and -not $receipt.ModelLoaded) 'Inventory side-effect contract changed.'
     $package = Get-BonsaiHexagonPackage
@@ -29,12 +29,12 @@ try {
     [IO.File]::WriteAllBytes((Join-Path $nested 'hidden.so'), [byte[]]@(4))
     $package = Get-BonsaiHexagonPackage -PackagePath $scratch
     Assert ($package.Files.Count -eq 1 -and $package.TotalBytes -eq 3) 'Package inventory traversed nested entries or read model bytes.'
-    Assert ($package.Files[0].Signature -eq $null -and $package.Files[0].Sha256 -ceq '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81') 'DSP hash or unknown catalog binding changed.'
+    Assert ($null -eq $package.Files[0].Signature -and $package.Files[0].Sha256 -ceq '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81') 'DSP hash or unknown catalog binding changed.'
     [IO.File]::WriteAllBytes((Join-Path $scratch 'libggml-htp.inf'), [byte[]]@(1, 2, 3))
     $package = Get-BonsaiHexagonPackage -PackagePath $scratch
     $manifest = @($package.Files | Where-Object { $_.Name -ceq 'libggml-htp.inf' })
     Assert ($package.Files.Count -eq 2 -and $package.TotalBytes -eq 6 -and $manifest.Count -eq 1) 'Deployment manifest identity was omitted.'
-    Assert ($manifest[0].Signature -eq $null -and $manifest[0].Sha256 -ceq '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81') 'Manifest hashing was confused with signature verification.'
+    Assert ($null -eq $manifest[0].Signature -and $manifest[0].Sha256 -ceq '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81') 'Manifest hashing was confused with signature verification.'
     Assert-Failure { Get-BonsaiHexagonLocalPath -Path 'relative' } 'Relative package path admitted.'
     Assert-Failure { Get-BonsaiHexagonLocalPath -Path ($scratch + ':stream') } 'Alternate stream path admitted.'
     $large = [IO.File]::Open((Join-Path $scratch 'oversized.so'), 'CreateNew', 'Write', 'None')
@@ -66,7 +66,7 @@ function Get-BonsaiHexagonInventory {
     $delay
     return [ordered]@{ OsArchitecture = 'Arm64'; ProcessArchitecture = 'Arm64'; Drivers = @(); Package = @{ Status = 'not-selected'; Files = @() } }
 }
-Export-ModuleMember -Function Get-BonsaiHexagonLocalPath, Get-BonsaiHexagonPackage, Get-BonsaiHexagonInventory, New-BonsaiHexagonReceipt
+Export-ModuleMember -Function Get-BonsaiHexagonLocalPath, Get-BonsaiHexagonPackage, Get-BonsaiHexagonInventory, Get-BonsaiHexagonReceipt
 "@
         [IO.File]::WriteAllText((Join-Path $fixture 'Bonsai.Hexagon.psm1'), $source)
         $reportPath = Join-Path $fixture 'receipt.json'

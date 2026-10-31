@@ -91,7 +91,7 @@ function Get-BonsaiHexagonInventory {
     }
 }
 
-function New-BonsaiHexagonReceipt {
+function Get-BonsaiHexagonReceipt {
     <# .SYNOPSIS
     Keeps inventory, deployment verification and actual execution as separate evidence gates.
     #>
@@ -119,4 +119,4 @@ function New-BonsaiHexagonReceipt {
     }
 }
 
-Export-ModuleMember -Function Get-BonsaiHexagonLocalPath, Get-BonsaiHexagonPackage, Get-BonsaiHexagonInventory, New-BonsaiHexagonReceipt
+Export-ModuleMember -Function Get-BonsaiHexagonLocalPath, Get-BonsaiHexagonPackage, Get-BonsaiHexagonInventory, Get-BonsaiHexagonReceipt
