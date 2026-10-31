@@ -240,6 +240,12 @@ impl Tokenizer {
     }
 
     fn encode_chunk(&self, chunk: &[u8], ids: &mut Vec<i32>, probes: &mut usize) -> io::Result<()> {
+        if let [byte] = chunk {
+            let spelling = BYTE_ENCODER[usize::from(*byte)];
+            let width = if spelling[1] == 0 { 1 } else { 2 };
+            self.emit_piece(&spelling[..width], ids);
+            return Ok(());
+        }
         let mut encoded = Vec::new();
         encoded
             .try_reserve_exact(chunk.len() * 2)
@@ -287,20 +293,23 @@ impl Tokenizer {
             symbols.remove(index + 1);
         }
         for symbol in symbols {
-            let piece = &encoded[symbol];
-            if let Some(&id) = self.vocabulary.get(piece) {
-                ids.push(id);
-            } else {
-                // Native fallback probes the raw bytes of the encoded spelling,
-                // not the original input bytes or the GPT-2 byte encoder again.
-                for byte in piece {
-                    if let Some(&id) = self.vocabulary.get(std::slice::from_ref(byte)) {
-                        ids.push(id);
-                    }
+            self.emit_piece(&encoded[symbol], ids);
+        }
+        Ok(())
+    }
+
+    fn emit_piece(&self, piece: &[u8], ids: &mut Vec<i32>) {
+        if let Some(&id) = self.vocabulary.get(piece) {
+            ids.push(id);
+        } else {
+            // Native fallback probes the raw bytes of the encoded spelling,
+            // not the original input bytes or the GPT-2 byte encoder again.
+            for byte in piece {
+                if let Some(&id) = self.vocabulary.get(std::slice::from_ref(byte)) {
+                    ids.push(id);
                 }
             }
         }
-        Ok(())
     }
 }
 
