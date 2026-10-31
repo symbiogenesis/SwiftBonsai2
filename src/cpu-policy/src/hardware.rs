@@ -6,6 +6,9 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Offline ranking of reviewed, same-workload CPU/GPU/NPU observations.
+pub mod ranking;
+
 const MAX_DOCUMENT_BYTES: usize = 16 * 1024;
 const MAX_CONTRACTS: usize = 16;
 

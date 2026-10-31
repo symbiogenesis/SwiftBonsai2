@@ -310,6 +310,30 @@ without arbitrary public arguments/paths or inherited environment overrides.
 
 ### Prefill, decode and complete state
 
+The pure Rust [offline ranking policy](../src/cpu-policy/src/hardware/ranking.rs)
+compares independently reviewed same-workload observations across CPU, Adreno,
+Hexagon and qualified mixed prefill/decode plans. It makes no family or TOPS
+assumption: either X1 or X2 may retain CPU, select GPU or recommend NPU according
+to its own evidence. Interactive candidates must clear ten percent lower
+complete-task latency using a reviewed conservative upper estimate; battery
+candidates must clear ten percent lower task energy without a latency regression.
+Missing energy telemetry excludes battery ranking. This is a conservative initial
+screen, not statistical qualification or the separate capacity-benefit exception.
+
+Exact current keys must match individually reviewed receipts. A shared comparison
+digest binds artifacts, sampler/scale/precision, actual token boundaries, power,
+cold/warm treatment and complete setup/transfer/transition cost accounting across
+different backend builds. Callers must verify that measurements, placement and
+comparison digest bind to the same archived captures; parsing a receipt does not
+establish that trust. Stable ties prefer fewer accelerator phases, then backend
+order and profile ID. Mixed-phase observations require reviewed complete-state
+handoff; adding independently fast phase timings is insufficient.
+
+The result contains only a provisional profile/placement recommendation. It opens
+no device, supplies no launch arguments and is not connected to serving admission.
+Signed device execution, qualification, live budgets and safe request-boundary
+selection remain pending in [PLAN.md](../PLAN.md#hexagon-npu).
+
 Batched prefill reuses weight tiles across tokens; sequential blocks alone do not. Packed decode has
 little reuse and pays bandwidth, unpacking, transforms and dispatch/submission costs. [Algorithm
 contracts](inference-algorithms.md) separately govern tiled projections and chunkwise GDN.
