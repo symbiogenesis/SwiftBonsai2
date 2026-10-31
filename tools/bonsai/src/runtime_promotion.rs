@@ -214,11 +214,7 @@ struct Execution {
 }
 
 fn require(condition: bool, message: &str) -> crate::Result<()> {
-    if condition {
-        Ok(())
-    } else {
-        Err(message.into())
-    }
+    condition.ok_or_else(|| message.into())
 }
 
 fn policy(revision: &str) -> crate::Result<Value> {

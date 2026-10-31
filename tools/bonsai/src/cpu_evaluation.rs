@@ -190,6 +190,7 @@ pub fn run(request: Value) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     fn request(count: u16) -> Value {
         json!({"operation": "plan", "dataDirectory": "C:\\BonsaiData",
@@ -273,10 +274,10 @@ mod tests {
             .collect();
         assert_eq!(differences.len(), 2);
         for index in differences {
-            assert!(matches!(
+            assert_matches!(
                 baseline[index - 1].as_str(),
                 "--threads" | "--threads-batch"
-            ));
+            );
         }
         for (flag, expected) in [
             ("--poll", "0"),

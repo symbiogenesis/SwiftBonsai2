@@ -76,11 +76,7 @@ fn decode<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T> {
 }
 
 fn require(condition: bool, message: &str) -> Result<()> {
-    if condition {
-        Ok(())
-    } else {
-        Err(message.into())
-    }
+    condition.ok_or_else(|| message.into())
 }
 
 fn string(value: &str, maximum: usize) -> Result<()> {
@@ -473,7 +469,7 @@ fn read_json_with_limit(path: &Path, limit: u64) -> Result<Value> {
         u64::try_from(bytes.len()).map_err(|error| error.to_string())? <= limit,
         "Qualification JSON exceeds its bounded input size.",
     )?;
-    let text = decode_text(&bytes)?;
+    let text = decode_text(bytes)?;
     let value: Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
     bounded_depth(&value, 32)?;
     Ok(value)
@@ -560,7 +556,7 @@ fn validate_path(path: &Path) -> Result<PathBuf> {
     Ok(full)
 }
 
-fn decode_text(bytes: &[u8]) -> Result<String> {
+fn decode_text(mut bytes: Vec<u8>) -> Result<String> {
     // StreamReader uses strict UTF-8 initially, but BOM detection selects the
     // standard UTF-8/UTF-16/UTF-32 decoders with replacement fallback. Preserve that
     // behavior: hashes bind the resulting text, including replacement chars.
@@ -588,9 +584,11 @@ fn decode_text(bytes: &[u8]) -> Result<String> {
         } else {
             String::from_utf16be_lossy(&bytes[2..])
         })
-    } else if let Some(text) = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]) {
-        Ok(String::from_utf8_lossy(text).into_owned())
+    } else if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
+        // Remove the preamble in place so valid UTF-8 can reuse the input storage.
+        drop(bytes.drain(..3));
+        Ok(String::from_utf8_lossy_owned(bytes))
     } else {
-        String::from_utf8(bytes.to_vec()).map_err(|error| error.to_string())
+        String::from_utf8(bytes).map_err(|error| error.to_string())
     }
 }

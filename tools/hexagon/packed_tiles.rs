@@ -171,7 +171,10 @@ impl<'a> TileSource<'a> {
         for row in tile.row..tile.row + tile.rows {
             let start = (row * self.plan.columns / 256 + tile.group) * 2 * PQ2_BYTES;
             let packed = &self.weights[start..start + row_bytes];
-            for block in packed.chunks_exact(PQ2_BYTES) {
+            let (blocks, []) = packed.as_chunks::<PQ2_BYTES>() else {
+                return Err(Error::Protocol);
+            };
+            for block in blocks {
                 half(block)?;
             }
             staging.extend_from_slice(packed);
@@ -249,7 +252,13 @@ impl TileReceiver {
         }
         let weights = &payload[HEADER_BYTES..HEADER_BYTES + weight_bytes];
         let activations = &payload[HEADER_BYTES + weight_bytes..];
-        validate_activations(activations)?;
+        let (weights, []) = weights.as_chunks::<PQ2_BYTES>() else {
+            return Err(Error::Protocol);
+        };
+        let (activation_blocks, []) = activations.as_chunks::<Q8K_BYTES>() else {
+            return Err(Error::Protocol);
+        };
+        validate_activations(activation_blocks)?;
         let recorded =
             &mut self.activation[tile.group * Q8K_BYTES..(tile.group + tile.groups) * Q8K_BYTES];
         if tile.row == 0 {
@@ -258,7 +267,7 @@ impl TileReceiver {
             return Err(Error::Protocol);
         }
         // Validate the complete tile before applying its first partial row sum.
-        for block in weights.chunks_exact(PQ2_BYTES) {
+        for block in weights {
             half(block)?;
         }
         for row in 0..tile.rows {
@@ -266,11 +275,10 @@ impl TileReceiver {
                 return Err(Error::Cancelled);
             }
             for block_index in 0..tile.groups * 2 {
-                let start = (row * tile.groups * 2 + block_index) * PQ2_BYTES;
-                let block = &weights[start..start + PQ2_BYTES];
-                let start = block_index / 2 * Q8K_BYTES;
-                let q8 = &activations[start..start + Q8K_BYTES];
-                let scale = f32::from_le_bytes(q8[..4].try_into().map_err(|_| Error::Protocol)?);
+                let block = &weights[row * tile.groups * 2 + block_index];
+                let q8 = &activation_blocks[block_index / 2];
+                let &[s0, s1, s2, s3, ..] = q8;
+                let scale = f32::from_le_bytes([s0, s1, s2, s3]);
                 let start = 4 + block_index % 2 * 128;
                 let integer = packed_sum(&block[2..], &q8[start..start + 128]);
                 let sum = &mut self.pending[tile.row + row];
@@ -302,15 +310,14 @@ impl TileReceiver {
     }
 }
 
-fn validate_activations(bytes: &[u8]) -> Result<(), Error> {
-    for block in bytes.chunks_exact(Q8K_BYTES) {
-        finite(f32::from_le_bytes(
-            block[..4].try_into().map_err(|_| Error::Protocol)?,
-        ))?;
+fn validate_activations(blocks: &[[u8; Q8K_BYTES]]) -> Result<(), Error> {
+    for block in blocks {
+        let &[s0, s1, s2, s3, ..] = block;
+        finite(f32::from_le_bytes([s0, s1, s2, s3]))?;
         for group in 0..16 {
             let sum: i16 = block[4 + group * 16..4 + (group + 1) * 16]
                 .iter()
-                .map(|&byte| i16::from(i8::from_ne_bytes([byte])))
+                .map(|&byte| i16::from(byte.cast_signed()))
                 .sum();
             if block[260 + group * 2..262 + group * 2] != sum.to_le_bytes() {
                 return Err(Error::Protocol);

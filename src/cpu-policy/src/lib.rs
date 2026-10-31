@@ -104,11 +104,7 @@ impl std::str::FromStr for Profile {
 }
 
 fn require(condition: bool, message: &str) -> Result<(), String> {
-    if condition {
-        Ok(())
-    } else {
-        Err(message.into())
-    }
+    condition.ok_or_else(|| message.into())
 }
 
 fn parse(input: &str) -> Result<Value, String> {

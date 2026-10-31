@@ -116,17 +116,17 @@ fn signs(metadata: &Metadata) -> Result<(Vec<u8>, String)> {
         // extracting the first width's lossless i8 representation for the CPU.
         hash.update(i32::from(value).to_le_bytes());
         if index < COLUMNS {
-            output.push(value.to_ne_bytes()[0]);
+            output.push(value.cast_unsigned());
         }
     }
     Ok((output, hex(hash.finalize())))
 }
 
 fn validate_scales(weights: &[u8]) -> Result<()> {
-    if !weights.len().is_multiple_of(34) {
+    let (blocks, []) = weights.as_chunks::<34>() else {
         return Err(bad("Incomplete PQ2 block."));
-    }
-    for block in weights.chunks_exact(34) {
+    };
+    for block in blocks {
         if u16::from_le_bytes([block[0], block[1]]) & 0x7c00 == 0x7c00 {
             return Err(bad("Nonfinite original PQ2 scale."));
         }

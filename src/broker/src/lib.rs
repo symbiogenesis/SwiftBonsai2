@@ -704,6 +704,7 @@ mod abliteration_tests;
 #[cfg(test)]
 mod tests {
     use super::{ClientChat, Cow, Message, Object, Role, valid_history};
+    use std::assert_matches;
 
     #[test]
     fn every_short_role_history_matches_the_accepted_language() {
@@ -743,11 +744,8 @@ mod tests {
         let Object(chat): Object<ClientChat<'_>> = serde_json::from_slice(
             br#"{"messages":[{"role":"user","content":"plain text"},{"role":"assistant","content":"line\n\u96ea"}]}"#,
         )?;
-        assert!(matches!(
-            chat.messages[0].content,
-            Cow::Borrowed("plain text")
-        ));
-        assert!(matches!(chat.messages[1].content, Cow::Owned(_)));
+        assert_matches!(chat.messages[0].content, Cow::Borrowed("plain text"));
+        assert_matches!(chat.messages[1].content, Cow::Owned(_));
         assert_eq!(chat.messages[1].content, "line\n雪");
         Ok(())
     }
@@ -757,14 +755,11 @@ mod tests {
         let Object(chat): Object<ClientChat<'_>> = serde_json::from_slice(
             br#"{"messages":[{"role":"assistant","content":"","reasoning_content":"plain text"},{"role":"assistant","content":"","reasoning_content":"line\n\u96ea"}]}"#,
         )?;
-        assert!(matches!(
+        assert_matches!(
             chat.messages[0].reasoning_content,
             Some(Cow::Borrowed("plain text"))
-        ));
-        assert!(matches!(
-            chat.messages[1].reasoning_content,
-            Some(Cow::Owned(_))
-        ));
+        );
+        assert_matches!(chat.messages[1].reasoning_content, Some(Cow::Owned(_)));
         assert_eq!(
             chat.messages[1].reasoning_content.as_deref(),
             Some("line\n雪")

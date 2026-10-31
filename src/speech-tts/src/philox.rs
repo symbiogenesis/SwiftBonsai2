@@ -51,8 +51,8 @@ fn uniform_word(word: u32) -> f32 {
     reason = "The sampler helper stays private to the speech crate and its native ABI module."
 )]
 pub(super) fn uniform(seed: i64, subsequence: i64, counter: u32) -> f32 {
-    let key = words(u64::from_le_bytes(seed.to_le_bytes()));
-    let [subsequence_low, subsequence_high] = words(u64::from_le_bytes(subsequence.to_le_bytes()));
+    let key = words(seed.cast_unsigned());
+    let [subsequence_low, subsequence_high] = words(subsequence.cast_unsigned());
     uniform_word(block([counter, 0, subsequence_low, subsequence_high], key)[0])
 }
 

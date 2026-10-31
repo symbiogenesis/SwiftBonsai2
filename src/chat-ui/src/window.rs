@@ -304,9 +304,7 @@ impl State {
         {
             self.diagnostics
                 .push_back(message.chars().take(MAX_DIAGNOSTIC_CHARS).collect());
-            while self.diagnostics.len() > MAX_DIAGNOSTICS {
-                self.diagnostics.pop_front();
-            }
+            self.diagnostics.retain_back(MAX_DIAGNOSTICS);
         }
     }
 

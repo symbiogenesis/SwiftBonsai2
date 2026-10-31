@@ -165,7 +165,7 @@ fn text(bytes: &[std::ffi::c_char]) -> io::Result<String> {
         .ok_or_else(invalid)?;
     let bytes: Vec<_> = bytes[..end]
         .iter()
-        .map(|byte| byte.to_ne_bytes()[0])
+        .map(|byte| byte.cast_unsigned())
         .collect();
     let text = String::from_utf8(bytes).map_err(|_| invalid())?;
     if text.chars().any(char::is_control) {

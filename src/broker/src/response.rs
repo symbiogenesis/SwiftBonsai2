@@ -8,7 +8,7 @@
 use crate::{AdmittedChat, Object, singleton};
 use http::{Response, StatusCode};
 use serde::de::IgnoredAny;
-use std::{future::poll_fn, pin::Pin, task::Poll, time::Duration};
+use std::{fmt::NumBuffer, future::poll_fn, pin::Pin, task::Poll, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
     time::{Instant, timeout_at},
@@ -22,6 +22,8 @@ pub const RESPONSE_BUFFER_BYTES: usize = 8 * 1024;
 pub const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 const CHUNK_PREFIX_BYTES: usize = 2 * size_of::<usize>() + 2;
 const MAX_SSE_READS_PER_GROUP: usize = 32;
+// Three decimal digits per byte cover every usize; include the final CRLF pair.
+const CONTENT_LENGTH_SPACE: usize = 3 * size_of::<usize>() + 4;
 
 // Keep one literal for both formatted JSON heads and compile-time SSE heads.
 macro_rules! common_headers {
@@ -55,17 +57,14 @@ pub(crate) async fn send_context_rejection<W: AsyncWrite + Unpin>(
     supervisor_deadline: Instant,
 ) -> Result<(), ResponseError> {
     const BODY: &[u8] = br#"{"error":{"code":"context_length_exceeded"}}"#;
-    let head = format!(
-        "HTTP/1.1 413 Content Too Large\r\n{COMMON_HEADERS}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n",
-        BODY.len()
+    const HEAD: &str = concat!(
+        "HTTP/1.1 413 Content Too Large\r\n",
+        common_headers!(),
+        "Content-Type: application/json\r\nContent-Length: "
     );
-    write_group(
-        &mut client,
-        &[head.as_bytes(), BODY],
-        supervisor_deadline,
-        true,
-    )
-    .await
+    let mut head = [0; HEAD.len() + CONTENT_LENGTH_SPACE];
+    let head = rejection_head(&mut head, HEAD.as_bytes(), BODY.len());
+    write_group(&mut client, &[head, BODY], supervisor_deadline, true).await
 }
 
 /// Reject exact model controls in a completely received, authenticated body.
@@ -75,17 +74,14 @@ pub(crate) async fn send_control_rejection<W: AsyncWrite + Unpin>(
     supervisor_deadline: Instant,
 ) -> Result<(), ResponseError> {
     const BODY: &[u8] = br#"{"error":{"code":"input_control_tokens_rejected"}}"#;
-    let head = format!(
-        "HTTP/1.1 400 Bad Request\r\n{COMMON_HEADERS}Content-Type: application/json\r\nContent-Length: {}\r\n\r\n",
-        BODY.len()
+    const HEAD: &str = concat!(
+        "HTTP/1.1 400 Bad Request\r\n",
+        common_headers!(),
+        "Content-Type: application/json\r\nContent-Length: "
     );
-    write_group(
-        &mut client,
-        &[head.as_bytes(), BODY],
-        supervisor_deadline,
-        true,
-    )
-    .await
+    let mut head = [0; HEAD.len() + CONTENT_LENGTH_SPACE];
+    let head = rejection_head(&mut head, HEAD.as_bytes(), BODY.len());
+    write_group(&mut client, &[head, BODY], supervisor_deadline, true).await
 }
 
 /// Send one fixed authenticated burst denial before counting or generation.
@@ -95,17 +91,26 @@ pub(crate) async fn send_rate_rejection<W: AsyncWrite + Unpin>(
     supervisor_deadline: Instant,
 ) -> Result<(), ResponseError> {
     const BODY: &[u8] = br#"{"error":{"code":"rate_limit_exceeded"}}"#;
-    let head = format!(
-        "HTTP/1.1 429 Too Many Requests\r\n{COMMON_HEADERS}Retry-After: 1\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
-        BODY.len()
+    const HEAD: &str = concat!(
+        "HTTP/1.1 429 Too Many Requests\r\n",
+        common_headers!(),
+        "Retry-After: 1\r\nContent-Type: application/json\r\nContent-Length: "
     );
-    write_group(
-        &mut client,
-        &[head.as_bytes(), BODY],
-        supervisor_deadline,
-        true,
-    )
-    .await
+    let mut head = [0; HEAD.len() + CONTENT_LENGTH_SPACE];
+    let head = rejection_head(&mut head, HEAD.as_bytes(), BODY.len());
+    write_group(&mut client, &[head, BODY], supervisor_deadline, true).await
+}
+
+// Callers reserve prefix.len() + CONTENT_LENGTH_SPACE on their own stacks.
+// Keep headers contiguous so rejection still writes only a head and a body.
+fn rejection_head<'a>(storage: &'a mut [u8], prefix: &[u8], length: usize) -> &'a [u8] {
+    let mut digits = NumBuffer::new();
+    let digits = length.format_into(&mut digits).as_bytes();
+    let end = prefix.len() + digits.len();
+    storage[..prefix.len()].copy_from_slice(prefix);
+    storage[prefix.len()..end].copy_from_slice(digits);
+    storage[end..end + 4].copy_from_slice(b"\r\n\r\n");
+    &storage[..end + 4]
 }
 
 /// Send one HTTP/1.1 response, then drop both owned endpoints.
