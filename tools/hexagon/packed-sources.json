@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "purpose": "model-free-PQ2-Q8_K-packed-tile-operation-control",
+  "execution": "CPU-only-no-device-access",
+  "profileEligible": false,
+  "arithmetic": "pinned-Swift-ARM64-binary-Q8_K-preparation-and-ordered-per-PQ2-block-FMA",
+  "prism": {
+    "repository": "https://github.com/symbiogenesis/prism-inference",
+    "commit": "7aca2251f09acb345d4afb53d5ce411f81017745",
+    "license": "Apache-2.0",
+    "files": ["src/kernels.rs", "src/graph.rs", "tests/fixtures/swift-q8k-parity.bin", "tests/fixtures/swift-q8k-parity.json"],
+    "contract": "Arithmetic::PinnedSwift, MatvecScratch::with_pinned_backend, q8k_with_rounding::<true>, dot_pq2::<true>, Transforms::sign/rotate",
+    "genericSourceArithmeticEquivalent": false
+  },
+  "independentNativeCapture": {
+    "runtimeCommit": "73bfe6cc485554822f80c473a3c0c4f25e80f41b",
+    "ggmlCpuDllSha256": "701b354a38b25e5c6dc57a1559f71cd26b2d0f8d69c1576a0e77a59a4273d2ab",
+    "preparationFixture": {
+      "path": "fixtures/swift-q8k-parity.bin",
+      "bytes": 584,
+      "sha256": "86d985b8a60fde3241daeeb1712dac45a0cc8e4684ac962dcb488ef17bb1fba5",
+      "provenancePath": "fixtures/swift-q8k-parity.json",
+      "provenanceSha256": "131155bb668a4ca3c4897ff5b270a6f9560e83da173fd6d14cf1dd3228b0c7cd",
+      "provenanceDigestEncoding": "UTF8-with-LF-newlines"
+    },
+    "pq2Dot": {
+      "weights": "two 34-byte blocks, symbols all 0xaa (+1), first little-endian half scale 0x3c01, second 0x3787",
+      "activationScaleF32Bits": "3da00001",
+      "activationCodes": "128 consecutive 3 codes then 128 consecutive -13 codes",
+      "activationSums": "8 consecutive 48 i16 sums then 8 consecutive -208 sums",
+      "expectedF32Bits": "c1f90b01",
+      "nonfusedSourceF32Bits": "c1f90b02",
+      "sourceAssertion": "src/kernels.rs::pinned_pq2_accumulation_matches_independent_native_binary_capture"
+    },
+    "captureDataCopiedWithoutExecutingDll": true
+  },
+  "prototype": {
+    "tensor": "blk.0.ffn_up.weight",
+    "columns": 5120,
+    "rows": 17408,
+    "batch": 1,
+    "packedWeightBytes": 23674880,
+    "activationBytes": 5840,
+    "outputBytes": 69632,
+    "tileRows": 32,
+    "tileQ8KGroups": 4,
+    "cpuPackedStageBytes": 8704,
+    "proposedDoubleBufferedVtcmBytes": 18752,
+    "proposedActivationTransferBytes": 3176960,
+    "vtcmBoundExcludes": ["DMA-descriptors", "runtime-session-and-queue-storage", "mappings", "allocator-overhead"],
+    "actualTransfersObserved": false,
+    "persistentRepackedWeightBytes": 0,
+    "stateOwner": "CPU",
+    "transformsAndAdapters": "CPU-with-exact-original-basis"
+  },
+  "pending": [
+    "actual-artifact-packed-tile-and-explicit-sign-array-identities",
+    "independent-actual-transform-activation-logit-and-complete-state-parity",
+    "PTQ1-canonicality-and-Q8_0-independent-qualification",
+    "signed-custom-kernel-distribution-and-native-Rust-device-submission",
+    "effective-VTCM-DMA64-session-ownership-cancellation-and-failure-qualification",
+    "no-LoRA-and-approved-LoRA-forward-qualification",
+    "true-batched-HMX-prefill",
+    "complete-request-device-performance-resources-and-lifecycle"
+  ]
+}
