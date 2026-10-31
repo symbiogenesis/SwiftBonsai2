@@ -1,0 +1,120 @@
+name: Hexagon prerequisites and bounded device inventory
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/hexagon-qualification.yml
+      - tools/hexagon/**
+      - scripts/*Hexagon*
+      - tests/Test-HexagonPreflight.ps1
+      - src/cpu-policy/**
+      - config/hexagon-experiment.lock.json
+  workflow_dispatch:
+    inputs:
+      run_device:
+        description: Collect inventory only within one five-minute owner-device job
+        type: boolean
+        default: false
+      package_directory:
+        description: Optional existing absolute runtime directory on the owner device
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  controls:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
+      - name: Validate packed layout and bounded inventory supervision without models
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -B tools/hexagon/test_pq2_bridge.py
+          python -B tools/hexagon/pq2_bridge.py
+          ./tests/Test-HexagonPreflight.ps1
+      - name: Validate comparative CPU GPU NPU ranking without opening a device
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $manifest = Join-Path $env:GITHUB_WORKSPACE 'Cargo.toml'
+          $target = Join-Path $env:RUNNER_TEMP 'SwiftBonsai-Hexagon-Control-Target'
+          cargo +nightly-2026-10-22-aarch64-pc-windows-msvc test --manifest-path $manifest --target-dir $target --locked --release -p bonsai-cpu-policy hardware::ranking::tests
+          cargo +nightly-2026-10-22-aarch64-pc-windows-msvc clippy --manifest-path $manifest --target-dir $target --locked --release -p bonsai-cpu-policy --all-targets -- -D warnings
+          cargo +nightly-2026-10-22-aarch64-pc-windows-msvc fmt --manifest-path $manifest -p bonsai-cpu-policy -- --check
+  inventory:
+    needs: controls
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.run_device
+    runs-on: [self-hosted, Windows, ARM64, swift-bonsai-snapdragon]
+    timeout-minutes: 5
+    concurrency:
+      group: swift-lora-snapdragon
+      cancel-in-progress: false
+    steps:
+      - name: Start the aggregate device budget before checkout
+        shell: pwsh
+        run: |
+          "BONSAI_HEXAGON_JOB_STARTED_UTC=$([DateTime]::UtcNow.ToString('o'))" >> $env:GITHUB_ENV
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Retain bounded device and selected-package inventory
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        env:
+          HEXAGON_PACKAGE_DIRECTORY: ${{ inputs.package_directory }}
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $started = [DateTimeOffset]::Parse($env:BONSAI_HEXAGON_JOB_STARTED_UTC, [Globalization.CultureInfo]::InvariantCulture)
+          $setupSeconds = ([DateTimeOffset]::UtcNow - $started).TotalSeconds
+          # Charge checkout and setup; reserve thirty seconds for retained evidence.
+          $allowance = [int][Math]::Floor([Math]::Min(45, 270 - $setupSeconds))
+          if ($setupSeconds -lt 0 -or $allowance -lt 5) {
+            throw 'Owner-job setup exhausted the aggregate allowance; Hexagon gates remain pending.'
+          }
+          $evidence = Join-Path $env:RUNNER_TEMP ('SwiftBonsai-Hexagon-' + [guid]::NewGuid().ToString('N'))
+          [void][IO.Directory]::CreateDirectory($evidence)
+          "BONSAI_HEXAGON_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+          $report = Join-Path $evidence 'preflight.json'
+          $result = & (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-HexagonPreflight.ps1') -PackagePath $env:HEXAGON_PACKAGE_DIRECTORY -OutputPath $report -MaximumSeconds $allowance -PassThru
+          [ordered]@{
+            SchemaVersion = 1; SourceRevision = $env:GITHUB_SHA
+            RunId = $env:GITHUB_RUN_ID; RunAttempt = $env:GITHUB_RUN_ATTEMPT
+            JobStartedUtc = $env:BONSAI_HEXAGON_JOB_STARTED_UTC
+            PreparationElapsedMilliseconds = [Math]::Ceiling($setupSeconds * 1000)
+            InventoryAllowanceSeconds = $allowance; WholeJobMaximumSeconds = 300
+            ScriptSha256 = (Get-FileHash -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'scripts/Invoke-HexagonPreflight.ps1') -Algorithm SHA256).Hash.ToLowerInvariant()
+            ModuleSha256 = (Get-FileHash -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.Hexagon.psm1') -Algorithm SHA256).Hash.ToLowerInvariant()
+            ExperimentLockSha256 = (Get-FileHash -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'config/hexagon-experiment.lock.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+            ReceiptSha256 = (Get-FileHash -LiteralPath $report -Algorithm SHA256).Hash.ToLowerInvariant()
+            CollectionStatus = $result.CollectionStatus
+            ExecutionQualified = $false; ProfileEligible = $false
+          } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $evidence 'host.json') -Encoding utf8NoBOM
+          @('Inventory only; mapping, dispatch, numerical/state and performance gates remain pending.',
+            'Native Rust Prism is the integration target; GenieX is a signed access reference.',
+            'X1/X2 CPU, GPU and NPU decisions require independently reviewed same-workload comparisons.') | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          if ($result.CollectionStatus -cne 'collected') { throw 'Hexagon inventory incomplete; inspect the retained pending receipt.' }
+      - name: Retain credential-free prerequisite evidence
+        if: always() && env.BONSAI_HEXAGON_EVIDENCE != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hexagon-prerequisites-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.BONSAI_HEXAGON_EVIDENCE }}/preflight.json
+            ${{ env.BONSAI_HEXAGON_EVIDENCE }}/host.json
+          if-no-files-found: error
+          retention-days: 90

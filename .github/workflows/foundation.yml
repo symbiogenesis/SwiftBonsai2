@@ -281,6 +281,16 @@ jobs:
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: '& (Join-Path $env:GITHUB_WORKSPACE "tests/Test-HeadlessPublisherStartup.ps1")'
+      - name: Hexagon packed-layout and bounded inventory controls without devices
+        if: matrix.lane == 'foundation'
+        shell: pwsh
+        run: |
+          Set-StrictMode -Version Latest
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -B tools/hexagon/test_pq2_bridge.py
+          python -B tools/hexagon/pq2_bridge.py
+          ./tests/Test-HexagonPreflight.ps1
       - name: Released GGUF command integration
         if: matrix.lane == 'foundation'
         shell: pwsh

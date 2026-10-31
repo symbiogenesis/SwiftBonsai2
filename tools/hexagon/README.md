@@ -9,8 +9,14 @@ Run the inventory audit with Python 3.11 or later:
 
 ```powershell
 python tools/hexagon/pq2_bridge.py
-python -B -m unittest discover -s tools/hexagon -p 'test_*.py'
 ```
+
+The complete regression suite runs on hosted CI through
+[Hexagon prerequisites](../../.github/workflows/hexagon-qualification.yml) and
+Foundation. A focused local case is
+`python -B tools/hexagon/test_pq2_bridge.py BridgeTests.test_known_byte_fixture_splits_at_element_64_and_keeps_fourth_symbol`.
+All owner-device setup, checks and cleanup share one five-minute aggregate
+allowance; do not run a complete suite locally.
 
 An optional raw PQ2 fixture can be checked with
 `--payload ABSOLUTE_FIXTURE_PATH --columns 384 --rows 2`. The fixture must contain
