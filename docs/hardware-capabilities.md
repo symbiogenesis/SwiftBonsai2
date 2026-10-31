@@ -103,9 +103,24 @@ truncated, malformed UTF-16 or path/control-containing results make that whole s
 unknown; the original Vulkan failure remains intact. The pair reports `observed`,
 `partial` or `unknown`; its difference is null unless both snapshots are observed.
 
-These current-process observations contain no filesystem paths and open no unrelated
-process. Basenames can guide a later exact-file audit; equal names do not establish file
-identity, signatures or dependencies. Modules loaded and unloaded between snapshots,
+Diagnostic JSON contains no filesystem paths and opens no unrelated process. After the
+second snapshot, `file_observations` prioritizes `vulkan-1.dll`, then newly observed
+module basenames, for at most sixteen on-disk SHA-256 observations. Unknown before
+snapshots permit only the loader. A failed module-path query stays unknown. Each native
+path query uses a fixed 32,768-unit buffer, rejecting truncation without a retry.
+
+File observations use the existing local-file opener, reject redirects and hold a
+read-only handle denying writer/delete sharing through hashing and metadata recheck.
+They read at most 16 MiB per file and 64 MiB total with a 64 KiB reusable buffer and a
+500 ms shared work deadline checked before every read. Short/long streams, errors and
+exhausted budgets retain a fixed unknown reason rather than a prefix digest; failed
+partial reads consume the total byte allowance. The owning ten-second worker deadline
+also bounds native/filesystem calls that cannot be interrupted inside a read.
+
+These hashes identify bytes read from current module paths, without binding those files
+to images mapped earlier: replacement before opening remains possible. Equal basenames
+do not establish file identity, signatures or dependencies; signature, loaded-image and
+dependency verification remain false. Modules loaded and unloaded between snapshots,
 failed DLL loads and data-file modules are not captured; an empty difference cannot
 exclude an attempted ICD or layer. No additional layer/extension, loader override,
 alternate policy or second instance attempt is introduced. Loader/ICD provenance and

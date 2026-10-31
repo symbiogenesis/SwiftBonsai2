@@ -70,15 +70,28 @@ pub struct VulkanInventory {
 
 /// Bounded module-name snapshots around the single Vulkan instance-creation call.
 ///
-/// These are basenames only, without paths, hashes or signature claims. A missing
-/// snapshot is unknown; a snapshot cannot identify attempted or unloaded DLLs,
-/// distinguish files with equal basenames, or establish driver dependencies.
+/// Basename snapshots cannot identify attempted or unloaded DLLs, distinguish
+/// files with equal basenames, or establish driver dependencies. Optional paths
+/// are for a separate bounded file observation; they do not identify mapped bytes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VulkanInstanceModules {
     /// Sorted unique basenames before instance creation, or unknown on failure.
     pub before: Option<Vec<String>>,
     /// Sorted unique basenames after instance creation returns, or unknown.
     pub after: Option<Vec<String>>,
+    /// At most sixteen post-instance loader/new-module paths for bounded auditing.
+    /// Paths may contain private directories and must not enter diagnostic JSON.
+    pub file_candidates: Option<Vec<VulkanModuleFileCandidate>>,
+}
+
+/// One current-process module whose on-disk file may be observed separately.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VulkanModuleFileCandidate {
+    /// Observed basename, without directories.
+    pub name: String,
+    /// Current module path, unknown if its bounded native query failed.
+    /// This is not proof of the identity of the already mapped image.
+    pub path: Option<PathBuf>,
 }
 
 /// One Vulkan physical device; observations do not qualify an inference backend.

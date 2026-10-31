@@ -2,6 +2,9 @@
 
 use serde_json::{Value, json};
 
+#[cfg(windows)]
+mod files;
+
 fn validate(request: &Value) -> crate::Result<()> {
     if request.as_object().is_some_and(serde_json::Map::is_empty) {
         Ok(())
@@ -44,6 +47,7 @@ fn instance_modules(modules: &bonsai_windows_process::VulkanInstanceModules) -> 
         "status": status,
         "before": modules.before, "after": modules.after,
         "newly_observed": newly_observed,
+        "file_observations": files::observe(modules.file_candidates.as_deref()),
         "file_identity_verified": false, "dependencies_verified": false,
     })
 }
@@ -243,6 +247,7 @@ mod tests {
             instance_modules: Some(bonsai_windows_process::VulkanInstanceModules {
                 before: Some(vec!["vulkan-1.dll".into()]),
                 after: Some(vec!["driver.dll".into(), "vulkan-1.dll".into()]),
+                file_candidates: None,
             }),
         });
         let report = failed_query(&error);
@@ -277,8 +282,11 @@ mod tests {
             (Some(vec!["a.dll".into()]), None, "partial"),
             (None, Some(vec!["a.dll".into()]), "partial"),
         ] {
-            let report =
-                instance_modules(&bonsai_windows_process::VulkanInstanceModules { before, after });
+            let report = instance_modules(&bonsai_windows_process::VulkanInstanceModules {
+                before,
+                after,
+                file_candidates: None,
+            });
             assert_eq!(report["status"], status);
             assert!(report["newly_observed"].is_null());
             assert_eq!(report["file_identity_verified"], false);

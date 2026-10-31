@@ -7,7 +7,10 @@ use std::path::PathBuf;
 
 use ash::{Entry, vk};
 
-use crate::{VulkanAdapter, VulkanInstanceModules, VulkanInventory, VulkanQueryFailure};
+use crate::{
+    VulkanAdapter, VulkanInstanceModules, VulkanInventory, VulkanModuleFileCandidate,
+    VulkanQueryFailure,
+};
 
 const MAX_ADAPTERS: usize = 16;
 const MAX_QUEUES: usize = 64;
@@ -54,9 +57,26 @@ fn module_name(buffer: &[u16], count: usize) -> Option<String> {
     Some(name.to_ascii_lowercase())
 }
 
-fn module_basenames() -> Option<Vec<String>> {
+fn file_candidate_indices<T>(before: Option<&[String]>, modules: &[(String, T)]) -> Vec<usize> {
+    modules
+        .iter()
+        .enumerate()
+        .filter(|(_, (name, _))| name == "vulkan-1.dll")
+        .chain(modules.iter().enumerate().filter(|(_, (name, _))| {
+            name != "vulkan-1.dll"
+                && before.is_some_and(|before| before.binary_search(name).is_err())
+        }))
+        .take(16)
+        .map(|(index, _)| index)
+        .collect()
+}
+
+fn module_snapshot(
+    before: Option<&[String]>,
+    capture_paths: bool,
+) -> Option<(Vec<String>, Vec<VulkanModuleFileCandidate>)> {
     use windows_sys::Win32::System::{
-        ProcessStatus::{K32EnumProcessModules, K32GetModuleBaseNameW},
+        ProcessStatus::{K32EnumProcessModules, K32GetModuleBaseNameW, K32GetModuleFileNameExW},
         Threading::GetCurrentProcess,
     };
 
@@ -88,11 +108,39 @@ fn module_basenames() -> Option<Vec<String>> {
         // Win32 validates them. Unload races fail the entire optional snapshot.
         // The writable name buffer has the advertised UTF-16 element count.
         let length = unsafe { K32GetModuleBaseNameW(process, *module, buffer.as_mut_ptr(), 260) };
-        names.push(module_name(&buffer, usize::try_from(length).ok()?)?);
+        names.push((
+            module_name(&buffer, usize::try_from(length).ok()?)?,
+            *module,
+        ));
     }
-    names.sort_unstable();
-    names.dedup();
-    Some(names)
+    // The loader is audited first; remaining candidates are newly observed
+    // basenames. Unknown before-snapshots permit only the known system loader.
+    names.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+    let mut candidates = Vec::new();
+    if capture_paths {
+        for index in file_candidate_indices(before, &names) {
+            let (name, module) = &names[index];
+            let mut buffer = [0_u16; 32768];
+            // SAFETY: The process/opaque module handle came from this snapshot;
+            // Win32 validates unload races. The buffer has its advertised size.
+            let length =
+                unsafe { K32GetModuleFileNameExW(process, *module, buffer.as_mut_ptr(), 32768) };
+            let path = usize::try_from(length)
+                .ok()
+                .filter(|length| *length > 0 && *length < buffer.len())
+                .and_then(|length| {
+                    let path = PathBuf::from(OsString::from_wide(&buffer[..length]));
+                    path.is_absolute().then_some(path)
+                });
+            candidates.push(VulkanModuleFileCandidate {
+                name: name.clone(),
+                path,
+            });
+        }
+    }
+    let mut basenames: Vec<_> = names.into_iter().map(|(name, _)| name).collect();
+    basenames.dedup();
+    Some((basenames, candidates))
 }
 
 fn check(result: vk::Result) -> io::Result<()> {
@@ -167,13 +215,18 @@ fn create_instance(
         .application_name(c"bonsai-inventory")
         .api_version(application_api);
     let create = vk::InstanceCreateInfo::default().application_info(&application);
-    let before = module_basenames();
+    let before = module_snapshot(None, false).map(|(names, _)| names);
     // SAFETY: Initialized create structures have live pointers; no layers or
     // extensions are requested. The instance is destroyed before its Entry.
     let created = unsafe { entry.create_instance(&create, None) };
+    let after = module_snapshot(before.as_deref(), true);
+    let (after, file_candidates) = after.map_or((None, None), |(names, candidates)| {
+        (Some(names), Some(candidates))
+    });
     let modules = VulkanInstanceModules {
         before,
-        after: module_basenames(),
+        after,
+        file_candidates,
     };
     let instance = Instance(created.map_err(|error| {
         io::Error::other(VulkanQueryFailure {
@@ -461,6 +514,24 @@ pub(super) fn query() -> io::Result<VulkanInventory> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn module_file_candidates_prioritize_loader_and_bound_new_images() {
+        let mut modules: Vec<_> = (0..32)
+            .map(|index| (format!("driver-{index:02}.dll"), ()))
+            .collect();
+        modules.push(("vulkan-1.dll".into(), ()));
+        let before = vec!["driver-00.dll".into(), "vulkan-1.dll".into()];
+        let selected = file_candidate_indices(Some(&before), &modules);
+        assert_eq!(selected.len(), 16);
+        assert_eq!(selected[0], 32);
+        assert!(!selected.contains(&0));
+        assert_eq!(file_candidate_indices(None, &modules), vec![32]);
+        assert_eq!(
+            file_candidate_indices(Some(&[]), &[] as &[(String, ())]),
+            Vec::<usize>::new()
+        );
+    }
 
     #[test]
     fn module_snapshots_reject_truncation_paths_controls_and_invalid_utf16() {
