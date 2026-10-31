@@ -29,6 +29,29 @@ fn layout_counts(transcript: &Transcript) -> Vec<usize> {
 }
 
 #[test]
+fn find_discards_replaced_scroll_offsets_before_rendering_shorter_unicode_text() {
+    let mut transcript = Transcript::default();
+    transcript.push(Role::User, "retained hit".to_owned());
+    transcript.push(Role::Assistant, "A long prefix before hit".to_owned());
+    transcript.search.query = "hit".to_owned();
+    let mut chat = harness(transcript);
+    chat.run();
+    chat.state_mut().search.active = 1;
+    let target = chat.state().search.matches.get(1).cloned();
+    chat.state_mut().search.target = target;
+
+    // The old byte offset is beyond the replacement's length and is not a
+    // character boundary. Rendering must never slice with that stale offset.
+    chat.state_mut().replace_response("\u{754c} hit", None);
+    chat.run();
+    assert!(chat.state().search.target.is_none());
+    assert_eq!(chat.state().search.active, 1);
+    assert_eq!(chat.state().search.matches[1].range, 4..7);
+    assert_active_underline_matches_glyphs(&chat.state().messages[1]);
+    assert_eq!(chat.state().messages[0].body_layouts, 1);
+}
+
+#[test]
 fn streamed_reasoning_and_search_only_relayout_affected_message_bodies() {
     let mut transcript = Transcript::default();
     transcript.push(Role::User, "Hit in the first message".to_owned());

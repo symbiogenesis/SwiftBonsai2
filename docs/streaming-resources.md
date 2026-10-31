@@ -31,6 +31,12 @@ by the 4 MiB response cap. They do not bypass the incremental stream limit.
 Committed history keeps its request/response bounds. Unexpected lifecycle-capacity
 exhaustion closes the worker without blocking teardown.
 
+Find retains a queued scroll only while its exact message and UTF-8 range remain
+in the current results. Response replacement, message eviction and closing the
+query discard stale targets before rendering; retained results preserve active
+selection and navigation across prefix eviction. This is a model-free correctness
+boundary; native-device interaction acceptance remains pending.
+
 ## Recovery and startup
 
 | Boundary | Storage and work contract |

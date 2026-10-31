@@ -3,6 +3,40 @@ use super::*;
 use crate::window::transcript::{Role, Transcript};
 
 #[test]
+fn find_refresh_retains_current_scroll_targets_and_discards_evicted_or_closed_results() {
+    let mut transcript = Transcript::default();
+    for _ in 0..super::super::MAX_MESSAGES {
+        transcript.push(Role::User, "hit".to_owned());
+    }
+    transcript.search.query = "hit".to_owned();
+    transcript.search.refresh(&transcript.messages);
+    transcript.search.active = 10;
+    transcript.search.navigate(false);
+    let target = transcript.search.target.clone();
+    // Evicting an earlier message preserves both the active result and queued
+    // scroll target, even though their index changes after the full refresh.
+    transcript.push(Role::Assistant, "new hit".to_owned());
+    transcript.search.refresh(&transcript.messages);
+    assert_eq!(transcript.search.active, 10);
+    assert!(transcript.search.target == target);
+    assert!(transcript.search.matches.get(transcript.search.active) == target.as_ref());
+
+    transcript.search.active = transcript.search.matches.len() - 1;
+    transcript.search.navigate(false);
+    assert_eq!(transcript.search.active, 0);
+    transcript.push(Role::User, "another hit".to_owned());
+    transcript.search.refresh(&transcript.messages);
+    assert!(transcript.search.target.is_none());
+
+    transcript.search.navigate(false);
+    assert!(transcript.search.target.is_some());
+    transcript.search.query.clear();
+    transcript.search.invalidate();
+    transcript.search.refresh(&transcript.messages);
+    assert!(transcript.search.target.is_none());
+}
+
+#[test]
 fn streamed_find_appends_only_new_results_without_rebuilding_completed_caches() {
     let mut transcript = Transcript::default();
     for _ in 0..200 {
