@@ -203,7 +203,7 @@ fn borrowed_payloads_exclude_framing_and_interoperate_with_direct_reads() -> io:
                 assert_eq!(body.fill_buf().await?, b"d");
                 body.consume(1);
             }
-            assert!(body.fill_buf().await?.is_empty());
+            assert_eq!(body.fill_buf().await?, b"");
             assert_eq!(body.remaining_budget, MAX_RESPONSE_BYTES - 4);
             assert_eq!(
                 body.reader.as_ref().map(BufReader::buffer),

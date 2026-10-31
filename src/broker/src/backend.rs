@@ -445,14 +445,14 @@ impl<S: AsyncRead + Unpin> BackendBody<S> {
 }
 
 impl<S: AsyncRead + Unpin> BackendBody<S> {
-    fn advance_payload(&mut self, count: usize) {
-        self.remaining_budget -= count;
+    const fn advance_payload(&mut self, count: usize) {
         self.framing = match self.framing {
             Framing::Length(remaining) => Framing::Length(remaining - count),
             Framing::Data(remaining) if count == remaining => Framing::DataCr,
             Framing::Data(remaining) => Framing::Data(remaining - count),
             _ => return,
         };
+        self.remaining_budget -= count;
     }
 
     // Keep the complete framing state machine visible in one audit boundary.
@@ -576,9 +576,8 @@ impl<S: AsyncRead + Unpin> AsyncBufRead for BackendBody<S> {
 
     fn consume(self: Pin<&mut Self>, amount: usize) {
         let this = self.get_mut();
-        let remaining = match this.framing {
-            Framing::Length(remaining) | Framing::Data(remaining) => remaining,
-            _ => return,
+        let (Framing::Length(remaining) | Framing::Data(remaining)) = this.framing else {
+            return;
         };
         if let Some(reader) = &mut this.reader {
             // AsyncBufRead callers may consume only the slice just exposed.
