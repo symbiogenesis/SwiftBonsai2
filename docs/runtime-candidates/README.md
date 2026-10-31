@@ -275,3 +275,39 @@ Charge this capture together with all other owner-device work against the same
 five-minute total. A pass establishes only these exact model-free startup invocations;
 model loading, Unicode model paths, numerics, adapters, cancellation, release integration
 and the settled-main thread screen remain separate gates.
+
+### Explicit X2 candidate model smoke
+
+The same script accepts `-ModelSmoke -DataDirectory C:/external/provisioned-data`
+to replace the ten model-free probes with one original-PQ2 completion. This
+requires the exact reviewed hosted bundle and a prebuilt supervisor; it downloads
+and builds nothing. It retains the compiled Swift CPU control, 8K context,
+11.5 GiB Job ceiling, 15.5 GiB physical admission and 4 GiB available-memory floor.
+Only the output cap (four tokens), a request to disable thinking and diagnostic counter
+collection differ from that control. No adapter or alternative model is accepted.
+
+```powershell
+./scripts/Invoke-HeadlessPublisherStartup.ps1 `
+  -CandidateDirectory 'C:/external/archived-candidate/candidate' `
+  -ToolPath 'C:/external/prebuilt/bonsai-tools.exe' `
+  -OutputDirectory 'C:/external/fresh-model-smoke' `
+  -ModelSmoke -DataDirectory 'C:/external/provisioned-data' -WorkBudgetSeconds 90
+```
+
+The allowance includes verification of every candidate file and the 7.2 GB model,
+loading, inference and owned teardown. Admission requires at least sixty seconds
+of native allowance, preserving a worker deadline of twenty-four to thirty seconds,
+twenty-four seconds for verification and eleven for teardown, plus the native-call
+margin. A shorter remaining budget leaves the
+gate pending. Charge this allowance together with every other owner-device trial
+against the five-minute total.
+
+A pass requires successful owned exit, hidden prompt echo, nonempty output and
+unique positive prompt, sampler and decode-evaluation counters from the pinned
+logger. The receipt distinguishes actual inference observations from executable
+creation and records the cap separately from sampled tokens. The single response
+does not qualify exact 8K occupancy, complete state, numerical parity, adapters,
+cancellation, quality, speed or release/pin promotion. Diagnostic timing lines are
+retained only as execution evidence; no performance comparison is evaluated.
+Requested reasoning controls do not establish the embedded template's effective
+thinking mode; that remains separately unqualified.
