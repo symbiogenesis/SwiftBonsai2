@@ -1551,6 +1551,43 @@ mod native {
         }
 
         #[test]
+        fn snapshot_collisions_retain_existing_and_completed_evidence_with_native_cleanup()
+        -> io::Result<()> {
+            for (collision, stdout_written, completed) in [
+                ("logits-0.f32le", false, &[][..]),
+                ("state-0.native-seq", false, &["logits-0.f32le"][..]),
+                (
+                    "native-capture.json",
+                    true,
+                    &["logits-0.f32le", "state-0.native-seq"][..],
+                ),
+            ] {
+                reset("");
+                let directory = Directory::new("collision")?;
+                std::fs::write(directory.0.join(collision), b"original evidence")?;
+                let mut output = Vec::new();
+                assert!(mock_capture(&directory, &mut output).is_err());
+                assert_eq!(
+                    std::fs::read(directory.0.join(collision))?,
+                    b"original evidence"
+                );
+                assert_eq!(!output.is_empty(), stdout_written);
+                for name in completed {
+                    assert!(directory.0.join(name).is_file());
+                }
+                assert!(VALID.with(Cell::get));
+                CALLS.with(|calls| {
+                    let calls = calls.borrow();
+                    assert_eq!(
+                        &calls[calls.len() - 4..],
+                        ["free_context", "free_adapter", "free_model", "backend_free"]
+                    );
+                });
+            }
+            Ok(())
+        }
+
+        #[test]
         fn snapshot_creation_preserves_original_bytes_and_refuses_overwrite() -> io::Result<()> {
             struct Cleanup(std::path::PathBuf);
             impl Drop for Cleanup {
