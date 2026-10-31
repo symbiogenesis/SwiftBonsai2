@@ -420,11 +420,34 @@
           "src",
           "TARGET_ARCH=x86_64-linux"
         ],
-        "buildRecipeScope": "documented-source-control-candidate; no-local-build",
-        "ghcIdentity": null,
-        "cabalIdentity": null,
-        "dependencyFreezeIdentity": null,
-        "dependencyConstraintStatus": "upstream-cabal-dependencies-not-version-bounded; pin-GHC-Cabal-index-and-freeze-plan-before-reproducibility-claim",
+        "buildRecipeScope": "hosted-Linux-source-build-and-public-IDL-generation-passed; independent-control-only",
+        "ghcIdentity": {
+          "name": "ghc-9.10.3",
+          "bytes": 424,
+          "sha256": "d7f38f57cb9dd5586966d5935c8ea32b468d7ca66eddbc20bff41d526fb0f3f6",
+          "version": "9.10.3",
+          "scope": "launcher-file-identity; underlying-compiler-closure-pending"
+        },
+        "cabalIdentity": {
+          "name": "cabal",
+          "bytes": 37560632,
+          "sha256": "5bee05b53f093fe6e51521a46e27548b480ab96cdbe8bdc9a41ce6990f09da42",
+          "version": "3.12.1.0",
+          "scope": "hosted-reported-executable-identity; binary-not-retained"
+        },
+        "dependencyFreezeIdentity": [
+          {
+            "name": "file2hs-cabal.project.freeze",
+            "bytes": 277,
+            "sha256": "4f8f56c8657486361f23cc724519bdc8fe0b6ff2e1dae7f47007343b0e73a9e3"
+          },
+          {
+            "name": "qaic-cabal.project.freeze",
+            "bytes": 1028,
+            "sha256": "8fc54632de05d73fb3b0d7eec4440013ae3519dd906441f2ace2b67be4acf360"
+          }
+        ],
+        "dependencyConstraintStatus": "first-hosted-resolution-bound-to-requested-index-and-byte-identical-before-after-freezes; checked-in-replay-and-complete-toolchain-identity-separate",
         "documentedCommandCandidate": [
           "qaic",
           "--map-dll",
@@ -444,11 +467,64 @@
         ],
         "sdkImportedIdlEquivalenceQualified": false,
         "sdkQaicEquivalenceQualified": false,
-        "binaryBuilt": false,
-        "generatorExecuted": false,
-        "generatedOutputIdentity": null,
+        "binaryBuilt": true,
+        "generatorExecuted": true,
+        "generatedOutputIdentity": [
+          {
+            "name": "htp_iface.h",
+            "bytes": 7889,
+            "sha256": "3b02ce54c600a685c0699ddf6d9384daf32d17d968507322f0560279b6ccd656",
+            "copyrightMarkerPresent": false,
+            "bsdClearIdentifierPresent": false
+          },
+          {
+            "name": "htp_iface_skel.c",
+            "bytes": 20188,
+            "sha256": "56f456e821a5fe703117688fcf90c21d313438b7f66447b87e1cbfcf551dab44",
+            "copyrightMarkerPresent": false,
+            "bsdClearIdentifierPresent": false
+          },
+          {
+            "name": "htp_iface_stub.c",
+            "bytes": 16931,
+            "sha256": "8d5b65aec8130cf9017e4b6c98b5534ade42c37b197b21a31122d802ca1bb725",
+            "copyrightMarkerPresent": false,
+            "bsdClearIdentifierPresent": false
+          }
+        ],
         "authority": "independent-model-free-source-control-only; does-not-authorize-device-invoke",
-        "retention": "preserve-reviewed-source-license-and-template-notices; review-actual-generated-output-notices-before-publication"
+        "retention": "immutable public generated-source data with original byte hashes, full QAIC/FastRPC/MIT licenses and input/template notices; no production build consumer",
+        "dependencyPlanIdentity": [
+          {
+            "name": "file2hs-dist-newstyle-cache-plan.json",
+            "bytes": 1678,
+            "sha256": "42b8a2b065b3707b9546cedbdabc75b2d11d33b3500c72b41b103b5e87adfd87"
+          },
+          {
+            "name": "qaic-dist-newstyle-cache-plan.json",
+            "bytes": 6385,
+            "sha256": "945e3f1d9769d88953d1df99dd72a3b52fc4ebd8599be3e478309e1b1e88c988"
+          }
+        ],
+        "observedDependencyResolution": {
+          "requestedIndexState": "2026-10-29T00:00:00Z",
+          "effectiveFreezeIndexState": "2026-10-28T23:27:22Z",
+          "externalPackages": [
+            {
+              "name": "syb",
+              "version": "0.7.4",
+              "unitId": "syb-0.7.4-cc7cdcfd9c4a632d5494d4b83b22e9186ad56e02dd5c4a8c0fa59a4021d3c9c9",
+              "cabalSha256": "db6f86d818f7732a2cb3a7a8cf630642a90c9faef7a13bd5dad136505774605b",
+              "sourceTarSha256": "ddcaca983f67a170c0cfdbd037a268779880e2f9b57f93135eaccb6ae4c5da3f"
+            }
+          ]
+        },
+        "observation": "docs/evidence/hexagon-public-qaic-41169481882/provenance.json",
+        "generatorExecutableIdentity": {
+          "name": "qaic",
+          "bytes": 12077520,
+          "sha256": "3055e6ee3c7fce0d12dd910a3cc63768ab5c0c47bd730754b42969e2ce81c31a"
+        }
       },
       "sdkBuildIdlRecipeIdentity": {
         "archivePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
@@ -588,7 +664,8 @@
         "generatorExecuted": false,
         "generatorCommandAuthorized": false
       },
-      "sdkGeneratorExecutionQualified": false
+      "sdkGeneratorExecutionQualified": false,
+      "publicSourceGenerationStatus": "passed-independent-public-QAIC-build-and-generation-only"
     }
   },
   "budgets": {

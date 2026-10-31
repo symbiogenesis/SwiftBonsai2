@@ -561,9 +561,11 @@ Follow [Hexagon contracts](docs/hexagon.md).
   IDL identities under the [queue provenance gate](docs/hexagon-signed-q2-candidate.md#native-rust-computation-requires-another-reviewed-boundary).
   The [hosted SDK recipe review](docs/evidence/hexagon-sdk-inventory-41168872514/provenance.json)
   retains the host command template and different SDK queue/import bytes. Establish
-  applicable SDK tool/output terms or bind the pinned public-source QAIC control;
-  compare actual declarations/import closure before Rust invocation. Generated
-  stubs, independent wire controls and SDK/public equivalence remain pending.
+  applicable SDK tool/output terms and compare actual declarations/import closure
+  before Rust invocation. Bind the [captured public-source QAIC header/stub/skeleton](docs/evidence/hexagon-public-qaic-41169481882/provenance.json)
+  to independent mock-RPC wire observations and Rust replay. Reproduce the captured
+  dependency resolution and complete compiler identity; public generation alone
+  does not qualify SDK/public marshalling equivalence or the signed device ABI.
   Implement the reviewed queue/IDL, correlated responses, bounded waits, in-use
   buffer retention and stop/drain contract before submitting a device kernel.
 - Start with `blk.0.ffn_up.weight`, K=5120/M=17408/N=1, keeping transforms, adapter

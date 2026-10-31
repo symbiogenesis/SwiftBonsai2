@@ -5,6 +5,11 @@ on:
     paths:
       - .github/workflows/hexagon-public-qaic.yml
       - tools/hexagon/public_qaic_oracle.py
+      - tools/hexagon/public_qaic_wire.py
+      - tools/hexagon/public_qaic_wire.c
+      - tools/hexagon/public_idl_rust.py
+      - tools/hexagon/public_idl_control.rs
+      - tools/hexagon/public-qaic-wire.expected.json
       - tools/hexagon/public-qaic.lock.json
   workflow_dispatch:
 permissions:
@@ -29,6 +34,12 @@ jobs:
         with:
           ghc-version: '9.10.3'
           cabal-version: '3.12.1.0'
+      - name: Select the independent Rust encoder compiler
+        id: rust
+        uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-x86_64-unknown-linux-gnu
+          components: ''
       - name: Freeze, build and run only the independent public-source generator
         shell: bash
         working-directory: ${{ runner.temp }}
@@ -36,7 +47,7 @@ jobs:
           RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
-          python3 -B "$GITHUB_WORKSPACE/tools/hexagon/public_qaic_oracle.py" --source "$GITHUB_WORKSPACE/.hexagon-public-qaic-source" --pin "$GITHUB_WORKSPACE/tools/hexagon/public-qaic.lock.json" --output "$RUNNER_TEMP/SwiftBonsai-Public-QAIC"
+          python3 -B "$GITHUB_WORKSPACE/tools/hexagon/public_qaic_oracle.py" --source "$GITHUB_WORKSPACE/.hexagon-public-qaic-source" --pin "$GITHUB_WORKSPACE/tools/hexagon/public-qaic.lock.json" --output "$RUNNER_TEMP/SwiftBonsai-Public-QAIC" --rustc "${{ steps.rust.outputs.toolchain-path }}/bin/rustc"
       - name: Retain public-source notices, dependency resolution and generated controls
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

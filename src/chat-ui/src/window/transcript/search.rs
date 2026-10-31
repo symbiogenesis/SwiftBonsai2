@@ -206,8 +206,14 @@ impl Search {
             self.cached_messages
                 .retain(|_, cached| cached.epoch == epoch);
         }
+        self.reconcile_selection(previous.as_ref());
+        if old_matches != self.matches {
+            self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    fn reconcile_selection(&mut self, previous: Option<&Match>) {
         self.active = previous
-            .as_ref()
             .and_then(|previous| self.matches.iter().position(|found| found == previous))
             .unwrap_or_else(|| self.active.min(self.matches.len().saturating_sub(1)));
         // A queued scroll can outlive replacement or prefix eviction. Only
@@ -218,9 +224,6 @@ impl Search {
             .is_some_and(|target| !self.matches.contains(target))
         {
             self.target = None;
-        }
-        if old_matches != self.matches {
-            self.revision = self.revision.wrapping_add(1);
         }
     }
 
