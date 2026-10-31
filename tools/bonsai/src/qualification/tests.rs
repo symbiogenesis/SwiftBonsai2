@@ -246,7 +246,7 @@ fn legacy_bom_decoders_and_strict_unmarked_utf8() -> Result<()> {
     let text = "{\"response\":\"snowman \u{2603} seedling \u{1f331}\"}";
     let mut utf8 = vec![0xef, 0xbb, 0xbf];
     utf8.extend_from_slice(text.as_bytes());
-    assert_eq!(decode_text(&utf8)?, text);
+    assert_eq!(decode_text(utf8)?, text);
     for little in [true, false] {
         let mut utf16 = if little {
             vec![0xff, 0xfe]
@@ -260,7 +260,7 @@ fn legacy_bom_decoders_and_strict_unmarked_utf8() -> Result<()> {
                 unit.to_be_bytes()
             });
         }
-        assert_eq!(decode_text(&utf16)?, text);
+        assert_eq!(decode_text(utf16.clone())?, text);
         // A lone surrogate and a trailing byte each contribute a replacement
         // character. Their exact order is part of the evidence text identity.
         for (units, expected) in [
@@ -277,9 +277,9 @@ fn legacy_bom_decoders_and_strict_unmarked_utf8() -> Result<()> {
                     unit.to_be_bytes()
                 });
             }
-            assert_eq!(decode_text(&encoded)?, expected);
+            assert_eq!(decode_text(encoded.clone())?, expected);
             encoded.push(0xff);
-            assert_eq!(decode_text(&encoded)?, format!("{expected}\u{fffd}"));
+            assert_eq!(decode_text(encoded)?, format!("{expected}\u{fffd}"));
         }
         let mut utf32 = if little {
             vec![0xff, 0xfe, 0, 0]
@@ -294,17 +294,34 @@ fn legacy_bom_decoders_and_strict_unmarked_utf8() -> Result<()> {
                 unit.to_be_bytes()
             });
         }
-        assert_eq!(decode_text(&utf32)?, text);
+        assert_eq!(decode_text(utf32)?, text);
     }
-    assert_eq!(decode_text(&[0xff, 0xfe, 0])?, "\u{fffd}");
-    assert_eq!(decode_text(&[0xff, 0xfe, 0, 0xd8])?, "\u{fffd}");
-    assert_eq!(decode_text(&[0xff, 0xfe, 0, 0, 0, 0xd8, 0, 0])?, "\u{fffd}");
-    assert_eq!(decode_text(&[0xff, 0xfe, 0, 0, 65, 0, 0])?, "\u{fffd}");
+    assert_eq!(decode_text(vec![0xff, 0xfe, 0])?, "\u{fffd}");
+    assert_eq!(decode_text(vec![0xff, 0xfe, 0, 0xd8])?, "\u{fffd}");
     assert_eq!(
-        decode_text(&[0xef, 0xbb, 0xbf, 0xc0, 0x80])?,
+        decode_text(vec![0xff, 0xfe, 0, 0, 0, 0xd8, 0, 0])?,
+        "\u{fffd}"
+    );
+    assert_eq!(decode_text(vec![0xff, 0xfe, 0, 0, 65, 0, 0])?, "\u{fffd}");
+    assert_eq!(
+        decode_text(vec![0xef, 0xbb, 0xbf, 0xc0, 0x80])?,
         "\u{fffd}\u{fffd}"
     );
-    assert!(decode_text(&[0xc0, 0x80]).is_err());
+    assert!(decode_text(vec![0xc0, 0x80]).is_err());
+    Ok(())
+}
+
+#[test]
+fn unmarked_utf8_decoding_reuses_input_allocation() -> Result<()> {
+    let text = "{\"response\":\"snowman \u{2603} seedling \u{1f331}\"}";
+    let mut bytes = Vec::with_capacity(1024);
+    bytes.extend_from_slice(text.as_bytes());
+    let pointer = bytes.as_ptr();
+    let capacity = bytes.capacity();
+    let decoded = decode_text(bytes)?;
+    assert_eq!(decoded, text);
+    assert_eq!(decoded.as_ptr(), pointer);
+    assert_eq!(decoded.capacity(), capacity);
     Ok(())
 }
 
