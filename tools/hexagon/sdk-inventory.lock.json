@@ -34,6 +34,8 @@
   ],
   "intendedQaicPath": "6.7.0.0/ipc/fastrpc/qaic/bin/qaic.exe",
   "requiredRecipePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+  "requiredRecipeBytes": 36308,
+  "requiredRecipeSha256": "805e17e0df4e3a476038c66e7f08787a017e62a9432c2d100212fd9a972cdd85",
   "limits": {
     "downloadSeconds": 240,
     "inventorySeconds": 360,
@@ -43,7 +45,11 @@
     "selectedBytes": 134217728,
     "selectedFileBytes": 67108864,
     "receiptBytes": 1048576,
-    "reviewWordsPerFile": 25
+    "reviewWordsPerFile": 25,
+    "recipeFunctions": 16,
+    "recipeStatements": 256,
+    "recipeStatementTokens": 128,
+    "recipeTokenCharacters": 512
   },
   "generatedSourceRedistribution": "pending-license-review; metadata-and-bounded-review-excerpts-only",
   "generatorExecutionAllowed": false,
