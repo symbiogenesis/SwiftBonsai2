@@ -34,10 +34,10 @@
       "digestSource": "https://api.github.com/repos/qualcomm/GenieX/releases/tags/v0.8.0",
       "downloadedOrExecutedBySourceAudit": false
     },
-    "signatureEvidence": "publisher-release-reports-Microsoft-signed-HTP-catalog; local-catalog-membership-chain-and-driver-access-pending",
+    "signatureEvidence": "local-v81-catalog-membership-and-chain-verified; direct-Rust-driver-capabilities-observed; installed-DSP-deployment-and-compute-pending",
     "supportedMatmulWeightsAtBundledSource": ["Q4_0", "Q4_1", "Q8_0", "IQ4_NL", "MXFP4", "Q4_K", "Q6_K", "F16", "F32"],
     "swiftPackedTypesAtBundledSource": "unsupported",
-    "modelFreeTestExecutable": "LLAMA_BUILD_TESTS-OFF; hosted-fixture-build-required",
+    "modelFreeTestExecutable": "LLAMA_BUILD_TESTS-OFF; standalone-Rust-numeric-fixture-prepared; hosted-build-and-device-dispatch-pending",
     "qualification": "device-access-only; not-a-Swift-runtime"
   },
   "otherSourceLeads": [
