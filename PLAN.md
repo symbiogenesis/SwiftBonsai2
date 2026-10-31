@@ -164,6 +164,15 @@ observations in a future bounded owner window; the retained failed receipt does
 not close them. Preserve the passed settled-main release integration in the
 [main record](docs/evidence/prism-main-integration.json).
 
+- Add bounded Prism-owned actual-model acceptance for the released private HTTP
+  service and its internal model worker: canonical counting/generation, adapter
+  readiness, scale changes, active cancellation, reset, rollback and stale-state
+  rejection. Runner lifecycle receipts alone do not close this Prism-owned gate.
+  Before capturing a released artifact with a later main test harness, version the
+  evidence contract to bind tested release/source/bytes separately from the exact
+  owning main harness/workflow/run and retained artifact identities. Preserve
+  exact-source runtime Foundation/conformance gates and independent review; the
+  current single-revision policy cannot represent these two revisions honestly.
 - Release the reviewed Windows read-consumer helper API through the registry,
   replace Prism server's exact Git dependency with that reviewed registry release,
   and validate packaging before re-enabling server crate publication. Preserve
