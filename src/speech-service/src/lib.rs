@@ -81,7 +81,7 @@ pub struct Audio {
 }
 
 /// Completed inference output, retained in memory until its HTTP response ends.
-pub enum Output {
+pub enum Output<S = Vec<f32>> {
     /// Plain recognition output, never automatically submitted as a chat prompt.
     Transcript(String),
     /// Complete voice-design waveform with no reference recording or preset.
@@ -94,7 +94,7 @@ pub enum Output {
     /// headers, and drops this owner after the response or any failure.
     Waveform {
         /// Immutable complete samples, owned for the lifetime of this object.
-        samples: Box<dyn AsRef<[f32]>>,
+        samples: S,
         /// Output must use the fixed 24,000 Hz service rate.
         sample_rate: u32,
     },
@@ -102,6 +102,9 @@ pub enum Output {
 
 /// An already loaded native model implementation.
 pub trait Engine {
+    /// Concrete complete-waveform owner, retained through validation and delivery.
+    type Waveform: AsRef<[f32]>;
+
     /// Returns the fixed protocol and checkpoint family implemented here.
     fn kind(&self) -> Kind;
     /// Runs exactly one bounded inference. Errors must not contain user data.
@@ -109,7 +112,7 @@ pub trait Engine {
     /// # Errors
     /// Return an error for failed or incomplete generation. The protocol emits
     /// only a value-free model-failure code, without formatting this error.
-    fn infer(&mut self, request: Request<'_>) -> io::Result<Output>;
+    fn infer(&mut self, request: Request<'_>) -> io::Result<Output<Self::Waveform>>;
     /// Whether this engine implements bounded incremental mono 24 kHz output.
     fn streaming_pcm(&self) -> bool {
         false

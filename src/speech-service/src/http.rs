@@ -130,8 +130,8 @@ fn respond(
     .map_err(|_| Error::new(0, "response_failed"))
 }
 
-fn complete_wave(
-    audio: Output,
+fn complete_wave<S: AsRef<[f32]>>(
+    audio: Output<S>,
     send: impl FnOnce(&[f32], &[u8; 44]) -> io::Result<()>,
 ) -> Result<(), Error> {
     let (samples, sample_rate) = match &audio {
@@ -139,7 +139,7 @@ fn complete_wave(
         Output::Waveform {
             samples,
             sample_rate,
-        } => (samples.as_ref().as_ref(), *sample_rate),
+        } => (samples.as_ref(), *sample_rate),
         Output::Transcript(_) => return Err(Error::new(502, "model_failure")),
     };
     let header = wave::header(samples, sample_rate)?;
@@ -583,11 +583,11 @@ mod pcm_tests {
             };
             let storage = samples.as_ptr();
             let audio = Output::Waveform {
-                samples: Box::new(SampleOwner {
+                samples: SampleOwner {
                     samples,
                     drops: Rc::clone(&drops),
                     borrows: Rc::clone(&borrows),
-                }),
+                },
                 sample_rate: if case == 5 { 16_000 } else { 24_000 },
             };
             let mut writes = 0;

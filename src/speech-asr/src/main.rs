@@ -16,6 +16,8 @@ struct NativeEngine {
 }
 
 impl Engine for NativeEngine {
+    type Waveform = Vec<f32>;
+
     fn kind(&self) -> Kind {
         Kind::Canary
     }

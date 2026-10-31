@@ -21,6 +21,8 @@ struct Fake {
     transcript: String,
 }
 impl Engine for Fake {
+    type Waveform = Vec<f32>;
+
     fn kind(&self) -> Kind {
         self.kind
     }
@@ -61,6 +63,8 @@ struct StreamFake {
 }
 
 impl Engine for StreamFake {
+    type Waveform = Vec<f32>;
+
     fn kind(&self) -> Kind {
         Kind::QwenTts
     }
@@ -512,6 +516,8 @@ fn watchdog_terminates_only_its_companion_on_disconnect_extra_data_and_deadline(
 struct CompletionFake(bool);
 
 impl Engine for CompletionFake {
+    type Waveform = Vec<f32>;
+
     fn kind(&self) -> Kind {
         Kind::QwenTts
     }
@@ -522,7 +528,7 @@ impl Engine for CompletionFake {
         self.0 = !self.0;
         if self.0 {
             return Ok(Output::Waveform {
-                samples: Box::new(vec![0.0; 4]),
+                samples: vec![0.0; 4],
                 sample_rate: 24_000,
             });
         }
@@ -707,6 +713,8 @@ struct AudioFake(Option<Audio>);
 struct WaveformFake(Option<Audio>);
 
 impl Engine for WaveformFake {
+    type Waveform = Vec<f32>;
+
     fn kind(&self) -> Kind {
         Kind::QwenTts
     }
@@ -717,7 +725,7 @@ impl Engine for WaveformFake {
             .take()
             .ok_or_else(|| io::Error::other("Waveform already taken."))?;
         Ok(Output::Waveform {
-            samples: Box::new(audio.samples),
+            samples: audio.samples,
             sample_rate: audio.sample_rate,
         })
     }
@@ -752,6 +760,8 @@ fn native_owned_and_vector_waveforms_emit_identical_complete_http_responses() ->
 }
 
 impl Engine for AudioFake {
+    type Waveform = Vec<f32>;
+
     fn kind(&self) -> Kind {
         Kind::QwenTts
     }
