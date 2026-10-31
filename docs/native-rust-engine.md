@@ -285,9 +285,11 @@ Runner revision. PTQ1 is evaluated separately.
 
 ### Unreleased parity candidates
 
-The [source candidate record](evidence/prism-native-gap-candidate.json) binds two
-upstream changes awaiting settled-main owning checks and released-byte integration:
-Windows CNG GGUF verification and explicit private-service `--prompt-reuse latest`.
+The [main integration record](evidence/prism-main-integration.json) binds the
+merged Windows CNG GGUF verification and explicit private-service
+`--prompt-reuse latest` changes, and the 0.1.10 release preparation. Owning
+settled-main checks and reviewed released bytes qualify separately from the
+earlier [candidate controls](evidence/prism-native-gap-candidate.json).
 The hash path still verifies every selected byte through the existing handle.
 The reuse candidate retains only latest committed live state at identical adapter
 scale bits, recomputes mismatched histories and preserves transactional rollback.
