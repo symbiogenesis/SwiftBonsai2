@@ -31,13 +31,13 @@ runs:
       with:
         # Only the four static libraries and their receipt; no stale CMake paths.
         path: ${{ runner.temp }}/BQ-CI
-        key: qwen-static-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-${{ hashFiles('Cargo.lock', 'src/speech-tts/build*.rs', 'src/speech-tts/tests/reference/philox.h', 'src/speech-tts/model*.lock.json', 'config/native-speech.lock.json', 'scripts/Bonsai.NativeSpeech.psm1', 'tools/bonsai/src/speech_build.rs', '.github/actions/native-speech/action.yml', 'rust-toolchain.toml') }}
+        key: qwen-static-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.BROKER_CACHE_HOST }}-${{ hashFiles('Cargo.lock', 'src/speech-tts/build*.rs', 'src/speech-tts/tests/reference/*.h', 'src/speech-tts/model*.lock.json', 'config/native-speech.lock.json', 'scripts/Bonsai.NativeSpeech.psm1', 'tools/bonsai/src/speech_build.rs', '.github/actions/native-speech/action.yml', 'rust-toolchain.toml') }}
     - name: Build missing static libraries with the reviewed Cargo build script
       if: inputs.lane == 'tts' && steps.static-cache.outputs.cache-hit != 'true'
       shell: pwsh
       working-directory: ${{ runner.temp }}
       env:
-        STATIC_SOURCE_ID: ${{ hashFiles('Cargo.lock', 'src/speech-tts/build*.rs', 'src/speech-tts/tests/reference/philox.h', 'src/speech-tts/model*.lock.json', 'config/native-speech.lock.json', 'scripts/Bonsai.NativeSpeech.psm1', 'tools/bonsai/src/speech_build.rs', '.github/actions/native-speech/action.yml', 'rust-toolchain.toml') }}
+        STATIC_SOURCE_ID: ${{ hashFiles('Cargo.lock', 'src/speech-tts/build*.rs', 'src/speech-tts/tests/reference/*.h', 'src/speech-tts/model*.lock.json', 'config/native-speech.lock.json', 'scripts/Bonsai.NativeSpeech.psm1', 'tools/bonsai/src/speech_build.rs', '.github/actions/native-speech/action.yml', 'rust-toolchain.toml') }}
       run: |
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'
@@ -67,7 +67,7 @@ runs:
       shell: pwsh
       working-directory: ${{ runner.temp }}
       env:
-        STATIC_SOURCE_ID: ${{ hashFiles('Cargo.lock', 'src/speech-tts/build*.rs', 'src/speech-tts/tests/reference/philox.h', 'src/speech-tts/model*.lock.json', 'config/native-speech.lock.json', 'scripts/Bonsai.NativeSpeech.psm1', 'tools/bonsai/src/speech_build.rs', '.github/actions/native-speech/action.yml', 'rust-toolchain.toml') }}
+        STATIC_SOURCE_ID: ${{ hashFiles('Cargo.lock', 'src/speech-tts/build*.rs', 'src/speech-tts/tests/reference/*.h', 'src/speech-tts/model*.lock.json', 'config/native-speech.lock.json', 'scripts/Bonsai.NativeSpeech.psm1', 'tools/bonsai/src/speech_build.rs', '.github/actions/native-speech/action.yml', 'rust-toolchain.toml') }}
       run: |
         Set-StrictMode -Version Latest
         $ErrorActionPreference = 'Stop'

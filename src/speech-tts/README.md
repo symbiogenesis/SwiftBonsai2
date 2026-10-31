@@ -2,10 +2,11 @@
 
 This library owns the native Qwen3-TTS 1.7B VoiceDesign GGML engine through a
 small Rust binding to its public C ABI. Safe Rust initializes the complete
-parameter structures, selects bounded CPU thread counts and implements shared
-Philox random draws for the semantic and predictor samplers. A reviewed build helper
-routes native thread selection and random draws to Rust and adds a SIMD compile
-guard to a private copy of the external C++ core. The default talker
+parameter structures, selects bounded CPU thread counts, masks reserved tokens,
+applies repetition penalties and implements shared Philox random draws for the
+semantic and predictor samplers. A reviewed build helper routes these helpers
+to Rust and adds a SIMD compile guard to a private copy of the external C++ core.
+The default talker
 and codec are independently pinned Q8_0 GGUF conversions
 of the named upstream checkpoints; the calling service must verify and retain all artifact files
 before loading. Model identity, immutable URLs, byte lengths and SHA-256 values
@@ -103,7 +104,7 @@ logical CPU query remains unchanged; Rust owns the atomic override and fallback
 policy. Exact replacement anchors reject mismatched inputs. The immutable
 provisioned source cache is never patched. Cached native libraries must include
 this overlay; the hosted cache identity covers all build helper sources and
-the embedded pinned Philox source anchor.
+the embedded pinned Philox and sampling source anchors.
 The build script builds only the external CPU
 static `qwen-core` target; Cargo compiles all Runner-owned glue as Rust. The
 third-party Qwen/GGML inference core still requires a C++ compiler. Shared libraries, dynamic backend
@@ -146,7 +147,7 @@ code, allocations or additional dependencies. Both native stochastic samplers
 call its private scalar C ABI export. The build overlay replaces the complete
 native `philox.h` algorithm with that declaration and rewrites each single-draw
 call, preserving the seed, subsequence and counter arguments. Changed source
-anchors reject the build. The sampler policy and GGML graph stay upstream.
+anchors reject the build. The probability pipeline and GGML graph stay upstream.
 
 Wrapping integer arithmetic, signed seed/subsequence bit patterns and separate
 f32 rounding match the pinned source. Its upper endpoint can round to `1.0`;
@@ -156,13 +157,31 @@ against the unmodified C++ source in `tests/reference/philox.h`. That source is
 compiled only into the independent test oracle. The derived Rust module and
 reference retain the attribution in `LICENSE.qwen-core`.
 
-The source audit also considered the BPE tokenizer, sampling policy, mel
-constants and resampler. BPE needs vocabulary/lifecycle integration and exact
-Unicode/token qualification; sampling policy and mel changes need separate
+`src/sampling.rs` also ports the pinned `apply_suppress` and
+`apply_repetition_penalty` helpers as safe slice operations. Suppression clips
+the reserved interval and preserves the selected EOS token. Repetition applies
+the penalty to each valid history token at most once, preserving the sign test and f32
+multiply/divide order. The native caller retains its reusable seen-token buffer;
+the Rust helpers allocate nothing. The private build overlay replaces both
+complete helper bodies and checks the entire original `sampling.h` against
+`tests/reference/sampling.h`. That unmodified header remains an independent
+model-free C++ oracle for 722 bit-comparison cases, including duplicate/invalid
+token IDs, signed zero and exceptional float inputs. Focused checks also compile
+the generated native header and exercise empty/no-op ABI calls and source drift.
+
+The source audit retains the BPE tokenizer, probability pipeline, mel constants
+and resampler upstream. BPE needs vocabulary/lifecycle integration and exact
+Unicode/token qualification; top-k/top-p ordering and mel changes need separate
 numerical evidence. Resampling is outside the current already-24-kHz reference
-path. These larger native helpers retain their existing ownership and numerical
-boundaries. Full-model speech output, quality and resource acceptance remain CI work
+path. Full-model speech output, quality and resource acceptance remain CI work
 under `PLAN.md`; bit parity alone makes no performance claim.
+
+The remaining checked-in C++ in Runner collects pinned native inference results
+or tests the native overlay. Prism's remaining native files are independent
+conformance bridges and C ABI checks; its serving runtime is already Rust.
+These references retain their native implementation so they can detect Rust
+porting errors. Replacing the speech inference cores requires separate model
+and lifecycle qualification.
 
 ## Native waveform ownership
 
