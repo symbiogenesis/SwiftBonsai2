@@ -117,6 +117,25 @@ if ($Case -ceq 'Plan') {
     $referenceRefused.moduleOpenResult = $null
     $checked = Get-BonsaiHexagonSessionProbeResult -Json ($referenceRefused | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization
     Assert (-not $checked.passed -and $checked.processInitializationResult -eq 14 -and $checked.ownerPinnedUntilExit -and -not $checked.remoteModuleOpened) 'A refused reference request was confused with module opening or released ownership.'
+    foreach ($field in @('domainResult','effectiveDomain')) {
+        $changed = $referenceRefused.Clone(); $changed[$field] = $null
+        Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'Reference process initialization bypassed successful effective-domain preparation.'
+    }
+    $changed = $referenceRefused.Clone(); $changed.domainResult = 14
+    Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A refused effective-domain request permitted reference initialization.'
+    $changed = $referenceRefused.Clone(); $changed.effectiveDomain = -1
+    Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A negative effective domain permitted reference initialization.'
+    $changed = $referenceRefused.Clone(); $changed.architectureRaw = 0x82; $changed.architecture = $null
+    Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'An unsupported architecture permitted reference initialization.'
+    $changed = $referenceRefused.Clone(); $changed.uriResult = 0
+    Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A refused reference initialization continued into URI preparation.'
+    $changed = $referenceRefused.Clone(); $changed.uriVerified = $true
+    Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A refused reference initialization verified an unrequested URI.'
+    $contractChanged = $referenceRefused.Clone(); $contractChanged.stage = 'reference-process-init-contract-changed-pinned'; $contractChanged.processInitializationResult = 0
+    $checked = Get-BonsaiHexagonSessionProbeResult -Json ($contractChanged | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization
+    Assert (-not $checked.passed -and $checked.unsignedProcessRequested -and $checked.ownerPinnedUntilExit -and $null -eq $checked.uriResult) 'A changed native init input lost its precise completed-control/blocked-URI observation.'
+    $changed = $contractChanged.Clone(); $changed.uriResult = 0
+    Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A changed native init input continued into URI preparation.'
     $changed = $referenceRefused.Clone(); $changed.ownerPinnedUntilExit = $false
     Assert-Failure { Get-BonsaiHexagonSessionProbeResult -Json ($changed | ConvertTo-Json -Depth 8) -ExitCode 0 -ReferenceInitialization } 'A completed reference-process request released its owner.'
     $referenceUriRefused = $referenceRefused.Clone(); $referenceUriRefused.stage = 'session-metadata-incomplete'; $referenceUriRefused.metadataStage = 'session-uri-refused'
