@@ -159,6 +159,8 @@ def run(args):
         "sourceSha256": digest(Path(__file__)), "pinSha256": digest(args.pin),
         "outcome": "pending", "stage": "source-identity", "generatorExecuted": False,
         "generatorAttempted": False, "generatorCompleted": False,
+        "versionQueryAttempted": False, "versionQueryCompleted": False,
+        "idlGenerationAttempted": False, "idlGenerationCompleted": False,
         "hackageIndexState": pin["hackageIndexState"], "sourceFiles": [], "publicInputs": [],
         "toolchain": {}, "dependencyResolution": [], "generatedFiles": [], "commands": control.commands,
         "sdkExecutableUsed": False, "sdkImportsUsed": False,
@@ -230,15 +232,20 @@ def run(args):
                 raise ValueError("upstream build changed its preselected dependency freeze")
         executable = source / "Linux_ReleaseG/ship/qaic"
         report["generatorExecutable"] = identity(executable)
+        report["generatorAttempted"] = True
+        report["generatorExecuted"] = None
+        report["versionQueryAttempted"] = True
         control.run("source-generator-version", [str(executable), "--version"], args.output)
+        report["generatorExecuted"] = True
+        report["versionQueryCompleted"] = True
         report["stage"] = "independent-IDL-generation"
         arguments = [str(executable), "--map-dll", "--include-path=" + str(inputs),
                      "--output-path=" + str(generated), str(inputs / "htp_iface.idl")]
-        report["generatorAttempted"] = True
-        report["generatorExecuted"] = None
+        report["idlGenerationAttempted"] = True
         control.run("independent-generation", arguments, args.output, seconds=15)
         report["generatorExecuted"] = True
         report["generatorCompleted"] = True
+        report["idlGenerationCompleted"] = True
         files = list(generated.iterdir())
         if sorted(path.name for path in files) != sorted(pin["expectedGeneratedFiles"]):
             raise ValueError("public generator output set differs from the fixed IDL contract")
