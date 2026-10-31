@@ -1321,7 +1321,7 @@ async fn required_adapter_scale_history(
             body["abliteration_scale"] = json!(2.000_000_01);
             // Generic schema failures close the authenticated connection;
             // framed HTTP 400 is reserved for model-control token rejection.
-            assert!(exchange(port, credential, &body).await.is_empty());
+            assert_eq!(exchange(port, credential, &body).await, [] as [u8; 0]);
             report["scaleHistoryWorkload"]["invalidScaleRejected"] = json!(true);
             report["scaleHistoryWorkload"]["invalidScaleDisposition"] =
                 json!("connection-closed-without-response");
@@ -1460,7 +1460,7 @@ async fn adapter_requests(
             let mut body =
                 adapter_request(json!([{"role":"user","content":"Name a tree."}]), 1.3, 2);
             body["abliteration_scale"] = json!(2.000_000_01);
-            assert!(exchange(port, credential, &body).await.is_empty());
+            assert_eq!(exchange(port, credential, &body).await, [] as [u8; 0]);
             report["invalidScaleRejected"] = json!(true);
             report["invalidScaleDisposition"] = json!("connection-closed-without-response");
             save_acceptance_report(evidence, report);
