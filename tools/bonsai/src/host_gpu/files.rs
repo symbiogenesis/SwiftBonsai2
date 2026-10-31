@@ -34,7 +34,7 @@ fn digest(
     let mut reader = reader.take(expected_bytes + 1);
     let mut hash = Sha256::new();
     let mut bytes = 0_u64;
-    let mut buffer = [0_u8; 64 * 1024];
+    let mut buffer = vec![0_u8; 64 * 1024];
     loop {
         if Instant::now() >= budget.deadline {
             return Err("time-budget-exhausted");

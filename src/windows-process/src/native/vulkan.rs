@@ -120,7 +120,7 @@ fn module_snapshot(
     if capture_paths {
         for index in file_candidate_indices(before, &names) {
             let (name, module) = &names[index];
-            let mut buffer = [0_u16; 32768];
+            let mut buffer = vec![0_u16; 32768];
             // SAFETY: The process/opaque module handle came from this snapshot;
             // Win32 validates unload races. The buffer has its advertised size.
             let length =
