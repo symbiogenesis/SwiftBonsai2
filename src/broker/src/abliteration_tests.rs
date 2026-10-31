@@ -203,7 +203,7 @@ mod transport {
                 let mut client = request(service.port(), 2.000_000_01).await;
                 let mut bytes = Vec::new();
                 client.read_to_end(&mut bytes).await.unwrap();
-                assert!(bytes.is_empty());
+                assert_eq!(bytes, [] as [u8; 0]);
                 assert_eq!(
                     rejected.await.unwrap(),
                     Err(ServiceError::Request(ServeError::Receive(
