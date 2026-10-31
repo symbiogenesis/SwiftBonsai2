@@ -1,7 +1,7 @@
 #requires -Version 7.6
 [CmdletBinding()]
 [OutputType([string])]
-param([ValidateSet('All','Plan','Selection','Provision')][string]$Case = 'All')
+param([ValidateSet('All','Plan','Selection','Provision','EvaluationPolicy')][string]$Case = 'All')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
@@ -19,6 +19,39 @@ if (-not [IO.Path]::IsPathFullyQualified($scratch) -or $scratch -match '%[^%]+%'
     throw 'Expected expanded absolute scratch storage.'
 }
 [void][IO.Directory]::CreateDirectory($scratch)
+
+if ($Case -in @('All','EvaluationPolicy')) {
+    $identity = @{
+        GITHUB_ACTIONS = 'true'; GITHUB_REF = 'refs/heads/main'
+        GITHUB_REPOSITORY = 'symbiogenesis/SwiftBonsai2Runner'; RUNNER_ENVIRONMENT = 'self-hosted'
+    }
+    $previous = @{}
+    foreach ($name in $identity.Keys) {
+        $previous[$name] = [Environment]::GetEnvironmentVariable($name)
+    }
+    $evaluation = Join-Path $repo 'scripts/Invoke-TtsEvaluation.ps1'
+    $uncreated = Join-Path $scratch 'uncreated evaluation'
+    try {
+        foreach ($name in $identity.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $identity[$name])
+        }
+        foreach ($environment in @('self-hosted', '', 'unknown')) {
+            [Environment]::SetEnvironmentVariable('RUNNER_ENVIRONMENT', $environment)
+            $failure = $null
+            try {
+                # An absent tool proves rejection precedes tool resolution,
+                # native builds, model provisioning and evidence creation.
+                & $evaluation -DataDirectory $uncreated -EvidenceDirectory $uncreated -ToolPath (Join-Path $uncreated 'absent.exe')
+            } catch { $failure = $_.Exception.Message }
+            Assert ($null -ne $failure -and $failure.Contains('complete five-minute budget')) 'The owner-device matrix reached preparation or failed without retaining its pending budget gate.'
+            Assert (-not [IO.Directory]::Exists($uncreated)) 'Rejected owner-device evaluation created preparation or model storage.'
+        }
+    } finally {
+        foreach ($name in $previous.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $previous[$name])
+        }
+    }
+}
 
 if ($Case -in @('All','Plan')) {
     $data = Join-Path $scratch 'uncreated data [literal]'

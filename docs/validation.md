@@ -228,10 +228,20 @@ observation before/after shutdown and last phase/sample count. Pre-shutdown exit
 rejects even after complete audio; an earlier failure retains precedence.
 Failed sessions cannot enter completed paired comparisons.
 
-All execution, even one short profile, remains CI-only; the script rejects local
-runs. `Invoke-TtsEvaluation.ps1 -PlanOnly` inspects locally without provisioning/loading.
+All execution, even one short profile, remains GitHub-hosted CI-only; the script
+and native supervisor reject local, self-hosted and unknown runner environments.
+The retained `snapdragon` dispatch target fails on a hosted runner before checkout,
+build or download, without queuing laptop work. The full matrix does not enforce
+the complete five-minute owner-device budget across native builds, fresh model
+provisioning and multiple bootstrap/warm sessions. X1-to-X2 speech migration and actual-model
+speech acceptance remain pending a hosted-prepared reduced workload with one
+aggregate setup/loading/comparison/cleanup allowance; repeated shorter runs cannot
+partition this matrix. Host-partitioned cache checks alone do not close those gates.
+`Invoke-TtsEvaluation.ps1 -PlanOnly` inspects locally without provisioning/loading.
 Focused `speech_evaluation::tests::`/`speech_evaluation::windows::tests::` cover schedules,
 context, phases, incomplete Stop, counter domains and prelaunch rejection.
+`Test-SpeechModels.ps1 -Case EvaluationPolicy` checks self-hosted, missing and
+unknown environments reject before tool resolution or preparation storage.
 [Hosted resource evidence](performance-expectations.md#q4-speech-resource-comparison)
 describes that CPU alone; Snapdragon conclusions need its runner and quality
 still needs independent listening.

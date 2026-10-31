@@ -7,6 +7,8 @@ Compares both pinned VoiceDesign quantizations and a bounded CPU thread grid.
 Records fresh-process readiness, bootstrap and warm generation, memory and audio. This
 does not qualify human voice quality or infer Snapdragon results from hosted CPUs.
 The only text and voice description are the fixed public evaluation fixtures.
+The complete comparison runs on GitHub-hosted ARM64 only. Owner-device speech
+qualification remains pending a separately bounded, hosted-prepared workload.
 #>
 [CmdletBinding()]
 [OutputType([pscustomobject])]
@@ -18,6 +20,15 @@ param([Parameter(Mandatory)][string]$DataDirectory,
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
+if (-not $PlanOnly) {
+    if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main' -or
+        $env:GITHUB_REPOSITORY -cne 'symbiogenesis/SwiftBonsai2Runner') { throw 'All TTS performance evaluations run only in this repository main CI.' }
+    # Reject before even resolving/building the maintenance tool or planning the
+    # full matrix. Per-session deadlines cannot bound setup and the whole run.
+    if ($env:RUNNER_ENVIRONMENT -cne 'github-hosted') {
+        throw 'The full TTS comparison requires GitHub-hosted CI. Owner-device speech qualification remains pending a hosted-prepared workload within the complete five-minute budget.'
+    }
+}
 $repo = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.Common.psm1')
 Import-Module (Join-Path $PSScriptRoot 'Bonsai.NativeSpeech.psm1')
@@ -27,8 +38,6 @@ if ($available -lt 1 -or $available -gt 256) { throw 'Evaluation CPU count excee
 $threads = @([Math]::Max(1, [int][Math]::Floor($available / 2)), [Math]::Max(1, $available - 2), $available) | Select-Object -Unique
 $plan = Invoke-BonsaiTool -Command speech-evaluation -Request @{ operation = 'plan'; threads = @($threads); repetitions = $Repetitions } -ToolPath $ToolPath
 if ($PlanOnly) { return [pscustomobject]$plan }
-if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_REF -cne 'refs/heads/main' -or
-    $env:GITHUB_REPOSITORY -cne 'symbiogenesis/SwiftBonsai2Runner') { throw 'All TTS performance evaluations run only in this repository main CI.' }
 if (-not $IsWindows -or [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'Arm64') {
     throw 'TTS evaluation requires native Windows ARM64.'
 }

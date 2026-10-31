@@ -73,6 +73,11 @@ fn validate_context(
     architecture: &str,
     variable: impl Fn(&str) -> Option<String>,
 ) -> crate::Result<()> {
+    if variable("RUNNER_ENVIRONMENT").as_deref() != Some("github-hosted") {
+        return Err(
+            "The full TTS comparison requires GitHub-hosted CI; owner-device speech qualification remains pending a hosted-prepared workload within the complete five-minute budget.".into(),
+        );
+    }
     for (name, expected) in [
         ("GITHUB_ACTIONS", "true"),
         ("GITHUB_REF", "refs/heads/main"),
@@ -99,7 +104,8 @@ fn validate_context(
 /// Plans paired fresh-process trials or runs one bounded native TTS capture session.
 ///
 /// Planning is model-free. Sessions require this repository's Windows ARM64 main
-/// CI lane, retain verified artifacts, and use fixed speech resource guards.
+/// hosted CI lane, retain verified artifacts, and use fixed speech resource guards.
+/// The complete matrix cannot establish bounded owner-device qualification.
 ///
 /// # Errors
 /// Rejects malformed plans, unsupported platforms, unqualified CI contexts,
@@ -174,6 +180,7 @@ mod tests {
             ("RUNNER_ARCH", "ARM64"),
             ("GITHUB_RUN_ID", "1234"),
             ("RUNNER_NAME", "hosted-arm64"),
+            ("RUNNER_ENVIRONMENT", "github-hosted"),
         ]);
         validate_context("aarch64", |key| identity.get(key).map(ToString::to_string))?;
         assert!(
@@ -195,6 +202,8 @@ mod tests {
             ("GITHUB_REPOSITORY", "someone/fork"),
             ("GITHUB_RUN_ID", ""),
             ("RUNNER_NAME", " "),
+            ("RUNNER_ENVIRONMENT", "self-hosted"),
+            ("RUNNER_ENVIRONMENT", "unknown"),
         ] {
             assert!(
                 validate_context("aarch64", |key| if name == key {

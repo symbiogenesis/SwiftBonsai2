@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: Hosted ARM64 is not a Snapdragon performance qualification
+        description: Snapdragon remains pending a bounded prepared workload; this matrix is hosted only
         type: choice
         options: [hosted-arm64, snapdragon]
         default: hosted-arm64
@@ -20,15 +20,24 @@ on:
 permissions:
   contents: read
 concurrency:
-  # Every laptop capture shares its CPU and memory with the X2/LoRA screens.
+  # Preserve dispatch compatibility; the Snapdragon target rejects on a hosted
+  # runner before checkout, build or download and never queues laptop work.
   group: ${{ inputs.target == 'snapdragon' && 'swift-lora-snapdragon' || 'tts-evaluation-hosted-arm64' }}
   cancel-in-progress: false
 jobs:
   evaluate:
     if: github.ref == 'refs/heads/main'
-    runs-on: ${{ fromJSON(inputs.target == 'snapdragon' && '["self-hosted","Windows","ARM64","swift-bonsai-snapdragon"]' || '"windows-11-arm"') }}
-    timeout-minutes: ${{ inputs.target == 'snapdragon' && 5 || 90 }}
+    runs-on: windows-11-arm
+    timeout-minutes: 90
     steps:
+      - name: Reject the unbounded owner-device matrix before setup
+        shell: pwsh
+        env:
+          EVALUATION_TARGET: ${{ inputs.target }}
+        run: |
+          if ($env:EVALUATION_TARGET -cne 'hosted-arm64') {
+            throw 'The complete TTS matrix is hosted-only. Snapdragon speech qualification remains pending a hosted-prepared workload within the complete five-minute owner-device budget, including setup and cleanup.'
+          }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -44,6 +53,7 @@ jobs:
         env:
           EVALUATION_REPETITIONS: ${{ inputs.repetitions }}
           EVALUATION_FORMAT: ${{ inputs.response_format }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           Set-StrictMode -Version Latest
           $ErrorActionPreference = 'Stop'
