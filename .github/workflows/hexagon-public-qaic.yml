@@ -1,0 +1,47 @@
+name: Hexagon public QAIC independent source oracle
+on:
+  push:
+    branches: [main, 'codex/hexagon-**']
+    paths:
+      - .github/workflows/hexagon-public-qaic.yml
+      - tools/hexagon/public_qaic_oracle.py
+      - tools/hexagon/public-qaic.lock.json
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check out the exact public FastRPC IDL compiler
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: qualcomm/QAIC
+          ref: a66a0019fb488abae955bbc9b3a9de3dc15962d0
+          path: .hexagon-public-qaic-source
+          persist-credentials: false
+      - name: Select the upstream documented GHC and Cabal versions
+        uses: haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d # v2.12.1
+        with:
+          ghc-version: '9.10.3'
+          cabal-version: '3.12.1.0'
+      - name: Freeze, build and run only the independent public-source generator
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          set -euo pipefail
+          python3 -B "$GITHUB_WORKSPACE/tools/hexagon/public_qaic_oracle.py" --source "$GITHUB_WORKSPACE/.hexagon-public-qaic-source" --pin "$GITHUB_WORKSPACE/tools/hexagon/public-qaic.lock.json" --output "$RUNNER_TEMP/SwiftBonsai-Public-QAIC"
+      - name: Retain public-source notices, dependency resolution and generated controls
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hexagon-public-qaic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/SwiftBonsai-Public-QAIC/review
+          if-no-files-found: warn
+          retention-days: 90

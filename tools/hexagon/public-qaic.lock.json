@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "purpose": "hosted-independent-public-source-QAIC-marshalling-oracle-only",
+  "qaicRepository": "https://github.com/qualcomm/QAIC",
+  "qaicCommit": "a66a0019fb488abae955bbc9b3a9de3dc15962d0",
+  "setupAction": "haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d",
+  "ghcVersion": "9.10.3",
+  "cabalVersion": "3.12.1.0",
+  "hackageIndexState": "2026-10-29T00:00:00Z",
+  "sourceFiles": [
+    {"path":"README.md","bytes":37846,"sha256":"bce26b318f45a1aee6c46b0b94988e2cec8c59fdb17394a5401f964496a5f470"},
+    {"path":"LICENSE.txt","bytes":1689,"sha256":"3a15c06f7c0f8e38e884e0a20e739fe0d92c1ac0996928af4ab119170603d1f8"},
+    {"path":"src/Makefile","bytes":5869,"sha256":"5d7e6960dbe6eff6d46fe256cf4534e594ef7fe3245898dcb674df3650e0e81c"},
+    {"path":"src/qaic.cabal","bytes":2942,"sha256":"c27f82fabc467ec8c4eee782e8fb9a4833f02f55d6a83db99117a1810718d910"},
+    {"path":"src/file2hs/file2hs.cabal","bytes":391,"sha256":"6aa4755b05a3e1f60213f7f4e5a6519cb078219558f9bb995c4494502abdd20f"},
+    {"path":"src/Language/SO/CStub.c","bytes":3111,"sha256":"5f7bd861ad40c089bde8cc93b68d0687e3f3a240cbab1bcff9b60eb494ce4214"},
+    {"path":"src/Language/SO/Stub.c","bytes":1387,"sha256":"8fcd0627db58983a55b7a359e1d0b3eafbb1908d38a55752d525284eacbf2377"}
+  ],
+  "publicInputs": [
+    {"name":"htp_iface.idl","bytes":718,"sha256":"196448f5166f300c572172b83a51e128e71e4471f13e30d0c5f88d6ce0cfe8bc","url":"https://raw.githubusercontent.com/ggml-org/llama.cpp/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp/htp_iface.idl"},
+    {"name":"AEEStdDef.idl","bytes":1793,"sha256":"dda9bee2163b148be27365c101c11356cbefa691c3687a34586e705c074c7ddc","url":"https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/idl/AEEStdDef.idl"},
+    {"name":"remote.idl","bytes":1498,"sha256":"43b4130d14dc4152b9b3cafc7899d781e2e3546076383a65159774000275021e","url":"https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/idl/remote.idl"},
+    {"name":"LICENSE-FastRPC.txt","bytes":1565,"sha256":"683e80f5436e6b0761139e626d2c764870ea0ed19b14916ef4c82772b99c4d44","url":"https://raw.githubusercontent.com/qualcomm/fastrpc/a56e9d4de3614a8d8f4b0e15ff561350c4b686e3/LICENSE.txt"},
+    {"name":"LICENSE-llama.cpp.txt","bytes":1078,"sha256":"94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d","url":"https://raw.githubusercontent.com/ggml-org/llama.cpp/19cce6919992fdffd92e0ac152caaf1e2b8f254e/LICENSE"}
+  ],
+  "buildArguments": ["make", "-C", "src", "TARGET_ARCH=x86_64-linux"],
+  "generatorArguments": ["--map-dll", "--include-path={public-input-directory}", "--output-path={new-output-directory}", "{checked-htp_iface.idl}"],
+  "expectedGeneratedFiles": ["htp_iface.h", "htp_iface_stub.c", "htp_iface_skel.c"],
+  "sdkQaicEquivalenceQualified": false,
+  "sdkImportEquivalenceQualified": false,
+  "deviceInvocationAuthorized": false,
+  "profileEligible": false
+}
