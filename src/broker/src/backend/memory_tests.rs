@@ -137,3 +137,79 @@ fn header_fast_path_and_fragmented_fallback_preserve_coalesced_payload() -> io::
         Ok(())
     })
 }
+
+#[test]
+fn borrowed_payloads_exclude_framing_and_interoperate_with_direct_reads() -> io::Result<()> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()?;
+    runtime.block_on(async {
+        for chunked in [false, true] {
+            let wire = if chunked {
+                b"3\r\nabc\r\n1\r\nd\r\n0\r\n\r\nsurplus".as_slice()
+            } else {
+                b"abcdsurplus".as_slice()
+            };
+            let mut body = BackendBody {
+                reader: Some(BufReader::new(io::Cursor::new(wire.to_vec()))),
+                framing: if chunked {
+                    Framing::Size {
+                        value: 0,
+                        digits: 0,
+                        cr: false,
+                    }
+                } else {
+                    Framing::Length(4)
+                },
+                remaining_budget: MAX_RESPONSE_BYTES,
+                metadata_bytes: 0,
+                deadline: Instant::now() + Duration::from_secs(60),
+                timer: Box::pin(sleep_until(Instant::now() + Duration::from_secs(60))),
+            };
+            let storage = body
+                .reader
+                .as_ref()
+                .map(|reader| reader.buffer().as_ptr())
+                .ok_or_else(|| io::Error::other("Missing fixture reader."))?;
+            let available = body.fill_buf().await?;
+            assert_eq!(
+                available,
+                if chunked {
+                    b"abc".as_slice()
+                } else {
+                    b"abcd".as_slice()
+                }
+            );
+            assert_eq!(
+                available.as_ptr(),
+                storage.wrapping_add(if chunked { 3 } else { 0 })
+            );
+            body.consume(1);
+            let mut byte = [0];
+            body.read_exact(&mut byte).await?;
+            assert_eq!(&byte, b"b");
+            let available = body.fill_buf().await?;
+            assert_eq!(
+                available,
+                if chunked {
+                    b"c".as_slice()
+                } else {
+                    b"cd".as_slice()
+                }
+            );
+            // Defensive clamping must never consume chunk endings or surplus.
+            body.consume(usize::MAX);
+            if chunked {
+                assert_eq!(body.fill_buf().await?, b"d");
+                body.consume(1);
+            }
+            assert!(body.fill_buf().await?.is_empty());
+            assert_eq!(body.remaining_budget, MAX_RESPONSE_BYTES - 4);
+            assert_eq!(
+                body.reader.as_ref().map(BufReader::buffer),
+                Some(b"surplus".as_slice())
+            );
+        }
+        Ok(())
+    })
+}

@@ -444,17 +444,20 @@ impl<S: AsyncRead + Unpin> BackendBody<S> {
     }
 }
 
-impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
+impl<S: AsyncRead + Unpin> BackendBody<S> {
+    fn advance_payload(&mut self, count: usize) {
+        self.remaining_budget -= count;
+        self.framing = match self.framing {
+            Framing::Length(remaining) => Framing::Length(remaining - count),
+            Framing::Data(remaining) if count == remaining => Framing::DataCr,
+            Framing::Data(remaining) => Framing::Data(remaining - count),
+            _ => return,
+        };
+    }
+
     // Keep the complete framing state machine visible in one audit boundary.
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        output: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        if output.remaining() == 0 {
-            return Poll::Ready(Ok(()));
-        }
+    fn poll_framing(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
+        let this = self;
         // Bound immediately-ready metadata work so cancellation can be polled.
         for _ in 0..1024 {
             if matches!(this.framing, Framing::Failed) {
@@ -464,16 +467,9 @@ impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
                 return this.fail(io::ErrorKind::TimedOut);
             }
             match this.framing {
-                Framing::Length(0) | Framing::Complete => return Poll::Ready(Ok(())),
+                Framing::Length(0) | Framing::Complete => return Poll::Ready(Ok(0)),
                 Framing::Length(remaining) | Framing::Data(remaining) => {
-                    let count = ready!(this.poll_payload(cx, output, remaining))?;
-                    this.remaining_budget -= count;
-                    this.framing = match this.framing {
-                        Framing::Length(_) => Framing::Length(remaining - count),
-                        _ if count == remaining => Framing::DataCr,
-                        _ => Framing::Data(remaining - count),
-                    };
-                    return Poll::Ready(Ok(()));
+                    return Poll::Ready(Ok(remaining));
                 }
                 _ => {}
             }
@@ -545,6 +541,52 @@ impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
         }
         cx.waker().wake_by_ref();
         Poll::Pending
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        if output.remaining() == 0 {
+            return Poll::Ready(Ok(()));
+        }
+        let this = self.get_mut();
+        let remaining = ready!(this.poll_framing(cx))?;
+        if remaining != 0 {
+            let count = ready!(this.poll_payload(cx, output, remaining))?;
+            this.advance_payload(count);
+        }
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncBufRead for BackendBody<S> {
+    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+        let this = self.get_mut();
+        let remaining = ready!(this.poll_framing(cx))?;
+        if remaining == 0 {
+            return Poll::Ready(Ok(&[]));
+        }
+        let available = ready!(this.poll_available(cx))?;
+        Poll::Ready(Ok(&available[..available.len().min(remaining)]))
+    }
+
+    fn consume(self: Pin<&mut Self>, amount: usize) {
+        let this = self.get_mut();
+        let remaining = match this.framing {
+            Framing::Length(remaining) | Framing::Data(remaining) => remaining,
+            _ => return,
+        };
+        if let Some(reader) = &mut this.reader {
+            // AsyncBufRead callers may consume only the slice just exposed.
+            // Clamp defensively so misuse cannot eat framing or underflow caps.
+            let count = amount.min(remaining).min(reader.buffer().len());
+            Pin::new(reader).consume(count);
+            this.advance_payload(count);
+        }
     }
 }
 

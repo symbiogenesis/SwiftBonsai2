@@ -8,9 +8,11 @@
 use crate::{AdmittedChat, Object, singleton};
 use http::{Response, StatusCode};
 use serde::de::IgnoredAny;
-use std::{fmt::NumBuffer, future::poll_fn, pin::Pin, task::Poll, time::Duration};
+use std::{fmt::NumBuffer, future::poll_fn, io::IoSlice, pin::Pin, task::Poll, time::Duration};
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
+    io::{
+        AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf,
+    },
     time::{Instant, timeout_at},
 };
 
@@ -32,6 +34,11 @@ macro_rules! common_headers {
     };
 }
 const COMMON_HEADERS: &str = common_headers!();
+const SSE_HEAD: &str = concat!(
+    "HTTP/1.1 200 OK\r\n",
+    common_headers!(),
+    "Content-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
+);
 
 /// Value-free errors: no upstream header, body, prompt or I/O diagnostic escapes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -174,17 +181,36 @@ where
     }
 }
 
+// The owned backend decoder can lend payloads. Keep the public AsyncRead adapter
+// for supplied readers while production can use vectored writes for full spans.
+pub(crate) async fn send_buffered_chat_response_mode<W, R>(
+    mut client: W,
+    backend: Response<R>,
+    streaming: bool,
+    supervisor_deadline: Instant,
+) -> Result<(), ResponseError>
+where
+    W: AsyncWrite + Unpin + 'static,
+    R: AsyncBufRead + Unpin + 'static,
+{
+    ensure_time(supervisor_deadline)?;
+    validate_metadata(&backend, streaming)?;
+    let mut body = backend.into_body();
+    if streaming && client.is_write_vectored() {
+        write_buffered_sse_response(&mut client, &mut body, supervisor_deadline).await
+    } else if streaming {
+        write_sse_response(&mut client, &mut body, supervisor_deadline).await
+    } else {
+        write_json_response(&mut client, &mut body, supervisor_deadline).await
+    }
+}
+
 async fn write_sse_response<W: AsyncWrite + Unpin, R: AsyncRead + Unpin>(
     client: &mut W,
     body: &mut R,
     supervisor_deadline: Instant,
 ) -> Result<(), ResponseError> {
-    let head = concat!(
-        "HTTP/1.1 200 OK\r\n",
-        common_headers!(),
-        "Content-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n"
-    );
-    write_group(client, &[head.as_bytes()], supervisor_deadline, false).await?;
+    write_group(client, &[SSE_HEAD.as_bytes()], supervisor_deadline, false).await?;
     // Read into the final wire frame: no per-chunk String allocation or
     // separate writes for the size, payload and CRLF.
     let mut buffer = [0u8; CHUNK_PREFIX_BYTES + RESPONSE_BUFFER_BYTES + 2];
@@ -205,23 +231,8 @@ async fn write_sse_response<W: AsyncWrite + Unpin, R: AsyncRead + Unpin>(
         if count > MAX_RESPONSE_BYTES - sent {
             return Err(ResponseError::BodyLimit);
         }
-        buffer[CHUNK_PREFIX_BYTES - 2..CHUNK_PREFIX_BYTES].copy_from_slice(b"\r\n");
-        let mut first = CHUNK_PREFIX_BYTES - 2;
-        let mut size = count;
-        while size != 0 {
-            first -= 1;
-            buffer[first] = b"0123456789ABCDEF"[size & 0xf];
-            size >>= 4;
-        }
-        let end = CHUNK_PREFIX_BYTES + count;
-        buffer[end..end + 2].copy_from_slice(b"\r\n");
-        write_group(
-            client,
-            &[&buffer[first..end + 2]],
-            supervisor_deadline,
-            false,
-        )
-        .await?;
+        let frame = sse_frame(&mut buffer, count);
+        write_group(client, &[frame], supervisor_deadline, false).await?;
         sent += count;
         match status {
             SseReadStatus::Open => {}
@@ -231,6 +242,116 @@ async fn write_sse_response<W: AsyncWrite + Unpin, R: AsyncRead + Unpin>(
     }
     // Never emit the terminator on backend error, byte limit or deadline.
     write_group(client, &[b"0\r\n\r\n"], supervisor_deadline, true).await
+}
+
+fn chunk_prefix(buffer: &mut [u8], mut size: usize) -> &[u8] {
+    let mut first = buffer.len() - 2;
+    buffer[first..].copy_from_slice(b"\r\n");
+    loop {
+        first -= 1;
+        buffer[first] = b"0123456789ABCDEF"[size & 0xf];
+        size >>= 4;
+        if size == 0 {
+            return &buffer[first..];
+        }
+    }
+}
+
+fn sse_frame(
+    buffer: &mut [u8; CHUNK_PREFIX_BYTES + RESPONSE_BUFFER_BYTES + 2],
+    count: usize,
+) -> &[u8] {
+    let (prefix, _) = buffer.split_at_mut(CHUNK_PREFIX_BYTES);
+    let first = CHUNK_PREFIX_BYTES - chunk_prefix(prefix, count).len();
+    let end = CHUNK_PREFIX_BYTES + count;
+    buffer[end..end + 2].copy_from_slice(b"\r\n");
+    &buffer[first..end + 2]
+}
+
+async fn write_buffered_sse_response<W: AsyncWrite + Unpin, R: AsyncBufRead + Unpin>(
+    client: &mut W,
+    body: &mut R,
+    deadline: Instant,
+) -> Result<(), ResponseError> {
+    write_group(client, &[SSE_HEAD.as_bytes()], deadline, false).await?;
+    let mut frame = [0; CHUNK_PREFIX_BYTES + RESPONSE_BUFFER_BYTES + 2];
+    let mut sent = 0;
+    loop {
+        ensure_time(deadline)?;
+        let available = timeout_at(deadline, body.fill_buf())
+            .await
+            .map_err(|_| ResponseError::Deadline)?
+            .map_err(|_| ResponseError::BackendIo)?;
+        ensure_time(deadline)?;
+        if available.is_empty() {
+            break;
+        }
+        if available.len() >= RESPONSE_BUFFER_BYTES
+            && MAX_RESPONSE_BYTES - sent >= RESPONSE_BUFFER_BYTES
+        {
+            // A full ready span needs neither a payload copy nor a staging
+            // read. Vectored output retains one socket write on the common path.
+            let mut prefix = [0; CHUNK_PREFIX_BYTES];
+            let prefix = chunk_prefix(&mut prefix, RESPONSE_BUFFER_BYTES);
+            write_vectored_group(
+                client,
+                [prefix, &available[..RESPONSE_BUFFER_BYTES], b"\r\n"],
+                deadline,
+            )
+            .await?;
+            body.consume(RESPONSE_BUFFER_BYTES);
+            sent += RESPONSE_BUFFER_BYTES;
+            continue;
+        }
+        // Small/fragmented spans retain immediate-ready coalescing and one
+        // contiguous write. Never exchange saved copies for tiny socket writes.
+        let bound = RESPONSE_BUFFER_BYTES.min(MAX_RESPONSE_BYTES - sent + 1);
+        let (count, status) = read_sse_group(
+            body,
+            &mut frame[CHUNK_PREFIX_BYTES..CHUNK_PREFIX_BYTES + bound],
+            deadline,
+        )
+        .await?;
+        if count > MAX_RESPONSE_BYTES - sent {
+            return Err(ResponseError::BodyLimit);
+        }
+        if count == 0 {
+            break;
+        }
+        write_group(client, &[sse_frame(&mut frame, count)], deadline, false).await?;
+        sent += count;
+        match status {
+            SseReadStatus::Open => {}
+            SseReadStatus::Complete => break,
+            SseReadStatus::Failed => return Err(ResponseError::BackendIo),
+        }
+    }
+    write_group(client, &[b"0\r\n\r\n"], deadline, true).await
+}
+
+async fn write_vectored_group<W: AsyncWrite + Unpin>(
+    client: &mut W,
+    pieces: [&[u8]; 3],
+    supervisor_deadline: Instant,
+) -> Result<(), ResponseError> {
+    let deadline = supervisor_deadline.min(Instant::now() + CLIENT_WRITE_TIMEOUT);
+    ensure_time(deadline)?;
+    timeout_at(deadline, async {
+        let mut slices = pieces.map(IoSlice::new);
+        let mut remaining = slices.as_mut_slice();
+        while !remaining.is_empty() {
+            let written = client.write_vectored(remaining).await?;
+            if written == 0 {
+                return Err(std::io::ErrorKind::WriteZero.into());
+            }
+            IoSlice::advance_slices(&mut remaining, written);
+        }
+        client.flush().await
+    })
+    .await
+    .map_err(|_| ResponseError::Deadline)?
+    .map_err(|_| ResponseError::ClientIo)?;
+    ensure_time(deadline)
 }
 
 enum SseReadStatus {
