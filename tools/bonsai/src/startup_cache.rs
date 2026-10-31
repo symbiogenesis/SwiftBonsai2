@@ -117,11 +117,17 @@ fn non_build_input(root: &Path, path: &Path) -> bool {
         return false;
     };
     let first = first.as_os_str();
-    matches!(first.to_str(), Some("docs" | ".github" | "scripts"))
-        || (parts.next().is_none()
-            && path
-                .extension()
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("md")))
+    // Parallel workers use this root-owned storage for independent checkouts.
+    // Their sources and outputs are not inputs to this checkout. Explicit
+    // include macros still add individual files below it in embedded_inputs;
+    // Cargo path dependencies below it disable reuse in external_dependencies.
+    matches!(
+        first.to_str(),
+        Some("docs" | ".github" | "scripts" | ".worktrees")
+    ) || (parts.next().is_none()
+        && path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("md")))
         || (first == "tests"
             && path
                 .extension()
@@ -928,6 +934,42 @@ mod tests {
             &manifest,
             &root
         ));
+        assert!(external_dependencies(
+            "dependency = { path = '../../.worktrees/worker/local' }",
+            &manifest,
+            &root
+        ));
+    }
+
+    #[test]
+    fn worker_checkouts_are_not_scanned_but_explicit_embeds_are_tracked() -> crate::Result<()> {
+        let (scratch, repo) = fixture()?;
+        let environment = BTreeMap::new();
+        let before = fingerprint_with(&repo, &scratch, "test", &environment)?;
+        let worker = repo.join(".worktrees/worker");
+        fs::create_dir_all(worker.join("src")).map_err(|error| error.to_string())?;
+        // Unknown worker embeds would disable reuse if that checkout were scanned.
+        fs::write(worker.join("src/main.rs"), "include!(unknown!());")
+            .map_err(|error| error.to_string())?;
+        let embedded = worker.join("message.txt");
+        fs::write(&embedded, "first").map_err(|error| error.to_string())?;
+        assert_eq!(
+            before,
+            fingerprint_with(&repo, &scratch, "test", &environment)?
+        );
+        fs::write(
+            repo.join("src/main.rs"),
+            "const TEXT: &str = include_str!(\"../.worktrees/worker/message.txt\");",
+        )
+        .map_err(|error| error.to_string())?;
+        let first_embed = fingerprint_with(&repo, &scratch, "test", &environment)?;
+        assert!(first_embed.is_some());
+        fs::write(&embedded, "other").map_err(|error| error.to_string())?;
+        assert_ne!(
+            first_embed,
+            fingerprint_with(&repo, &scratch, "test", &environment)?
+        );
+        fs::remove_dir_all(scratch).map_err(|error| error.to_string())
     }
 
     #[test]
