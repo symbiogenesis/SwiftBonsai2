@@ -59,6 +59,7 @@ try {
         SigntoolPath = $SigntoolPath; ExpectedRunnerRevision = $ExpectedRunnerRevision
         LockPath = Join-Path $repo 'config/hexagon-dispatch.lock.json'
         SourcePath = Join-Path $repo 'tools/hexagon/dispatch_fixture.rs'
+        ManifestPath = Join-Path $repo 'tools/hexagon/diagnostic.manifest'
         WorkerReceiptPath = Join-Path $OutputDirectory 'worker.json'
     }
     $requestPath = Join-Path $OutputDirectory 'worker-request.json'

@@ -15,29 +15,30 @@ if ($Case -ceq 'Plan') {
     Assert ($plan.MaximumSeconds -eq 120 -and $plan.CleanupReserveSeconds -eq 75 -and $plan.OwnedJobRequired) 'Dispatch lost its aggregate ownership budget.'
     Assert ($plan.Cases.Count -eq 2 -and $plan.Cases[0].Batch -eq 1 -and $plan.Cases[1].Batch -eq 32) 'Dispatch fixture shapes changed.'
     Assert (-not $plan.ModelLoaded -and -not $plan.CpuFallbackAllowed -and -not $plan.ProfileEligible -and
-        $plan.CatalogMemberVerificationRequired -and $plan.SourceBoundHostedFixtureRequired -and -not $plan.DriverInstallationAllowed) 'Plan authorized unsupported execution or deployment.'
+        $plan.CatalogMemberVerificationRequired -and $plan.SourceBoundHostedFixtureRequired -and $plan.AsInvokerManifestRequired -and -not $plan.DriverInstallationAllowed) 'Plan authorized unsupported execution or deployment.'
 } elseif ($Case -ceq 'Build') {
     $revision = '1' * 40
     $source = '2' * 64
     $lock = '3' * 64
+    $manifest = '6' * 64
     $receipt = @{
         SchemaVersion = 1; RunnerRevision = $revision; RustToolchain = 'nightly-2026-10-22-aarch64-pc-windows-msvc'
-        SourceSha256 = $source; LockSha256 = $lock; HostedBuild = $true; Target = 'aarch64-pc-windows-msvc'
+        SourceSha256 = $source; ManifestSha256 = $manifest; LockSha256 = $lock; HostedBuild = $true; Target = 'aarch64-pc-windows-msvc'
         CompilerIdentitySha256 = '4' * 64
         Executable = @{ Name = 'hexagon-dispatch-fixture.exe'; Bytes = 65536; Sha256 = '5' * 64 }
     }
-    Assert-BonsaiHexagonDispatchBuild -Receipt $receipt -ExpectedRunnerRevision $revision -SourceSha256 $source -LockSha256 $lock
-    foreach ($field in @('RunnerRevision', 'SourceSha256', 'LockSha256', 'HostedBuild', 'Target', 'CompilerIdentitySha256')) {
+    Assert-BonsaiHexagonDispatchBuild -Receipt $receipt -ExpectedRunnerRevision $revision -SourceSha256 $source -ManifestSha256 $manifest -LockSha256 $lock
+    foreach ($field in @('RunnerRevision', 'SourceSha256', 'ManifestSha256', 'LockSha256', 'HostedBuild', 'Target', 'CompilerIdentitySha256')) {
         $changed = $receipt.Clone()
         $changed[$field] = if ($field -ceq 'HostedBuild') { $false } else { 'changed' }
-        Assert-Failure { Assert-BonsaiHexagonDispatchBuild -Receipt $changed -ExpectedRunnerRevision $revision -SourceSha256 $source -LockSha256 $lock } 'Changed hosted/source identity admitted.'
+        Assert-Failure { Assert-BonsaiHexagonDispatchBuild -Receipt $changed -ExpectedRunnerRevision $revision -SourceSha256 $source -ManifestSha256 $manifest -LockSha256 $lock } 'Changed hosted/source identity admitted.'
     }
     $changed = $receipt.Clone()
     $changed.Executable = @{ Name = '../fixture.exe'; Bytes = 65536; Sha256 = '5' * 64 }
-    Assert-Failure { Assert-BonsaiHexagonDispatchBuild -Receipt $changed -ExpectedRunnerRevision $revision -SourceSha256 $source -LockSha256 $lock } 'Unsafe fixture filename admitted.'
-    foreach ($field in @('RustToolchain', 'SourceSha256', 'LockSha256', 'Target')) {
+    Assert-Failure { Assert-BonsaiHexagonDispatchBuild -Receipt $changed -ExpectedRunnerRevision $revision -SourceSha256 $source -ManifestSha256 $manifest -LockSha256 $lock } 'Unsafe fixture filename admitted.'
+    foreach ($field in @('RustToolchain', 'SourceSha256', 'ManifestSha256', 'LockSha256', 'Target')) {
         $changed = $receipt.Clone(); $changed[$field] = @($receipt[$field])
-        Assert-Failure { Assert-BonsaiHexagonDispatchBuild -Receipt $changed -ExpectedRunnerRevision $revision -SourceSha256 $source -LockSha256 $lock } 'An array was accepted as scalar build identity.'
+        Assert-Failure { Assert-BonsaiHexagonDispatchBuild -Receipt $changed -ExpectedRunnerRevision $revision -SourceSha256 $source -ManifestSha256 $manifest -LockSha256 $lock } 'An array was accepted as scalar build identity.'
     }
 } elseif ($Case -ceq 'Result') {
     $record = @{
@@ -65,6 +66,7 @@ if ($Case -ceq 'Plan') {
     $environment = Get-BonsaiHexagonDispatchEnvironment -RuntimeDirectory 'C:\runtime' -SystemDirectory 'C:\Windows\System32'
     Assert ($environment.Set.PATH -ceq 'C:\runtime;C:\Windows\System32' -and $environment.Set.ADSP_LIBRARY_PATH -ceq 'C:\runtime') 'Child DLL/HTP lookup escaped fixed directories.'
     Assert ('GGML_' -cin $environment.RemovePrefixes -and 'GENIEX_' -cin $environment.RemovePrefixes -and
+        'FASTRPC_' -cin $environment.RemovePrefixes -and 'RPCMEM_' -cin $environment.RemovePrefixes -and
         'ACTIONS_RUNTIME_TOKEN' -cin $environment.RemoveNames -and 'GITHUB_TOKEN' -cin $environment.RemoveNames) 'Inherited backend overrides or CI credentials were retained.'
     Assert ($environment.Set.Count -eq 2) 'Unreviewed child backend override added.'
 }

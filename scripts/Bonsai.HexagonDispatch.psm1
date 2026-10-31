@@ -16,7 +16,7 @@ function Get-BonsaiHexagonDispatchPlan {
         SchemaVersion = 1; Kind = 'runner-hexagon-dispatch-plan'; MaximumSeconds = $MaximumSeconds
         CleanupReserveSeconds = 75; ModelLoaded = $false; CpuFallbackAllowed = $false
         OwnedJobRequired = $true; CatalogMemberVerificationRequired = $true
-        SourceBoundHostedFixtureRequired = $true; DriverInstallationAllowed = $false
+        SourceBoundHostedFixtureRequired = $true; AsInvokerManifestRequired = $true; DriverInstallationAllowed = $false
         Cases = @(@{ Columns = 128; Rows = 32; Batch = 1 }, @{ Columns = 128; Rows = 32; Batch = 32 })
         Qualification = 'device-access-only'; ProfileEligible = $false
     }
@@ -31,8 +31,9 @@ function Assert-BonsaiHexagonDispatchBuild {
     param([Parameter(Mandatory)][Collections.IDictionary]$Receipt,
         [Parameter(Mandatory)][string]$ExpectedRunnerRevision,
         [Parameter(Mandatory)][string]$SourceSha256,
+        [Parameter(Mandatory)][string]$ManifestSha256,
         [Parameter(Mandatory)][string]$LockSha256)
-    foreach ($digest in @($SourceSha256, $LockSha256)) {
+    foreach ($digest in @($SourceSha256, $ManifestSha256, $LockSha256)) {
         if ($digest -cnotmatch '^[a-f0-9]{64}$') { throw 'Invalid dispatch source identity.' }
     }
     if ($ExpectedRunnerRevision -cnotmatch '^[a-f0-9]{40}$' -or
@@ -40,6 +41,7 @@ function Assert-BonsaiHexagonDispatchBuild {
         $Receipt.RunnerRevision -isnot [string] -or $Receipt.RunnerRevision -cne $ExpectedRunnerRevision -or
         $Receipt.RustToolchain -isnot [string] -or $Receipt.RustToolchain -cne 'nightly-2026-10-22-aarch64-pc-windows-msvc' -or
         $Receipt.SourceSha256 -isnot [string] -or $Receipt.SourceSha256 -cne $SourceSha256 -or
+        $Receipt.ManifestSha256 -isnot [string] -or $Receipt.ManifestSha256 -cne $ManifestSha256 -or
         $Receipt.LockSha256 -isnot [string] -or $Receipt.LockSha256 -cne $LockSha256 -or
         $Receipt.HostedBuild -isnot [bool] -or -not $Receipt.HostedBuild -or
         $Receipt.Target -isnot [string] -or $Receipt.Target -cne 'aarch64-pc-windows-msvc' -or
@@ -62,7 +64,7 @@ function Get-BonsaiHexagonDispatchEnvironment {
     [OutputType([Collections.Specialized.OrderedDictionary])]
     param([Parameter(Mandatory)][string]$RuntimeDirectory, [Parameter(Mandatory)][string]$SystemDirectory)
     return [ordered]@{
-        RemovePrefixes = @('GGML_', 'GENIEX_', 'QNN_', 'QAIRT_', 'HEXAGON_', 'ADSP_', 'CDSP_')
+        RemovePrefixes = @('GGML_', 'GENIEX_', 'QNN_', 'QAIRT_', 'HEXAGON_', 'ADSP_', 'CDSP_', 'FASTRPC_', 'RPCMEM_')
         RemoveNames = @('ACTIONS_RUNTIME_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN', 'ACTIONS_ID_TOKEN_REQUEST_URL',
             'GITHUB_TOKEN', 'GH_TOKEN', 'ACTIONS_RUNNER_INPUT_TOKEN', 'LD_LIBRARY_PATH', 'LD_PRELOAD')
         Set = @{ PATH = $RuntimeDirectory + ';' + $SystemDirectory; ADSP_LIBRARY_PATH = $RuntimeDirectory }
@@ -184,8 +186,9 @@ function Invoke-BonsaiHexagonDispatchWorker {
     $holds = [Collections.Generic.List[IO.FileStream]]::new()
     $report = [ordered]@{
         SchemaVersion = 1; Kind = 'runner-hexagon-dispatch-worker'; Outcome = 'pending'; Stage = 'source-identity'
-        Failure = $null; CatalogMemberVerified = $false; DeviceDispatchVerified = $false; FixtureResult = $null
-        FixtureSha256 = $null; FixtureSourceSha256 = $null; LockSha256 = $null; SigntoolSha256 = $null
+        Failure = $null; CatalogMemberVerified = $false; CatalogMembersVerified = 0; CatalogMemberNames = @()
+        SelectedDspArchitecture = 'unknown'; DeviceDispatchVerified = $false; FixtureResult = $null
+        FixtureSha256 = $null; FixtureSourceSha256 = $null; ManifestSha256 = $null; LockSha256 = $null; SigntoolSha256 = $null
         RuntimeFilesVerified = 0; SourceRevision = $Request.ExpectedRunnerRevision
         ModelLoaded = $false; SwiftQualified = $false; ProfileEligible = $false; DriverInstalled = $false; TrustChanged = $false
     }
@@ -208,11 +211,37 @@ function Invoke-BonsaiHexagonDispatchWorker {
             $lock.files -isnot [array] -or $lock.files.Count -lt 3 -or $lock.files.Count -gt 32 -or
             $lock.catalog.name -cne 'libggml-htp.cat' -or $lock.catalog.member -cne 'libggml-htp-v81.so' -or
             $lock.signtool -isnot [Collections.IDictionary]) { throw 'Invalid exact signed-runtime selection.' }
+        $expectedMembers = @('libggml-htp-v73.so', 'libggml-htp-v75.so', 'libggml-htp-v79.so', 'libggml-htp-v81.so')
+        if ($lock.catalog.members -isnot [array] -or $lock.catalog.members.Count -ne $expectedMembers.Count) {
+            throw 'Every possible bundled DSP architecture requires catalog membership verification.'
+        }
+        for ($memberIndex = 0; $memberIndex -lt $expectedMembers.Count; $memberIndex++) {
+            if ($lock.catalog.members[$memberIndex] -isnot [string] -or $lock.catalog.members[$memberIndex] -cne $expectedMembers[$memberIndex]) {
+                throw 'The catalog member set differs from the exact reviewed bundle.'
+            }
+        }
         $sourceStream = [IO.FileStream]::new($Request.SourcePath, 'Open', 'Read', 'Read')
         $holds.Add($sourceStream)
         if ($sourceStream.Length -le 0 -or $sourceStream.Length -gt 1MB) { throw 'Dispatch source exceeds its byte bound.' }
         $sourceDigest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($sourceStream)).ToLowerInvariant()
         $report.FixtureSourceSha256 = $sourceDigest
+        $manifestStream = [IO.FileStream]::new($Request.ManifestPath, 'Open', 'Read', 'Read')
+        $holds.Add($manifestStream)
+        if ($manifestStream.Length -le 0 -or $manifestStream.Length -gt 65536) { throw 'Dispatch manifest exceeds its byte bound.' }
+        $manifestDigest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($manifestStream)).ToLowerInvariant()
+        $report.ManifestSha256 = $manifestDigest
+        $manifestStream.Position = 0
+        $xmlSettings = [Xml.XmlReaderSettings]::new()
+        $xmlSettings.DtdProcessing = [Xml.DtdProcessing]::Prohibit
+        $xmlSettings.XmlResolver = $null
+        $xml = [Xml.XmlDocument]::new()
+        $xml.XmlResolver = $null
+        $reader = [Xml.XmlReader]::Create($manifestStream, $xmlSettings)
+        try { $xml.Load($reader) } finally { $reader.Dispose() }
+        $levels = $xml.SelectNodes("//*[local-name()='requestedExecutionLevel']")
+        if ($levels.Count -ne 1 -or $levels[0].GetAttribute('level') -cne 'asInvoker' -or $levels[0].GetAttribute('uiAccess') -cne 'false') {
+            throw 'The dispatch fixture requires an explicit non-elevating manifest.'
+        }
         $bundleEntries = @([IO.Directory]::EnumerateFileSystemEntries($Request.FixtureDirectory))
         if ($bundleEntries.Count -ne 2) { throw 'The fixture bundle must contain exactly two pinned entries.' }
         foreach ($bundleEntry in $bundleEntries) {
@@ -225,7 +254,7 @@ function Invoke-BonsaiHexagonDispatchWorker {
         $receiptStream = [IO.FileStream]::new($receiptPath, 'Open', 'Read', 'Read')
         $holds.Add($receiptStream)
         $receipt = Read-BonsaiHexagonDispatchJson -Stream $receiptStream
-        Assert-BonsaiHexagonDispatchBuild -Receipt $receipt -ExpectedRunnerRevision $Request.ExpectedRunnerRevision -SourceSha256 $sourceDigest -LockSha256 $lockDigest
+        Assert-BonsaiHexagonDispatchBuild -Receipt $receipt -ExpectedRunnerRevision $Request.ExpectedRunnerRevision -SourceSha256 $sourceDigest -ManifestSha256 $manifestDigest -LockSha256 $lockDigest
         $fixturePath = Join-Path $Request.FixtureDirectory 'hexagon-dispatch-fixture.exe'
         $holds.Add((Get-BonsaiHexagonDispatchFile -Path $fixturePath -Pin @{ bytes = $receipt.Executable.Bytes; sha256 = $receipt.Executable.Sha256 }))
         Assert-Arm64PE -Path $fixturePath
@@ -255,16 +284,23 @@ function Invoke-BonsaiHexagonDispatchWorker {
         if ($seen -ne $names.Count -or -not $names.Contains($lock.catalog.name) -or -not $names.Contains($lock.catalog.member)) {
             throw 'Runtime directory omits a pinned catalog or DSP member.'
         }
+        foreach ($member in $expectedMembers) {
+            if (-not $names.Contains($member)) { throw 'The runtime omits a possible auto-selected DSP library.' }
+        }
         $report.Stage = 'catalog-verification'
         Save-BonsaiHexagonDispatchWorkerReceipt -Report $report -Path $Request.WorkerReceiptPath
         $holds.Add((Get-BonsaiHexagonDispatchFile -Path $Request.SigntoolPath -Pin $lock.signtool))
         $report.SigntoolSha256 = $lock.signtool.sha256
-        # This checks the current SO against the current signed catalog. It does
-        # not install the catalog or infer installed driver deployment readiness.
-        $signature = Invoke-BonsaiNativeProcess -Executable $Request.SigntoolPath -ArgumentList @('verify', '/pa', '/v', '/c',
-            (Join-Path $Request.PackageDirectory $lock.catalog.name), (Join-Path $Request.PackageDirectory $lock.catalog.member)) -WorkingDirectory $Request.PackageDirectory -TimeoutSeconds 10
+        # The generic backend auto-detects its DSP architecture. Verify all four
+        # possible pinned libraries, not just v81, before allowing that choice.
+        # This neither installs the catalog nor identifies the selected DSP.
+        $signatureArguments = @('verify', '/pa', '/v', '/c', (Join-Path $Request.PackageDirectory $lock.catalog.name)) +
+            @(foreach ($member in $expectedMembers) { Join-Path $Request.PackageDirectory $member })
+        $signature = Invoke-BonsaiNativeProcess -Executable $Request.SigntoolPath -ArgumentList $signatureArguments -WorkingDirectory $Request.PackageDirectory -TimeoutSeconds 10
         if ($signature.ExitCode -ne 0) { $report.Failure = 'catalog-membership-unverified'; return $report }
         $report.CatalogMemberVerified = $true
+        $report.CatalogMembersVerified = $expectedMembers.Count
+        $report.CatalogMemberNames = $expectedMembers
         $report.Stage = 'device-dispatch'
         Save-BonsaiHexagonDispatchWorkerReceipt -Report $report -Path $Request.WorkerReceiptPath
         # The surrounding worker already belongs to the owner's kill-on-close
