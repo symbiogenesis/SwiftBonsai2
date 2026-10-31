@@ -4,6 +4,19 @@
 #include <cstddef>
 #include <vector>
 
+// BONSAI_DECODE_GRAPH_DECLARATIONS
+
+// A DLL entry point receives the actual Rust exports from the owning test.
+// These forwarding wrappers supply no duplicate graph-selection policy.
+static size_t (*rust_index)(int, size_t) = nullptr;
+static bool (*rust_rebuild)(bool, int, int) = nullptr;
+extern "C" size_t bonsai_qt_decode_graph_index(int tokens, size_t windows) {
+    return rust_index(tokens, windows);
+}
+extern "C" bool bonsai_qt_decode_graph_rebuild(bool present, int cached, int requested) {
+    return rust_rebuild(present, cached, requested);
+}
+
 #ifdef NDEBUG
 #error The lifetime regression requires active assertions.
 #endif
@@ -48,7 +61,11 @@ static bool select_graph(std::vector<TalkerDecodeGraph> & graphs, int n_kv_pad,
     return true;
 }
 
-int main() {
+extern "C" __declspec(dllexport) int bonsai_decode_graph_fixture(
+    size_t (*index)(int, size_t), bool (*rebuild)(bool, int, int)) {
+    rust_index = index;
+    rust_rebuild = rebuild;
+    assert(rust_index && rust_rebuild);
     std::vector<TalkerDecodeGraph> graphs(16);
     assert(select_graph(graphs, 256, 1));
     const int first = *graphs[0].ctx;
@@ -77,4 +94,5 @@ int main() {
         talker_decode_graph_free(&graph);
     }
     assert(live == 0 && releases == allocations);
+    return 0;
 }

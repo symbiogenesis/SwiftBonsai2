@@ -13,12 +13,15 @@ use std::{
 };
 
 mod cpu_threads;
+mod decode_graph;
 mod philox;
 mod qwen;
 mod sampling;
 mod tokenizer;
 use qwen::RawAudio;
 
+#[cfg(test)]
+mod decode_graph_tests;
 #[cfg(test)]
 mod philox_tests;
 #[cfg(test)]

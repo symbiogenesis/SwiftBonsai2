@@ -11,13 +11,15 @@ const THREAD_COUNT: &str = "static int backend_cpu_n_threads(void) {\n    int n 
 const THREAD_OVERRIDE: &str = "static int backend_cpu_n_threads(void) {\n    return bonsai_qt_cpu_threads(std::thread::hardware_concurrency());\n}\n";
 const DECODE_GRAPH: &str =
     "    TalkerDecodeGraph * tg = &graphs[(size_t) ((n_kv_pad + 255) / 256 - 1)];\n";
+const DECODE_GRAPH_DECLARATIONS: &str = "#include <cstddef>\nextern \"C\" size_t bonsai_qt_decode_graph_index(int padded_tokens, size_t windows);\nextern \"C\" bool bonsai_qt_decode_graph_rebuild(bool has_context, int cached_width, int requested_width);\n";
+const RUST_DECODE_GRAPH: &str = "    TalkerDecodeGraph * tg = &graphs[bonsai_qt_decode_graph_index(n_kv_pad, graphs.size())];\n";
 const EVICT_DECODE_GRAPHS: &str =
     "    // Runner's CPU-only worker retains one decode workspace. The previous
     // ggml_backend_graph_compute completed and synchronized before returning;
     // KV, weights and hidden_bridge have independent persistent ownership.
     // Free obsolete windows before allocating a replacement, including when
     // a new request starts at an earlier window or changes batch width.
-    if (!tg->ctx || tg->N != N) {
+    if (bonsai_qt_decode_graph_rebuild(tg->ctx != nullptr, tg->N, N)) {
         for (auto & cached : graphs) {
             if (&cached != tg) { talker_decode_graph_free(&cached); }
         }
@@ -144,11 +146,25 @@ fn vectors(text: &str) -> io::Result<String> {
 fn decode_graphs(text: &str) -> io::Result<String> {
     // Keep the upstream allocation, failure cleanup, input uploads and compute
     // unchanged. Only scratch from completed, unselected windows is released.
-    if text.contains(EVICT_DECODE_GRAPHS) {
+    if text.contains(DECODE_GRAPH_DECLARATIONS) || text.contains(RUST_DECODE_GRAPH) {
         return Err(io::Error::other("Pinned Qwen build overlay input differs."));
     }
-    let replacement = format!("{DECODE_GRAPH}{EVICT_DECODE_GRAPHS}");
-    replace_once(text, DECODE_GRAPH, &replacement)
+    let replacement = format!("{RUST_DECODE_GRAPH}{EVICT_DECODE_GRAPHS}");
+    let patched = replace_once(text, DECODE_GRAPH, &replacement)?;
+    Ok(format!("{DECODE_GRAPH_DECLARATIONS}{patched}"))
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "Expose generated glue only to the native graph-lifetime regression."
+)]
+pub(super) fn decode_graph_fixture_for_test() -> io::Result<String> {
+    let patched = decode_graphs(DECODE_GRAPH)?;
+    let (declarations, selection) = patched.split_at(DECODE_GRAPH_DECLARATIONS.len());
+    Ok(include_str!("tests/decode_graph_cache.cpp")
+        .replace("// BONSAI_DECODE_GRAPH_DECLARATIONS", declarations)
+        .replace("// BONSAI_DECODE_GRAPH_SELECTION", selection))
 }
 
 /// Copy externally verified immutable source bytes, then overlay only that copy.
@@ -221,10 +237,10 @@ fn redirected(metadata: &fs::Metadata) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        DECODE_GRAPH, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION, PREDICTOR_DRAW, SAMPLING_REFERENCE,
-        SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE, TRANSFORMS, backend, decode_graphs,
-        matches_source, philox, predictor_sampling, prepare_with, semantic_sampling, tokenizer,
-        vectors,
+        DECODE_GRAPH, DECODE_GRAPH_DECLARATIONS, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION,
+        PREDICTOR_DRAW, RUST_DECODE_GRAPH, SAMPLING_REFERENCE, SEMANTIC_DRAW, THREAD_COUNT,
+        THREAD_OVERRIDE, TRANSFORMS, backend, decode_graphs, matches_source, philox,
+        predictor_sampling, prepare_with, semantic_sampling, tokenizer, vectors,
     };
 
     // Published SHA-256 known-answer vector; contains no native source code.
@@ -523,69 +539,13 @@ mod tests {
     -> std::io::Result<()> {
         let suffix = "    if (tg->ctx && tg->N != N) { talker_decode_graph_free(tg); }\n    if (!tg->ctx && !talker_decode_graph_build(...)) { return false; }\n    upload_inputs();\n    ggml_backend_graph_compute(backend, tg->gf);\n";
         let source = format!("unchanged graph builder\n{DECODE_GRAPH}{suffix}");
-        let expected =
-            format!("unchanged graph builder\n{DECODE_GRAPH}{EVICT_DECODE_GRAPHS}{suffix}");
+        let expected = format!(
+            "{DECODE_GRAPH_DECLARATIONS}unchanged graph builder\n{RUST_DECODE_GRAPH}{EVICT_DECODE_GRAPHS}{suffix}"
+        );
         assert_eq!(decode_graphs(&source)?, expected);
         assert!(decode_graphs(&expected).is_err());
         assert!(decode_graphs("changed input").is_err());
         assert!(decode_graphs(&source.repeat(2)).is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn generated_decode_workspace_eviction_releases_only_completed_graphs()
-    -> Result<(), Box<dyn std::error::Error>> {
-        use std::{
-            env, fs,
-            path::PathBuf,
-            process::Command,
-            time::{SystemTime, UNIX_EPOCH},
-        };
-
-        let compiler = PathBuf::from(
-            env::var_os("BONSAI_TTS_COMPILER")
-                .or_else(|| option_env!("BONSAI_TTS_COMPILER").map(Into::into))
-                .ok_or(
-                    "Set the provisioned BONSAI_TTS_COMPILER for the native cache regression.",
-                )?,
-        );
-        assert!(compiler.is_absolute() && compiler.is_file());
-        assert!(!compiler.to_string_lossy().contains('%'));
-        let working = env::temp_dir().join(format!(
-            "Bonsai-Qwen-GraphCache-{}-{}",
-            std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
-        ));
-        assert!(working.is_absolute() && !working.to_string_lossy().contains('%'));
-        fs::create_dir(&working)?;
-        let fixture = include_str!("tests/decode_graph_cache.cpp");
-        let source = fixture.replace(
-            "// BONSAI_DECODE_GRAPH_SELECTION",
-            &decode_graphs(DECODE_GRAPH)?,
-        );
-        let source_path = working.join("cache.cpp");
-        let executable = working.join("cache.exe");
-        fs::write(&source_path, source)?;
-        let output = Command::new(compiler)
-            .args(["/nologo", "/std:c++17", "/EHsc", "/W4", "/WX", "/UNDEBUG"])
-            .arg(&source_path)
-            .arg(format!("/Fe{}", executable.display()))
-            .current_dir(&working)
-            .output()?;
-        fs::write(working.join("compiler.stdout"), &output.stdout)?;
-        fs::write(working.join("compiler.stderr"), &output.stderr)?;
-        assert!(
-            output.status.success(),
-            "Native cache fixture failed to compile; retained {}",
-            working.display()
-        );
-        assert!(
-            Command::new(&executable)
-                .current_dir(&working)
-                .status()?
-                .success()
-        );
-        fs::remove_dir_all(&working)?;
         Ok(())
     }
 }

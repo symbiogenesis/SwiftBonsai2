@@ -18,6 +18,7 @@ use std::{
 )]
 mod native;
 
+mod decode_graph;
 mod philox;
 mod sampling;
 mod tokenizer;
