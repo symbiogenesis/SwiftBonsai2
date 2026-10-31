@@ -246,3 +246,14 @@ signed device execution, Swift state/adapter parity and measured benefit remain
 [PLAN gates](../PLAN.md#hexagon-npu). Production admission and automatic selection
 remain disabled. Subsequent SDK and source controls ran in hosted CI; the owner
 investigation remains charged at **140,537 ms**.
+
+Settled Runner source `53f717e887e80fb1c4042db4296c46b67af8097f`
+passed [native/packed controls and artifact binding](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41172604323),
+[public C/Rust wire replay](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41172604298),
+[SDK data review](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41172604331)
+and the complete selected [Foundation groups](https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41172604342).
+Prism source `527d1432170ee78b258d489805b11f798121267f` passed its
+[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/41169223029)
+and [runtime conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/41169223028)
+workflows. These hosted results preserve the remaining device, model and profile
+qualification boundaries above.
