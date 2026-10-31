@@ -1441,14 +1441,11 @@ async fn bounded_adapter_acceptance(
                 required_adapter_scale_history(port, &credential, evidence, deadline, report),
             )
             .await
-            .map_or_else(
-                |_| {
-                    report["scaleHistoryWorkload"]["reason"] = json!("request-budget-expired");
-                    save_acceptance_report(evidence, report);
-                    false
-                },
-                std::convert::identity,
-            )
+            .unwrap_or_else(|_| {
+                report["scaleHistoryWorkload"]["reason"] = json!("request-budget-expired");
+                save_acceptance_report(evidence, report);
+                false
+            })
         } else {
             report["scaleHistoryWorkload"]["reason"] = json!("insufficient-owned-cleanup-reserve");
             false
