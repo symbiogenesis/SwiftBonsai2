@@ -146,6 +146,7 @@ fn report(record: &str) -> String {
 mod native {
     use std::{
         ffi::{CStr, CString, c_char, c_void},
+        fmt::Write as _,
         io,
         marker::PhantomData,
         mem::offset_of,
@@ -735,7 +736,8 @@ mod native {
     fn observations(defaults: &Defaults<'_>) -> String {
         let mut output = String::new();
         let mut value = |key: &str, number: u64| {
-            output.push_str(&format!("{key}={number}\n"));
+            // Formatting primitive values into String cannot return fmt::Error.
+            let _ = writeln!(output, "{key}={number}");
         };
         for (name, size, alignment) in [
             ("model", size_of::<ModelParams>(), align_of::<ModelParams>()),
@@ -1521,7 +1523,7 @@ mod native {
                 assert_eq!(
                     &calls.borrow()[calls.borrow().len() - 4..],
                     ["free_context", "free_adapter", "free_model", "backend_free"]
-                )
+                );
             });
             Ok(())
         }
@@ -1547,7 +1549,7 @@ mod native {
                 assert_eq!(
                     &calls.borrow()[calls.borrow().len() - 4..],
                     ["free_context", "free_adapter", "free_model", "backend_free"]
-                )
+                );
             });
             Ok(())
         }
