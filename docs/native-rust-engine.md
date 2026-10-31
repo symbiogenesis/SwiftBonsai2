@@ -12,11 +12,11 @@ feature parity does not qualify inference.
 ## Swift CPU supported subset
 
 The target is native Windows ARM64, initially the 32 GB Snapdragon X Elite. Runner
-pins [**0.1.9 prerelease**](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.9),
-main revision `7aca2251f09acb345d4afb53d5ce411f81017745`, with passing
-[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/41029550347)
+pins [**0.1.10 prerelease**](https://github.com/symbiogenesis/prism-inference/releases/tag/v0.1.10),
+main revision `749a5f5b43bf77764a29682557ec91a8de8dcdef`, with owning
+[Foundation](https://github.com/symbiogenesis/prism-inference/actions/runs/41178893822)
 and
-[conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/41028418717).
+[conformance](https://github.com/symbiogenesis/prism-inference/actions/runs/41178893812).
 Release/focused integration does not establish full-context, sustained-performance,
 creative, adapter or daily-isolation acceptance.
 
@@ -77,7 +77,9 @@ readiness shape remains supported. There is no inference-library dependency or
 engine switch after failure.
 
 This service implementation does not qualify PTQ1 or adapters for release. Cache
-reuse, speculation and offload remain outside the serving subset. PTQ1, other
+reuse, speculation and offload remain outside Runner's serving subset. The
+upstream service's explicit latest-prefix option is separate from that subset.
+PTQ1, other
 families and adapters need separate qualification, including [LoRA
 TPS/quality](swift-lora.md#standard-profile-qualification). [Hardware discovery](hardware-capabilities.md)
 reports inventory; runtime kernel eligibility/`Auto` does not implement Runner's planned
@@ -209,7 +211,7 @@ for CI-only timing/tracing, actual-model comparisons and evidence limits.
 
 ## Bounded parallel-row qualification
 
-The published 0.1.8 app path uses one compute worker. The 0.1.9 prerelease makes
+The published 0.1.8 app path uses one compute worker. The 0.1.9 and 0.1.10 prereleases make
 the existing bounded `parallel-rows` implementation available in its binary
 bundle; all runtime entry points still default to one worker. Feature availability
 does not qualify a worker budget or change the selected engine.
@@ -283,11 +285,11 @@ Swift PQ2 standard profile with Rust Prism while retaining its pinned LoRA at sc
 It reads the compiled release/model/adapter/template locks and requires an explicit full
 Runner revision. PTQ1 is evaluated separately.
 
-### Unreleased parity candidates
+### Integrated parity work
 
 The [main integration record](evidence/prism-main-integration.json) binds the
 merged Windows CNG GGUF verification and explicit private-service
-`--prompt-reuse latest` changes, and the 0.1.10 release preparation. Owning
+`--prompt-reuse latest` changes, and the 0.1.10 release integration. Owning
 settled-main checks and reviewed released bytes qualify separately from the
 earlier [candidate controls](evidence/prism-native-gap-candidate.json).
 The hash path still verifies every selected byte through the existing handle.
@@ -302,8 +304,8 @@ work. The subsequent [hosted candidate run](https://github.com/symbiogenesis/pri
 passes on Windows ARM64, Windows x64 and Linux ARM64, exercising GGUF/default-report
 and hash controls, the graph, full sampled logits/state, worker/server protocols,
 strict analyzers and documentation without weights. These are candidate source
-checks; Runner still pins 0.1.9 and does
-not expose the unreleased reuse option. No load-time or generation-speed gain is
+checks; Runner pins 0.1.10 and does
+not expose the experimental reuse option. No load-time or generation-speed gain is
 established. The explicit adapter lifecycle workload in
 [validation](validation.md#actual-model-application-acceptance) also remains pending
 actual-device evidence. None of these candidates satisfies default promotion.

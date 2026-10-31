@@ -73,7 +73,7 @@ completed observations with `passed: false`. This does not establish complete-st
 parity, adapter authoring basis, performance, output quality or default promotion.
 
 Explicit `profile: pq2-adapter-row4` selects original PQ2, the approved adapter at
-scale 1.3 and pinned Prism 0.1.9 with `--native-row-workers 4`. It requires exactly
+scale 1.3 and pinned Prism 0.1.10 with `--native-row-workers 4`. It requires exactly
 one four-token-cap stream, verified model/adapter readiness and owned Job/listener
 cleanup within the same budget. Its receipt binds the runtime lock, original
 model identity and adapter lock, and distinguishes the configured worker count

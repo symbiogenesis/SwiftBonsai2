@@ -43,11 +43,9 @@ benchmarks and performance captures stay in owning CI.
 Qualify source-launch time to the first native frame and authenticated model
 readiness after excluding worker checkouts from startup fingerprints and switching
 shared Windows artifact hashing to CNG. Retain cold-build versus unchanged-launch
-attribution and complete checksum/cancellation controls. The pinned experimental
-Rust runtime still performs a separate software SHA-256 pass over model weights.
-Qualify the merged upstream CNG implementation through settled-main Foundation,
-conformance, packaging and reviewed immutable 0.1.10 release bytes before updating
-Runner's runtime pin. End-to-end startup gains remain pending within the
+attribution and complete checksum/cancellation controls. Qualify the integrated
+Prism 0.1.10 CNG verifier through Runner's settled-main release integration and
+actual-model startup. End-to-end startup gains remain pending within the
 owner-device budget; performance comparisons and complete checks remain in owning
 CI. The new publishable hash dependency also needs registry delivery, a new GGUF
 version and an updated exact runtime dependency before registry publication.
