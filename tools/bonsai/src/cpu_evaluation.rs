@@ -31,8 +31,7 @@ impl Threads {
 
 fn candidates(available: u16) -> Vec<Threads> {
     // One candidate is the entire owner-device screen, not a slice of a matrix.
-    [(6, 6)]
-        .into_iter()
+    std::iter::once((6, 6))
         .filter(|(decode, prefill)| *decode <= available && *prefill <= available)
         .map(|(decode, prefill)| Threads { decode, prefill })
         .collect()
