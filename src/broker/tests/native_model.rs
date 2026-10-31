@@ -27,6 +27,8 @@ const PTQ1_ADAPTER_CASE: &str =
     "pinned_native_ptq1_adapter_starts_and_streams_within_device_budget";
 const PQ2_ADAPTER_ROW4_CASE: &str =
     "pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget";
+const PQ2_ADAPTER_LIFECYCLE_CASE: &str =
+    "pinned_native_pq2_adapter_row4_checks_scale_change_rejection_and_history";
 const CASE_BUDGET: Duration = Duration::from_secs(240);
 const OPTIONAL_RESERVE: Duration = Duration::from_secs(120);
 const WAIT: Duration = Duration::from_secs(600);
@@ -35,6 +37,9 @@ const BOUNDED_HISTORY_REPETITIONS: usize = 128;
 const SHORT_COMPLETION_CAP: u32 = 4;
 const STALLED_CONSUMER_PAUSE: Duration = Duration::from_secs(1);
 const STOP_WAIT: Duration = Duration::from_secs(30);
+// This one-owner workload needs no fresh startup. Keep thirty seconds for
+// teardown and require at least fifteen seconds before each further request.
+const ADAPTER_LIFECYCLE_RESERVE: Duration = Duration::from_secs(45);
 
 fn case_budget_setting(setting: Option<&str>) -> Option<Duration> {
     let setting = setting?;
@@ -69,6 +74,7 @@ struct AdapterProfile {
     repacked: bool,
     row_workers: u8,
     optional_requests: bool,
+    required_scale_history: bool,
 }
 
 const PTQ1_ADAPTER_PROFILE: AdapterProfile = AdapterProfile {
@@ -77,6 +83,7 @@ const PTQ1_ADAPTER_PROFILE: AdapterProfile = AdapterProfile {
     repacked: true,
     row_workers: 1,
     optional_requests: true,
+    required_scale_history: false,
 };
 const PQ2_ADAPTER_ROW4_PROFILE: AdapterProfile = AdapterProfile {
     name: "pq2-adapter-row4",
@@ -84,6 +91,15 @@ const PQ2_ADAPTER_ROW4_PROFILE: AdapterProfile = AdapterProfile {
     repacked: false,
     row_workers: 4,
     optional_requests: false,
+    required_scale_history: false,
+};
+const PQ2_ADAPTER_LIFECYCLE_PROFILE: AdapterProfile = AdapterProfile {
+    name: "pq2-adapter-lifecycle-row4",
+    case: PQ2_ADAPTER_LIFECYCLE_CASE,
+    repacked: false,
+    row_workers: 4,
+    optional_requests: false,
+    required_scale_history: true,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1163,6 +1179,7 @@ fn adapter_profile(name: &str) -> Option<&'static AdapterProfile> {
     match name {
         "ptq1-adapter" => Some(&PTQ1_ADAPTER_PROFILE),
         "pq2-adapter-row4" => Some(&PQ2_ADAPTER_ROW4_PROFILE),
+        "pq2-adapter-lifecycle-row4" => Some(&PQ2_ADAPTER_LIFECYCLE_PROFILE),
         _ => None,
     }
 }
@@ -1262,13 +1279,98 @@ async fn adapter_owned_stop(
     stop: oneshot::Sender<()>,
     running: tokio::task::JoinHandle<Result<RunReport, bonsai_broker::launcher::LaunchError>>,
     port: u16,
+    allow_closed_admission: bool,
 ) -> Value {
-    stop.send(()).unwrap();
+    let sent = stop.send(());
+    assert!(sent.is_ok() || allow_closed_admission);
     let report = timeout(STOP_WAIT, running).await.unwrap().unwrap().unwrap();
-    assert_eq!(report.exit, RunExit::Shutdown);
+    assert!(
+        report.exit == RunExit::Shutdown
+            || (allow_closed_admission && report.exit == RunExit::AdmissionClosed)
+    );
     assert!(TcpStream::connect(("127.0.0.1", port)).await.is_err());
-    json!({"exit":"shutdown", "completedOperations":report.completed,
-        "failedOperations":report.failed, "ownedJobEmpty":true, "listenerReleased":true})
+    cleanup_observation(&report, report.exit)
+}
+
+async fn required_adapter_scale_history(
+    port: u16,
+    credential: &str,
+    evidence: &Path,
+    deadline: tokio::time::Instant,
+    report: &mut Value,
+) -> bool {
+    // Persist each completed observation before admitting another request.
+    // A later budget expiry must not erase a successful zero or rejection step.
+    for phase in [
+        "scale-zero",
+        "invalid-scale",
+        "scale-change-back-with-history",
+    ] {
+        report["scaleHistoryWorkload"]["phase"] = json!(phase);
+        if deadline.saturating_duration_since(tokio::time::Instant::now())
+            <= ADAPTER_LIFECYCLE_RESERVE
+        {
+            report["scaleHistoryWorkload"]["reason"] = json!("insufficient-owned-cleanup-reserve");
+            save_acceptance_report(evidence, report);
+            return false;
+        }
+        save_acceptance_report(evidence, report);
+        if phase == "invalid-scale" {
+            let mut body =
+                adapter_request(json!([{"role":"user","content":"Name a tree."}]), 1.3, 2);
+            body["abliteration_scale"] = json!(2.000_000_01);
+            let rejected = json_response(
+                &exchange(port, credential, &body).await,
+                "HTTP/1.1 400 Bad Request",
+            );
+            assert!(rejected["error"].is_object());
+            report["scaleHistoryWorkload"]["invalidScaleRejected"] = json!(true);
+            report["invalidScaleRejected"] = json!(true);
+        } else {
+            let (scale, messages) = if phase == "scale-zero" {
+                (0.0, json!([{"role":"user","content":"Name a tree."}]))
+            } else {
+                (
+                    1.3,
+                    json!([
+                        {"role":"user","content":"Name a tree."},
+                        {"role":"assistant","content":"Oak."},
+                        {"role":"user","content":"Name another tree."}
+                    ]),
+                )
+            };
+            let summary = adapter_summary(
+                phase,
+                scale,
+                2,
+                &streamed_response(
+                    &exchange(port, credential, &adapter_request(messages, scale, 2)).await,
+                ),
+            );
+            report["streams"].as_array_mut().unwrap().push(summary);
+            let field = if phase == "scale-zero" {
+                "scaleZeroPassed"
+            } else {
+                "changeBackHistoryPassed"
+            };
+            report["scaleHistoryWorkload"][field] = json!(true);
+            if phase == "scale-change-back-with-history" {
+                report["sameOwnerAfterInvalidScalePassed"] = json!(true);
+            }
+        }
+        save_acceptance_report(evidence, report);
+    }
+    report["scaleHistoryWorkload"]["phase"] = json!("completed");
+    report["scaleHistoryWorkload"]["status"] = json!("passed");
+    save_acceptance_report(evidence, report);
+    true
+}
+
+fn pending_adapter_scale_history() -> Value {
+    json!({"status":"pending", "phase":"initial-owner-startup",
+        "scaleZeroPassed":false, "invalidScaleRejected":false, "changeBackHistoryPassed":false,
+        "suppliedAssistantHistoryIsCapturedModelOutput":false,
+        "minimumRemainingBudgetSeconds":ADAPTER_LIFECYCLE_RESERVE.as_secs()})
 }
 
 async fn bounded_adapter_acceptance(
@@ -1279,6 +1381,9 @@ async fn bounded_adapter_acceptance(
     report: &mut Value,
 ) {
     let deadline = tokio::time::Instant::now() + budget;
+    if profile.required_scale_history {
+        report["scaleHistoryWorkload"] = pending_adapter_scale_history();
+    }
     report["phase"] = json!("initial-owner-startup");
     save_acceptance_report(evidence, report);
     let owner = start_adapter(profile, data, evidence).await;
@@ -1325,11 +1430,36 @@ async fn bounded_adapter_acceptance(
             save_acceptance_report(evidence, report);
         }
     }
+    let required_passed = if profile.required_scale_history {
+        report["phase"] = json!("required-scale-history-lifecycle");
+        save_acceptance_report(evidence, report);
+        // Cancel outstanding HTTP work with a separate complete owned-cleanup
+        // allowance still available. A cancelled connection may close admission.
+        if deadline.saturating_duration_since(tokio::time::Instant::now()) > STOP_WAIT {
+            tokio::time::timeout_at(
+                deadline - STOP_WAIT,
+                required_adapter_scale_history(port, &credential, evidence, deadline, report),
+            )
+            .await
+            .unwrap_or_else(|_| {
+                report["scaleHistoryWorkload"]["reason"] = json!("request-budget-expired");
+                save_acceptance_report(evidence, report);
+                false
+            })
+        } else {
+            report["scaleHistoryWorkload"]["reason"] = json!("insufficient-owned-cleanup-reserve");
+            false
+        }
+    } else {
+        true
+    };
     report["phase"] = json!("owned-cleanup");
     save_acceptance_report(evidence, report);
-    report["initialCleanup"] = adapter_owned_stop(stop, running, port).await;
+    report["initialCleanup"] = adapter_owned_stop(stop, running, port, !required_passed).await;
     report["phase"] = json!("completed");
-    report["passed"] = json!(true);
+    report["lifecyclePassed"] = json!(true);
+    report["allRequestedWorkloadsPassed"] = json!(required_passed);
+    report["passed"] = json!(required_passed);
     save_acceptance_report(evidence, report);
 }
 
@@ -1424,6 +1554,7 @@ fn native_row4_profile_is_explicit_original_pq2_and_one_stream_only() {
             );
             assert!(!profile.repacked);
             assert!(!profile.optional_requests);
+            assert!(!profile.required_scale_history);
         } else {
             assert_eq!(profile.row_workers, 1);
             assert!(profile.optional_requests);
@@ -1434,6 +1565,192 @@ fn native_row4_profile_is_explicit_original_pq2_and_one_stream_only() {
     assert_eq!(body["max_completion_tokens"], 4);
     assert_eq!(body["enable_thinking"], false);
     assert_eq!(CASE_BUDGET, Duration::from_secs(240));
+}
+
+async fn adapter_scale_history_fixture(
+    listener: tokio::net::TcpListener,
+    completed_steps: usize,
+    reached: oneshot::Sender<()>,
+) {
+    for step in 0..completed_steps {
+        let (peer, _) = listener.accept().await.unwrap();
+        let mut peer = BufReader::new(peer);
+        let mut length = None;
+        loop {
+            let line = prefix_line(&mut peer, 16 * 1024).await;
+            if let Some(value) = line.strip_prefix("Content-Length: ") {
+                length = Some(value.trim().parse::<usize>().unwrap());
+            }
+            if line == "\r\n" {
+                break;
+            }
+        }
+        let mut body = vec![0; length.unwrap()];
+        peer.read_exact(&mut body).await.unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["max_completion_tokens"], 2);
+        assert_eq!(body["enable_thinking"], false);
+        assert_eq!(body["stream"], true);
+        let expected_scale: f64 = [0.0, 2.000_000_01, 1.3][step];
+        assert_eq!(
+            body["abliteration_scale"].as_f64().unwrap().to_bits(),
+            expected_scale.to_bits()
+        );
+        if step == 2 {
+            assert_eq!(body["messages"].as_array().unwrap().len(), 3);
+            assert_eq!(
+                body["messages"][1],
+                json!({"role":"assistant", "content":"Oak."})
+            );
+        } else {
+            assert_eq!(body["messages"].as_array().unwrap().len(), 1);
+        }
+        let response = if step == 1 {
+            let body = r#"{"error":{"code":"invalid_request"}}"#;
+            format!(
+                "HTTP/1.1 400 Bad Request\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            )
+        } else {
+            let payload = concat!(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"cedar\"},\"finish_reason\":null}]}\n\n",
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}],\"usage\":{\"completion_tokens\":2}}\n\n",
+                "data: [DONE]\n\n"
+            );
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n{:X}\r\n{payload}\r\n0\r\n\r\n",
+                payload.len()
+            )
+        };
+        peer.get_mut().write_all(response.as_bytes()).await.unwrap();
+        peer.get_mut().shutdown().await.unwrap();
+    }
+    if completed_steps < 3 {
+        let (_peer, _) = listener.accept().await.unwrap();
+        reached.send(()).unwrap();
+        pending::<()>().await;
+    }
+}
+
+#[test]
+fn native_adapter_scale_history_retains_partial_steps_without_qualifying_missing_work() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        timeout(Duration::from_secs(10), async {
+            for completed_steps in 0..=3 {
+                let evidence = env::temp_dir().join(format!(
+                    "Bonsai-Adapter-Progress-{}-{}-{completed_steps}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos()
+                ));
+                fs::create_dir(&evidence).unwrap();
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let port = listener.local_addr().unwrap().port();
+                let (reached, waiting) = oneshot::channel();
+                let fixture = tokio::spawn(adapter_scale_history_fixture(
+                    listener,
+                    completed_steps,
+                    reached,
+                ));
+                let mut report = json!({"passed":false, "allRequestedWorkloadsPassed":false,
+                    "streams":[], "scaleHistoryWorkload":pending_adapter_scale_history()});
+                let deadline = tokio::time::Instant::now()
+                    + if completed_steps == 0 {
+                        ADAPTER_LIFECYCLE_RESERVE
+                    } else {
+                        CASE_BUDGET
+                    };
+                let mut running = Box::pin(required_adapter_scale_history(
+                    port,
+                    "model-free-fixture",
+                    &evidence,
+                    deadline,
+                    &mut report,
+                ));
+                let mut waiting = std::pin::pin!(waiting);
+                let passed = std::future::poll_fn(|cx| {
+                    if completed_steps > 0
+                        && completed_steps < 3
+                        && let std::task::Poll::Ready(result) = waiting.as_mut().poll(cx)
+                    {
+                        result.unwrap();
+                        return std::task::Poll::Ready(false);
+                    }
+                    running.as_mut().poll(cx)
+                })
+                .await;
+                drop(running);
+                if completed_steps < 3 {
+                    fixture.abort();
+                    assert!(fixture.await.unwrap_err().is_cancelled());
+                } else {
+                    fixture.await.unwrap();
+                }
+                let saved: Value =
+                    serde_json::from_slice(&fs::read(evidence.join("acceptance.json")).unwrap())
+                        .unwrap();
+                let observed = &saved["scaleHistoryWorkload"];
+                assert_eq!(passed, completed_steps == 3);
+                assert_eq!(
+                    observed["status"],
+                    if passed { "passed" } else { "pending" }
+                );
+                assert_eq!(observed["scaleZeroPassed"], completed_steps >= 1);
+                assert_eq!(observed["invalidScaleRejected"], completed_steps >= 2);
+                assert_eq!(observed["changeBackHistoryPassed"], completed_steps == 3);
+                assert_eq!(
+                    observed["suppliedAssistantHistoryIsCapturedModelOutput"],
+                    false
+                );
+                assert_eq!(saved["passed"], false);
+                assert_eq!(saved["allRequestedWorkloadsPassed"], false);
+                assert_eq!(
+                    saved["streams"].as_array().unwrap().len(),
+                    usize::from(completed_steps >= 1) + usize::from(completed_steps == 3)
+                );
+                if completed_steps == 0 {
+                    assert_eq!(observed["reason"], "insufficient-owned-cleanup-reserve");
+                }
+                fs::remove_file(evidence.join("acceptance.json")).unwrap();
+                fs::remove_dir(evidence).unwrap();
+            }
+        })
+        .await
+        .unwrap();
+    });
+}
+
+#[test]
+fn native_adapter_scale_history_profile_requires_separate_explicit_selection() {
+    let selected = adapter_profile("pq2-adapter-lifecycle-row4").unwrap();
+    assert_eq!(
+        profile_case(selected.name, false, false),
+        Some(PQ2_ADAPTER_LIFECYCLE_CASE)
+    );
+    assert_eq!(profile_case(selected.name, true, false), None);
+    assert_eq!(profile_case(selected.name, false, true), None);
+    assert!(selected.required_scale_history);
+    assert!(!selected.optional_requests);
+    assert!(!selected.repacked);
+    assert_eq!(selected.row_workers, 4);
+    let args = adapter_arguments(selected, "8081");
+    assert!(
+        args.windows(2)
+            .any(|pair| pair[0] == "--native-row-workers" && pair[1] == "4")
+    );
+    assert!(args.iter().any(|arg| arg == "--use-abliterate-lora"));
+    assert!(!args.iter().any(|arg| arg == "--use-repacked-ptq1"));
+    assert!(
+        !adapter_profile("pq2-adapter-row4")
+            .unwrap()
+            .required_scale_history
+    );
 }
 
 #[test]
@@ -1544,6 +1861,69 @@ fn pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget() {
         .await
         .unwrap();
     }));
+}
+
+#[test]
+#[ignore = "Actual PQ2 adapter scale/history lifecycle; explicit bounded main-only device CI."]
+fn pinned_native_pq2_adapter_row4_checks_scale_change_rejection_and_history() {
+    ci_only();
+    let budget = case_budget();
+    assert_eq!(
+        profile_case(
+            &env::var("BONSAI_NATIVE_PROFILE").unwrap(),
+            env::var("BONSAI_NATIVE_EXTENDED").as_deref() == Ok("true"),
+            env::var("BONSAI_NATIVE_STALLED_CONSUMER").as_deref() == Ok("true")
+        ),
+        Some(PQ2_ADAPTER_LIFECYCLE_CASE)
+    );
+    let data = env::var_os("BONSAI_NATIVE_DATA").unwrap();
+    let evidence = env::var_os("BONSAI_NATIVE_EVIDENCE").unwrap();
+    let mut report = json!({"schemaVersion":1, "case":PQ2_ADAPTER_LIFECYCLE_CASE,
+        "revision":env::var("GITHUB_SHA").unwrap(), "runId":env::var("GITHUB_RUN_ID").unwrap(),
+        "runAttempt":env::var("GITHUB_RUN_ATTEMPT").unwrap(),
+        "scope":"bounded-actual-model-pq2-adapter-scale-history-lifecycle",
+        "profile":PQ2_ADAPTER_LIFECYCLE_PROFILE.name, "passed":false, "lifecyclePassed":false,
+        "allRequestedWorkloadsPassed":false, "requiredNativeSandbox":true,
+        "aggregateModelCaseBudgetSeconds":budget.as_secs(), "maximumModelCaseBudgetSeconds":CASE_BUDGET.as_secs(),
+        "wholeJobMaximumSeconds":300, "configuredNativeRowWorkers":4,
+        "rowWorkerCountIndependentlyObserved":false, "requiredStreams":3,
+        "requestedAdapterScales":[1.3,0.0,1.3], "requestedCompletionCaps":[4,2,2],
+        "weightRepresentation":"PQ2_0",
+        "runtimeLock":serde_json::from_str::<Value>(include_str!("../../../config/prism-inference.lock.json")).unwrap(),
+        "modelIdentity":serde_json::from_str::<Value>(include_str!("../../../config/swift-assessment.lock.json")).unwrap()["model"],
+        "adapterLock":serde_json::from_str::<Value>(include_str!("../../../config/swift-lora.lock.json")).unwrap(),
+        "adapterRequested":true, "adapterEnabled":false, "verifiedReadinessObserved":false,
+        "sameOwnerAfterInvalidScalePassed":false, "invalidScaleRejected":false,
+        "unrunIndependentGates":["signed-zero-and-scale-2", "context-rejection-and-reuse", "fresh-owner-restart",
+            "edited-or-generated-history-reuse", "extended-history", "stalled-consumer", "full-context-and-output",
+            "performance-and-TPS", "creative-quality", "daily-service-isolation"],
+        "completeStateParityQualified":false, "authoringBasisQualified":false,
+        "fullContextQualified":false, "fullOutputQualified":false, "performanceQualified":false,
+        "qualityQualified":false, "dailyServiceIsolationQualified":false, "defaultRuntimeQualified":false});
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(LocalSet::new().run_until(async {
+        timeout(
+            budget,
+            bounded_adapter_acceptance(
+                &PQ2_ADAPTER_LIFECYCLE_PROFILE,
+                Path::new(&data),
+                Path::new(&evidence),
+                budget,
+                &mut report,
+            ),
+        )
+        .await
+        .unwrap();
+    }));
+    // Admission failure, budget exhaustion or a skipped required step cannot
+    // turn a successful initial smoke/owned cleanup into lifecycle acceptance.
+    assert_eq!(
+        report["passed"], true,
+        "Required adapter lifecycle work remains pending."
+    );
 }
 
 #[test]

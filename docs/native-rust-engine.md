@@ -283,6 +283,29 @@ Swift PQ2 standard profile with Rust Prism while retaining its pinned LoRA at sc
 It reads the compiled release/model/adapter/template locks and requires an explicit full
 Runner revision. PTQ1 is evaluated separately.
 
+### Unreleased parity candidates
+
+The [source candidate record](evidence/prism-native-gap-candidate.json) binds two
+upstream changes awaiting settled-main owning checks and released-byte integration:
+Windows CNG GGUF verification and explicit private-service `--prompt-reuse latest`.
+The hash path still verifies every selected byte through the existing handle.
+The reuse candidate retains only latest committed live state at identical adapter
+scale bits, recomputes mismatched histories and preserves transactional rollback.
+It adds no saved-prefix cache. Omitted reuse selection retains per-request reset;
+opt-in service readiness advertises `prompt_reuse: "latest"` separately.
+
+Focused native hash vectors, cancellation/read failures and final-byte corruption
+controls pass locally. Bounded local owning compilation stopped during dependency
+work. The subsequent [hosted candidate run](https://github.com/symbiogenesis/prism-inference/actions/runs/41176550777)
+passes on Windows ARM64, Windows x64 and Linux ARM64, exercising GGUF/default-report
+and hash controls, the graph, full sampled logits/state, worker/server protocols,
+strict analyzers and documentation without weights. These are candidate source
+checks; Runner still pins 0.1.9 and does
+not expose the unreleased reuse option. No load-time or generation-speed gain is
+established. The explicit adapter lifecycle workload in
+[validation](validation.md#actual-model-application-acceptance) also remains pending
+actual-device evidence. None of these candidates satisfies default promotion.
+
 ### Inspect the policy
 
 ```powershell
@@ -290,10 +313,16 @@ $revision = git rev-parse main
 $plan = ./scripts/Get-RuntimePromotion.ps1 -RunnerRevision $revision
 $plan.policy.requiredGates
 ./scripts/Get-RuntimePromotion.ps1 -RunnerRevision $revision -EvidencePath D:\Evidence\promotion.json
+# Review the four-worker candidate independently; its evidence cannot qualify one worker.
+./scripts/Get-RuntimePromotion.ps1 -RunnerRevision $revision -NativeRowWorkers 4
 ```
 
 The evaluator checks offline completeness and byte integrity, without inference,
 benchmarks, selection changes, reviewer authentication or network provenance checks.
+The policy binds the selected `nativeRowWorkers` (one by default, or explicit four)
+and `servingStatePolicy: reset-every-request`. Evidence for a different worker count
+or experimental state reuse cannot qualify this policy. Regenerate pending manifests
+after a policy identity change; retained historical reports remain unchanged.
 Independently review CI/source/report/reviewer identities and require `promotionReady:
 true`; command success alone cannot authorize promotion.
 

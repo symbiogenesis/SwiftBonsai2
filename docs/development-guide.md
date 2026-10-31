@@ -248,6 +248,11 @@ content freshness handles preserved timestamps. Each variant has an atomic recei
 short labels protect MSVC path space, and no startup cache cleanup is needed.
 A version probe is reused only for the executable digest checked during that launch.
 
+Root `.worktrees/` storage is excluded from the automatic source inventory, so
+unrelated worker checkouts cannot delay launch or invalidate these receipts.
+Explicit embedded files there still enter the fingerprint; Cargo path dependencies
+there disable receipt reuse rather than treating untracked dependencies as stable.
+
 Build cancellation, owner exit or crash closes its Windows Job and waits for
 descendants before releasing the build lock. Writes complete before source/receipt
 publication; corrupt completed partials are preserved before one fresh attempt.

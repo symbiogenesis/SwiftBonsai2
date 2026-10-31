@@ -81,6 +81,25 @@ from an independently observed thread count. It runs no optional requests or
 retry. Multi-scale, rejection/reuse, history, context, restart, quality, sustained
 service and TPS gates remain unrun; this smoke cannot enable a default.
 
+Explicit `profile: pq2-adapter-lifecycle-row4` separately requires the original
+PQ2 and approved adapter with four row workers through three short streams in
+one owner: scale 1.3 (four-token cap), scale zero (two-token cap), invalid-scale
+HTTP 400, then scale 1.3 with a supplied user/assistant/user history (two-token
+cap). The assistant fixture is fixed public text, not captured model output.
+Every further request needs more than 45 seconds remaining; the complete
+sequence has a request deadline thirty seconds before the aggregate deadline
+for owned cleanup. A completed zero-scale or rejection observation is saved
+before the next request. A skipped or cancelled step remains pending and fails
+the case after cleanup, even when initial streaming and cleanup passed.
+`allRequestedWorkloadsPassed` and the individual step flags are independent of
+`lifecyclePassed`. No other workloads or retry are admitted to this profile.
+This is application scale-change/rejection/supplied-history coverage; it does not
+establish zero/no-adapter numerical identity, adapter writer basis, exact live
+prefix reuse, edited/generated-history parity, full context/output, quality or
+performance. Its actual-model gate remains pending until retained device CI
+evidence within the shared five-minute total budget; do not partition a longer
+matrix across repeated profiles/jobs.
+
 Before runner temp cleanup, the workflow reads only `backend.stdout` and
 `backend.stderr` from at most eight immediate protected session directories, with
 a 64 KiB limit per log and strict UTF-8 decoding. It validates both actual keys
@@ -139,6 +158,8 @@ Model-free acceptance regressions:
 | `native_stalled_consumer_never_qualifies_natural_completion_as_interruption` | Operation-counter interruption guard |
 | `native_stalled_consumer_rejects_error_or_unframed_stream_headers` | HTTP 200 and chunked event-stream framing before accepting content |
 | `native_case_budget_rejects_missing_unbounded_and_malformed_allowances` | Reject missing, zero, malformed, overflowing and over-240-second allowances; optional workloads use the reduced allowance and retain the 120-second recovery reserve |
+| `native_adapter_scale_history_profile_requires_separate_explicit_selection` | Scale/history lifecycle is a distinct original-PQ2 row4 selection; the one-stream smoke and no-extra-workload restrictions remain |
+| `native_adapter_scale_history_retains_partial_steps_without_qualifying_missing_work` | Real model-free HTTP peers verify zero/rejected/changed-back scales and supplied history; cancelling after zero or rejection preserves completed receipts without qualifying later work; exhausted request reserve starts no HTTP work |
 
 ### Foundation and routing
 

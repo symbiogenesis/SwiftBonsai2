@@ -1,7 +1,7 @@
 use super::*;
 
 fn policy_fixture() -> crate::Result<Value> {
-    policy(&"a".repeat(40))
+    policy(&"a".repeat(40), 1)
 }
 
 fn evidence(policy: &Value) -> crate::Result<Value> {
@@ -20,6 +20,11 @@ fn missing_evidence_stays_pending_and_policy_binds_standard_profile() -> crate::
     assert_eq!(policy["identities"]["adapterScale"], 1.3);
     assert_eq!(policy["identities"]["contextTokens"], 8192);
     assert_eq!(policy["identities"]["maxCompletionTokens"], 4096);
+    assert_eq!(policy["identities"]["nativeRowWorkers"], 1);
+    assert_eq!(
+        policy["identities"]["servingStatePolicy"],
+        "reset-every-request"
+    );
     assert!(
         policy["identities"]["adapterSha256"]
             .as_str()
@@ -35,6 +40,39 @@ fn missing_evidence_stays_pending_and_policy_binds_standard_profile() -> crate::
         )?["status"],
         "pending"
     );
+    Ok(())
+}
+
+#[test]
+fn row_worker_evidence_cannot_qualify_a_different_execution_policy() -> crate::Result<()> {
+    let single = policy_fixture()?;
+    let parallel = policy(&"a".repeat(40), 4)?;
+    let plan = run(json!({
+        "operation": "plan", "runnerRevision": "a".repeat(40), "nativeRowWorkers": 4
+    }))?;
+    assert_eq!(plan["policy"], parallel);
+    assert_eq!(parallel["identities"]["nativeRowWorkers"], 4);
+    assert!(score(evidence(&single)?, &parallel, &std::env::temp_dir()).is_err());
+    assert!(score(evidence(&parallel)?, &single, &std::env::temp_dir()).is_err());
+    for value in [
+        json!(0),
+        json!(2),
+        json!(8),
+        json!(256),
+        json!(-1),
+        json!("4"),
+        Value::Null,
+    ] {
+        assert!(
+            run(json!({
+                "operation": "plan", "runnerRevision": "a".repeat(40), "nativeRowWorkers": value
+            }))
+            .is_err()
+        );
+    }
+    let mut reused = evidence(&parallel)?;
+    reused["identities"]["servingStatePolicy"] = json!("same-session-live-prefix");
+    assert!(score(reused, &parallel, &std::env::temp_dir()).is_err());
     Ok(())
 }
 

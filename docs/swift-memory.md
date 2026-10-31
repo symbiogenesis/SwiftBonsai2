@@ -309,6 +309,15 @@ weights, KV precision, checkpoints, adapters and the [resource policy](#native-c
 
 ### Mapping and startup
 
+Runner's shared Windows artifact verifier streams complete SHA-256 checks through
+[Windows CNG](../src/windows-credentials/src/hash.rs), avoiding the pinned
+RustCrypto ARM64 detector's software fallback on Windows. Verification still reads
+every byte, checks the exact length and retains the same read-only file guards;
+it does not trust timestamps or a cached model digest. This also applies to runtime,
+adapter and speech artifact verification. Native readiness speed remains to be
+measured: the separately pinned Rust inference runtime performs its own complete
+model hash using RustCrypto before loading, and that additional pass remains.
+
 The [CPU check](../scripts/Invoke-CpuCheck.ps1) selects mmap, no repack, no warmup, CPU
 buffers and 128/64 batch/microbatch. The
 [loader](https://github.com/PrismML-Eng/llama.cpp/blob/73bfe6cc485554822f80c473a3c0c4f25e80f41b/src/llama-model-loader.cpp)

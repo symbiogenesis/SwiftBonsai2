@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
+#[cfg(any(test, not(windows)))]
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -346,8 +347,8 @@ fn check_locked(
     Ok(())
 }
 
-fn digest_hex(hash: Sha256) -> String {
-    hash.finalize()
+fn digest_hex(digest: [u8; 32]) -> String {
+    digest
         .into_iter()
         .flat_map(|byte| [byte >> 4, byte & 0x0f])
         .map(|nibble| char::from(b"0123456789abcdef"[usize::from(nibble)]))
@@ -361,8 +362,8 @@ fn digest_hex(hash: Sha256) -> String {
 /// neither rewinds nor locks the reader.
 ///
 /// # Errors
-/// Rejects an empty buffer, read failures, short or long streams, byte-count
-/// overflow, and any error returned by the checkpoint.
+/// Rejects an empty buffer, unavailable native hashing, read or hash failures,
+/// short or long streams, byte-count overflow, and checkpoint errors.
 pub fn hash_reader(
     reader: &mut impl Read,
     expected: u64,
@@ -372,6 +373,13 @@ pub fn hash_reader(
     if buffer.is_empty() {
         return Err(ArtifactError::Configuration);
     }
+    // RustCrypto's ARM64 runtime feature detection is unavailable on Windows;
+    // CNG dispatches to the OS-supported implementation without requiring a
+    // global CPU target flag or skipping any artifact bytes.
+    #[cfg(windows)]
+    let mut hash =
+        bonsai_windows_credentials::Sha256::new().map_err(|_| ArtifactError::Configuration)?;
+    #[cfg(not(windows))]
     let mut hash = Sha256::new();
     let mut total = 0_u64;
     loop {
@@ -386,12 +394,20 @@ pub fn hash_reader(
         if total > expected {
             return Err(ArtifactError::Identity);
         }
+        #[cfg(windows)]
+        hash.update(&buffer[..count])
+            .map_err(|_| ArtifactError::Identity)?;
+        #[cfg(not(windows))]
         hash.update(&buffer[..count]);
     }
     if total != expected {
         return Err(ArtifactError::Identity);
     }
-    Ok(digest_hex(hash))
+    #[cfg(windows)]
+    let digest = hash.finish().map_err(|_| ArtifactError::Identity)?;
+    #[cfg(not(windows))]
+    let digest = hash.finalize().into();
+    Ok(digest_hex(digest))
 }
 
 struct Entry {
@@ -799,6 +815,47 @@ mod tests {
         assert_eq!(
             hash_reader(&mut Cursor::new(b""), 0, &mut buffer, &mut || Ok(())),
             Ok("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into())
+        );
+    }
+    #[cfg(windows)]
+    #[test]
+    fn cng_hash_matches_portable_sha256_across_binary_read_boundaries() -> Result<(), ArtifactError>
+    {
+        let payload: Vec<_> = (0..=255_u8)
+            .cycle()
+            .take(2 * HASH_BUFFER_BYTES + 137)
+            .collect();
+        let expected = digest_hex(Sha256::digest(&payload).into());
+        for length in [63, 64, 65, HASH_BUFFER_BYTES] {
+            let mut buffer = vec![0; length];
+            assert_eq!(
+                hash_reader(
+                    &mut Cursor::new(&payload),
+                    u64::try_from(payload.len()).map_err(|_| ArtifactError::Identity)?,
+                    &mut buffer,
+                    &mut || Ok(()),
+                )?,
+                expected
+            );
+        }
+        Ok(())
+    }
+    #[test]
+    fn bounded_hash_never_returns_a_digest_after_a_read_failure() {
+        struct BrokenReader(bool);
+        impl Read for BrokenReader {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                if self.0 {
+                    return Err(std::io::Error::other("synthetic read failure"));
+                }
+                self.0 = true;
+                buffer[0] = b'a';
+                Ok(1)
+            }
+        }
+        assert_eq!(
+            hash_reader(&mut BrokenReader(false), 1, &mut [0; 64], &mut || Ok(())),
+            Err(ArtifactError::Identity)
         );
     }
     #[test]
