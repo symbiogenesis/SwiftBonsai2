@@ -47,7 +47,7 @@ pub const LAUNCH_USAGE: &str = concat!(
     "  --frontend-port <0-or-1024..65535> --backend-port <1024..65535>\n",
     "  [--profile <reference-cpu|swift-pq2-assessment>]\n",
     "  [--native-engine] (requires the pinned Prism inference release and swift-pq2-assessment)\n",
-    "  [--native-row-workers 1|4] (4 requires --native-engine and pinned release 0.1.9)\n",
+    "  [--native-row-workers 1|4] (4 requires --native-engine and pinned release 0.1.9 or 0.1.10)\n",
     "  [--use-abliterate-lora] (pinned adapter; request scale 0..2, default 1.3; Swift CPU only)\n",
     "  [--use-repacked-ptq1] (verified current-weight export; Swift CPU only)\n",
     "  [--max-waiting <0..8>] [--check-only]\n",

@@ -41,6 +41,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           ./tests/Test-NativeStartupDiagnostics.ps1
+          ./tests/Test-NativeAcceptanceBudget.ps1
       - uses: ./.github/actions/bonsai-tools
       - uses: ./.github/actions/rust-toolchain
         with:
@@ -67,6 +68,7 @@ jobs:
           foreach ($case in @('native_profile_selection_and_scale_receipts_preserve_bounded_scope', 'native_row4_profile_is_explicit_original_pq2_and_one_stream_only',
               'native_adapter_scale_history_profile_requires_separate_explicit_selection',
               'native_adapter_scale_history_retains_partial_steps_without_qualifying_missing_work',
+              'native_adapter_request_budget_drops_inflight_work_before_owned_cleanup',
               'native_bounded_history_and_stall_requests_preserve_distinct_output_limits',
               'native_extended_acceptance_distinguishes_output_usage_from_delta_count',
               'native_lifecycle_observations_separate_generation_usage_and_owned_cleanup',
@@ -189,6 +191,8 @@ jobs:
             WholeJobMaximumSeconds=300; PostProcessReserveSeconds=30
             PreparationElapsedMilliseconds=$null; ModelCaseBudgetSeconds=$null
             TestProcessHardLimitSeconds=$null
+            OwnerDeadlineApplied=$false; OwnerElapsedMilliseconds=$null
+            OwnerProcessExitReserveSeconds=$null
             StartupDiagnosticsReceipt='startup-diagnostics.json'
             StartupDiagnosticsReady=$false; StartupDiagnosticsClassification='not-collected'
             StartupFailureMarkers=@()
@@ -234,15 +238,32 @@ jobs:
               $start.ArgumentList.Add($argument)
             }
             $jobStarted = [DateTime]::Parse($env:BONSAI_NATIVE_JOB_STARTED_UTC, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind)
-            $setupElapsed = ([DateTime]::UtcNow - $jobStarted).TotalSeconds
             # Charge checkout, hosted-binary intake, verification and inventory.
             # Reserve ten seconds between the Rust soft limit and process limit,
             # then thirty seconds for forced teardown, diagnostics and uploads.
-            $hardLimitSeconds = [int][Math]::Floor([Math]::Min(250, 270 - $setupElapsed))
-            $caseBudgetSeconds = [Math]::Min(240, $hardLimitSeconds - 10)
-            if ($setupElapsed -lt 0 -or $caseBudgetSeconds -lt 1) {
+            # An inherited owner clock starts before registration and may only
+            # shorten these limits, preserving exit time before its watchdog.
+            Import-Module (Join-Path $env:GITHUB_WORKSPACE 'scripts/Bonsai.NativeAcceptanceBudget.psm1')
+            $ownerDeadline = @{
+              RunId=$env:BONSAI_NATIVE_OWNER_RUN_ID; Revision=$env:BONSAI_NATIVE_OWNER_REVISION
+              StartedTick=$env:BONSAI_NATIVE_OWNER_STARTED_TICK; StartedUtc=$env:BONSAI_NATIVE_OWNER_STARTED_UTC
+              WorkSeconds=$env:BONSAI_NATIVE_OWNER_WORK_SECONDS
+            }
+            try {
+              $limits = Get-NativeAcceptanceBudget -JobStartedUtc $jobStarted -NowUtc ([DateTime]::UtcNow) `
+                -NowTick ([Diagnostics.Stopwatch]::GetTimestamp()) -TickFrequency ([Diagnostics.Stopwatch]::Frequency) `
+                -RunId $env:GITHUB_RUN_ID -Revision $env:GITHUB_SHA -OwnerDeadline $ownerDeadline
+            } catch {
               $hostReport.AggregateBudgetExpired = $true
-              throw 'Owner-job preparation exhausted the acceptance budget; qualification remains pending.'
+              throw
+            }
+            $setupElapsed = $limits.PreparationElapsedSeconds
+            $hardLimitSeconds = $limits.HardLimitSeconds
+            $caseBudgetSeconds = $limits.CaseBudgetSeconds
+            $hostReport.OwnerDeadlineApplied = $limits.OwnerDeadlineApplied
+            if ($limits.OwnerDeadlineApplied) {
+              $hostReport.OwnerElapsedMilliseconds = [Math]::Ceiling($limits.OwnerElapsedSeconds * 1000)
+              $hostReport.OwnerProcessExitReserveSeconds = 15
             }
             $hostReport.PreparationElapsedMilliseconds = [Math]::Ceiling($setupElapsed * 1000)
             $hostReport.ModelCaseBudgetSeconds = $caseBudgetSeconds

@@ -55,9 +55,15 @@ Paths below are relative to Runner. No tracked C/C++ source/header files remain
 from the initial eleven; removed controls retain their identities and observations as data.
 Generated private-source C++ and external dependencies are tracked separately.
 
+The [retained owning main run](evidence/prism-main-integration.json) passes the
+full native-linked TTS consumer's 51 tests, Release analyzers, documentation and
+build at revision `53f717e`; speech sources are unchanged through `d6c4246`.
+This closes those source integration obligations, while actual-model speech
+and external-engine retirement remain separate.
+
 | File | Replacement and exit condition |
 | --- | --- |
-| `src/speech-tts/tests/reference/philox.h` | Source removed: normalized-source SHA-256 replaces the anchor. Licensed provenance, 4,411 ordered scalar observations and independent block/rounding answers remain. Hosted owning-crate integration remains pending. |
+| `src/speech-tts/tests/reference/philox.h` | Source removed: normalized-source SHA-256 replaces the anchor. Licensed provenance, 4,411 ordered scalar observations and independent block/rounding answers remain. The retained owning main run passes the captured-bit ABI and independent Philox controls. |
 | `src/speech-tts/tests/philox_oracle.cpp` | Source removed: Rust validates immutable records and fixture identity. Its compilation/launch and indirect sampler-oracle inclusion are removed; provenance is retained as data. |
 | `src/speech-tts/tests/reference/sampling.h` | Source removed after normalized length/SHA guard replacement. Immutable observations retain all 722 masking/penalty cases and 714 nonempty greedy cases; the downloaded stochastic probability pipeline remains native and separately pending. |
 | `src/speech-tts/tests/sampling_oracle.cpp` | Source and compilation/launch removed after complete ordered input/output replay passes in Rust, including duplicate/invalid IDs, signed zero and exceptional floats. Original and executed-driver identities, compiler/target configuration and fixture digests remain in `sampling-v1.provenance.json`. |
@@ -66,16 +72,17 @@ Generated private-source C++ and external dependencies are tracked separately.
 | `src/speech-tts/tests/tokenizer-gguf.h` | Source removed after the production Rust GGUF adapter/loader passes exact intake-index, duplicate/rank, missing/null/oversized/type, failed replacement and balanced-release checks. A tiny real GGUF file also runs through the pinned reader without weights. The external GGUF parser itself remains native. |
 | `src/speech-tts/tests/tokenizer-error.h` | Logging/exception fixture removed. Rust reports registration/encoding failure and owns result cleanup, with copy refusal and safe-Rust unwind checks. The remaining native callback catches allocation exceptions before returning failure to Rust. |
 | `src/speech-tts/tests/tokenizer_lifecycle.cpp` | Source and compile/launch path removed after its assertions move to the production Rust loader, actual Box replacement and result ownership path. Exact original identities and assertion mapping remain in `tokenizer-lifecycle-v1.provenance.json`. The thin generated holder retains no-copy/no-move static assertions; bridge compilation, full hosted linkage and actual-model acceptance remain distinct checks. |
-| `src/speech-tts/tests/decode_graph_cache.cpp` | Source and native test DLL compiler/loader removed. The production Rust owner now holds one keyed graph resource, drops it before replacement, recovers from failed builds and prevents eviction/free during compute leases. Native lease teardown synchronizes before Rust completion; pipeline teardown drops the cache before persistent resources. Rust tests preserve every original allocation/window/batch/failure assertion. `decode-graph-v1.provenance.json` retains source identities and assertion mappings. Native graph construction/compute callbacks remain generated glue; full hosted/model acceptance remains pending. |
+| `src/speech-tts/tests/decode_graph_cache.cpp` | Source and native test DLL compiler/loader removed. The production Rust owner now holds one keyed graph resource, drops it before replacement, recovers from failed builds and prevents eviction/free during compute leases. Native lease teardown synchronizes before Rust completion; pipeline teardown drops the cache before persistent resources. Rust tests preserve every original allocation/window/batch/failure assertion. `decode-graph-v1.provenance.json` retains source identities and assertion mappings. Native graph construction/compute callbacks remain generated glue; owning hosted linkage and lifetime/lease controls pass in the retained main run, while model acceptance remains pending. |
 | `tools/native-reference/swift_ptq1_reference.cpp` | Replaced by the single-file Rust collector. Native source-header download and C++ compilation are removed from bundle preparation. Immutable observations retain all 369 layout/default/configuration/returned-aggregate controls; compile-time guards cover all 62 offsets, three sizes and alignments. The actual pinned-DLL probe/observations and seven Rust success/failure/output/cleanup checks pass locally. Schema-two receipts bind Rust source and controls; owner preflight compares the complete observation set before admission. Hosted bundle and actual-model logits/state comparison remain pending. The DLL engine itself is still native and has a separate retirement gate. |
 
 [Initial capture evidence](evidence/cpp-retirement-model-free.json) retains the
 first 30 model-free checks. [Final control evidence](evidence/cpp-retirement-final-controls.json)
 binds the later source identities to 43 passing focused Rust checks, strict lint
 checks, the complete actual-DLL ABI comparison, receipt/observation rejection and
-syntax compilation of both affected pinned Qwen source units. These are focused
-controls, not the full owning-crate build or a model qualification. Hosted
-integration and actual-model gates remain pending in
+syntax compilation of both affected pinned Qwen source units. The subsequent
+retained main run closes the full TTS owning-crate integration, including native
+bridge compilation and linked tokenizer/cache/lease controls. The source-bound
+PTQ1 collector bundle and actual-model gates remain pending in
 [PLAN.md](../PLAN.md).
 
 ## Prism checked-in native files

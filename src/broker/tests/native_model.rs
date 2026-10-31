@@ -1395,8 +1395,53 @@ async fn bounded_adapter_acceptance(
     let credential = key(&owner);
     let (stop, stopped) = oneshot::channel();
     let running = spawn_local(owner.run(async { stopped.await.map_err(io::Error::other) }));
+    // Every HTTP phase, including the first required stream and optional PTQ1
+    // requests, must finish before the complete owned-cleanup allowance starts.
+    let required_passed = adapter_work_before_cleanup(
+        deadline,
+        adapter_requests(profile, port, &credential, evidence, deadline, report),
+    )
+    .await
+    .unwrap_or_else(|| {
+        report["requestBudgetExpired"] = json!(true);
+        if profile.required_scale_history {
+            report["scaleHistoryWorkload"]["reason"] = json!("request-budget-expired");
+        }
+        save_acceptance_report(evidence, report);
+        false
+    });
+    report["phase"] = json!("owned-cleanup");
+    save_acceptance_report(evidence, report);
+    report["initialCleanup"] = adapter_owned_stop(stop, running, port, !required_passed).await;
+    report["phase"] = json!("completed");
+    report["lifecyclePassed"] = json!(true);
+    report["allRequestedWorkloadsPassed"] = json!(required_passed);
+    report["passed"] = json!(required_passed);
+    save_acceptance_report(evidence, report);
+}
+
+async fn adapter_work_before_cleanup<T>(
+    deadline: tokio::time::Instant,
+    work: impl Future<Output = T>,
+) -> Option<T> {
+    if deadline.saturating_duration_since(tokio::time::Instant::now()) <= STOP_WAIT {
+        return None;
+    }
+    tokio::time::timeout_at(deadline - STOP_WAIT, work)
+        .await
+        .ok()
+}
+
+async fn adapter_requests(
+    profile: &AdapterProfile,
+    port: u16,
+    credential: &str,
+    evidence: &Path,
+    deadline: tokio::time::Instant,
+    report: &mut Value,
+) -> bool {
     let mut streams =
-        vec![adapter_stream(port, &credential, 1.3, "required-scale-1.3-stream", 4).await];
+        vec![adapter_stream(port, credential, 1.3, "required-scale-1.3-stream", 4).await];
     report["streams"] = json!(streams);
     save_acceptance_report(evidence, report);
     // Optional requests share this one aggregate budget; no matrix or restart
@@ -1406,7 +1451,7 @@ async fn bounded_adapter_acceptance(
     {
         report["phase"] = json!("optional-scale-zero");
         save_acceptance_report(evidence, report);
-        streams.push(adapter_stream(port, &credential, 0.0, "optional-scale-zero", 2).await);
+        streams.push(adapter_stream(port, credential, 0.0, "optional-scale-zero", 2).await);
         report["streams"] = json!(streams);
         save_acceptance_report(evidence, report);
         if deadline.saturating_duration_since(tokio::time::Instant::now()) > OPTIONAL_RESERVE {
@@ -1416,51 +1461,27 @@ async fn bounded_adapter_acceptance(
                 adapter_request(json!([{"role":"user","content":"Name a tree."}]), 1.3, 2);
             body["abliteration_scale"] = json!(2.000_000_01);
             let rejected = json_response(
-                &exchange(port, &credential, &body).await,
+                &exchange(port, credential, &body).await,
                 "HTTP/1.1 400 Bad Request",
             );
             assert!(rejected["error"].is_object());
             report["invalidScaleRejected"] = json!(true);
             save_acceptance_report(evidence, report);
             streams.push(
-                adapter_stream(port, &credential, 1.3, "same-owner-after-invalid-scale", 2).await,
+                adapter_stream(port, credential, 1.3, "same-owner-after-invalid-scale", 2).await,
             );
             report["streams"] = json!(streams);
             report["sameOwnerAfterInvalidScalePassed"] = json!(true);
             save_acceptance_report(evidence, report);
         }
     }
-    let required_passed = if profile.required_scale_history {
+    if profile.required_scale_history {
         report["phase"] = json!("required-scale-history-lifecycle");
         save_acceptance_report(evidence, report);
-        // Cancel outstanding HTTP work with a separate complete owned-cleanup
-        // allowance still available. A cancelled connection may close admission.
-        if deadline.saturating_duration_since(tokio::time::Instant::now()) > STOP_WAIT {
-            tokio::time::timeout_at(
-                deadline - STOP_WAIT,
-                required_adapter_scale_history(port, &credential, evidence, deadline, report),
-            )
-            .await
-            .unwrap_or_else(|_| {
-                report["scaleHistoryWorkload"]["reason"] = json!("request-budget-expired");
-                save_acceptance_report(evidence, report);
-                false
-            })
-        } else {
-            report["scaleHistoryWorkload"]["reason"] = json!("insufficient-owned-cleanup-reserve");
-            false
-        }
+        required_adapter_scale_history(port, credential, evidence, deadline, report).await
     } else {
         true
-    };
-    report["phase"] = json!("owned-cleanup");
-    save_acceptance_report(evidence, report);
-    report["initialCleanup"] = adapter_owned_stop(stop, running, port, !required_passed).await;
-    report["phase"] = json!("completed");
-    report["lifecyclePassed"] = json!(true);
-    report["allRequestedWorkloadsPassed"] = json!(required_passed);
-    report["passed"] = json!(required_passed);
-    save_acceptance_report(evidence, report);
+    }
 }
 
 #[test]
@@ -1754,6 +1775,57 @@ fn native_adapter_scale_history_profile_requires_separate_explicit_selection() {
 }
 
 #[test]
+fn native_adapter_request_budget_drops_inflight_work_before_owned_cleanup() {
+    struct InFlight(std::rc::Rc<std::cell::Cell<bool>>);
+    impl Drop for InFlight {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .start_paused(true)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        for allowance in [
+            Duration::ZERO,
+            STOP_WAIT,
+            STOP_WAIT + Duration::from_secs(1),
+        ] {
+            let started = std::cell::Cell::new(false);
+            let dropped = std::rc::Rc::new(std::cell::Cell::new(false));
+            let in_flight = InFlight(dropped.clone());
+            let deadline = tokio::time::Instant::now() + allowance;
+            let result = adapter_work_before_cleanup(deadline, async {
+                let _in_flight = in_flight;
+                started.set(true);
+                pending::<()>().await;
+            })
+            .await;
+            assert!(result.is_none());
+            assert_eq!(started.get(), allowance > STOP_WAIT);
+            // Cancellation releases request-owned state before the caller
+            // begins Stop; no request is started inside the cleanup reserve.
+            assert!(dropped.get());
+            assert_eq!(
+                deadline.saturating_duration_since(tokio::time::Instant::now()),
+                allowance.min(STOP_WAIT)
+            );
+        }
+        let deadline = tokio::time::Instant::now() + CASE_BUDGET;
+        assert_eq!(
+            adapter_work_before_cleanup(deadline, async { 7 }).await,
+            Some(7)
+        );
+        assert_eq!(
+            deadline.saturating_duration_since(tokio::time::Instant::now()),
+            CASE_BUDGET
+        );
+    });
+}
+
+#[test]
 #[ignore = "Actual PTQ1 and approved adapter; explicit bounded main-only device CI, never ordinary suites."]
 fn pinned_native_ptq1_adapter_starts_and_streams_within_device_budget() {
     ci_only();
@@ -1802,6 +1874,10 @@ fn pinned_native_ptq1_adapter_starts_and_streams_within_device_budget() {
         .await
         .unwrap();
     }));
+    assert_eq!(
+        report["passed"], true,
+        "Adapter acceptance remains pending."
+    );
 }
 
 #[test]
@@ -1820,7 +1896,7 @@ fn pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget() {
     let runtime_lock =
         serde_json::from_str::<Value>(include_str!("../../../config/prism-inference.lock.json"))
             .unwrap();
-    assert_eq!(runtime_lock["version"], "0.1.9");
+    assert_eq!(runtime_lock["version"], "0.1.10");
     let data = env::var_os("BONSAI_NATIVE_DATA").unwrap();
     let evidence = env::var_os("BONSAI_NATIVE_EVIDENCE").unwrap();
     let evidence = Path::new(&evidence);
@@ -1861,6 +1937,10 @@ fn pinned_native_pq2_adapter_row4_starts_and_streams_within_device_budget() {
         .await
         .unwrap();
     }));
+    assert_eq!(
+        report["passed"], true,
+        "Adapter acceptance remains pending."
+    );
 }
 
 #[test]

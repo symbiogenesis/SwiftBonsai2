@@ -43,58 +43,26 @@ benchmarks and performance captures stay in owning CI.
 Qualify source-launch time to the first native frame and authenticated model
 readiness after excluding worker checkouts from startup fingerprints and switching
 shared Windows artifact hashing to CNG. Retain cold-build versus unchanged-launch
-attribution and complete checksum/cancellation controls. The pinned experimental
-Rust runtime still performs a separate software SHA-256 pass over model weights;
-optimize that upstream and review a verified release before claiming its delay is
-removed. End-to-end startup gains remain pending within the owner-device budget;
-performance comparisons and complete checks remain in owning CI.
-Review the passed hosted candidate checks and run settled-main owning Foundation,
-conformance and packaging for the native CNG hashing source candidate recorded in
-[candidate evidence](docs/evidence/prism-native-gap-candidate.json), then qualify
-exact released bytes before updating Runner's runtime pin. The new
-publishable hash dependency also needs registry delivery before GGUF publication.
-Run the owning Windows ARM64 startup-cache and artifact hash-stream regressions
-and Release analyzers in hosted CI. Native CNG known vectors pass locally and the
-updated maintenance bootstrap is published; the bounded local checks stopped
-after compilation limits and source-harness metadata/linkage failures, without
-running those cache/stream regressions or a model trial.
+attribution and complete checksum/cancellation controls. Qualify the integrated
+Prism 0.1.10 CNG verifier through Runner's settled-main release integration and
+actual-model startup. End-to-end startup gains remain pending within the
+owner-device budget; performance comparisons and complete checks remain in owning
+CI. The new publishable hash dependency also needs registry delivery, a new GGUF
+version and an updated exact runtime dependency before registry publication.
 
-Before further owner-device trials, pass the focused hosted Windows ARM64 Rust
-regressions for optional acceptance receipt retention, Find replacement/Unicode
-matching and speech-runner policy. Local compilation exhausted its bounded
-allowance before those cases could execute; formatting and the focused PowerShell
-speech-policy check do not replace them.
+Retain hosted regression coverage for acceptance receipt retention, Find
+replacement/Unicode matching and speech-runner policy before owner-device trials.
 
-The Rust speech tokenizer and GGUF loading/ownership path, greedy sampler and
-decode-workspace ownership and compute leases, together with captured
-Philox/sampling/tokenizer controls and source identity guards, need the hosted
-full Qwen build/link and owning-crate checks. Local model-free token/bit
-parity does not close those integration gates. Preserve the captured Windows
+Qualify Rust speech tokenization/loading, greedy sampling, decode-workspace
+ownership and compute leases in actual pinned-model lifecycle and listening
+trials. Retain hosted layout/Find invalidation and speech scratch/error/owner
+release coverage, including complete native linking. The earlier model-free
+owning build/analyzer/integration obligations are recorded in
+[main integration evidence](docs/evidence/prism-main-integration.json); they do
+not replace actual-model application acceptance. Preserve the captured Windows
 ARM64 MSVC exceptional-float behavior when qualifying other compiler versions.
-
-Run the hosted owning-crate Release analyzer, documentation and integration checks
-after the standard-library decoding/owned-buffer, signedness, typed-block,
-C-string URI and HTTP-framing changes, including the diagnostic/transcript
-collection updates. Focused local decoding/ownership, signed seed/thread bounds,
-packed replay/rejection, session metadata and exact rejection-header checks pass,
-alongside the retained captured Philox/tokenizer and header-fragment controls.
-These source-bound checks do not replace full native linking, owning UI tests
-or the application acceptance gates above. The CPU-policy, broker and speech-service
-Release analyzers pass; the broader tooling analyzer remains pending after its
-bounded local attempt timed out draining output.
-
-Run hosted owning-UI Release analyzer/documentation checks and native ASR/TTS
-build/link checks after the lending-cache, in-place Find, borrowed HTTP/SSE/PCM,
-bounded speech scratch, concrete waveform-owner and source-owned packed-payload
-changes. Focused source-bound HTTP/SSE/PCM, speech-cache, speech-request/storage/
-waveform-owner, packed replay and broker borrowed-payload/header regressions pass
-locally, and the transcript/Find test
-sources type-check. Native owning UI and linked broker/service test runs remain
-pending after bounded local compilation. Retain hosted
-coverage for layout/Find invalidation and speech scratch/error/owner release;
-measure adaptive broker forwarding and retained idle speech scratch before
-claiming a latency, throughput or process-memory gain. These checks do not close
-the actual-model gates above.
+Measure adaptive broker forwarding and retained idle speech scratch before
+claiming a latency, throughput or process-memory gain.
 
 The Rust PTQ1 DLL collector also needs the hosted source-bound build/test bundle
 and main-only numerical workflow. Its pinned-DLL probe and complete 369-record
@@ -183,9 +151,9 @@ promotion](docs/native-rust-engine.md#default-runtime-promotion) retains the sta
 adapter at scale 1.3, binds independent gates to exact source, release and app
 identities and leaves missing evidence pending.
 
-Review the [source candidates](docs/evidence/prism-native-gap-candidate.json) and
-their passed hosted native Windows ARM64/x64 and portable candidate checks before
-settled-main owning checks and release integration.
+Qualify Runner's settled-main integration of the published Prism 0.1.10 bytes in
+the [main integration record](docs/evidence/prism-main-integration.json), retaining
+the earlier [candidate controls](docs/evidence/prism-native-gap-candidate.json).
 Qualify the explicit original-PQ2 `pq2-adapter-lifecycle-row4` workload under the
 single aggregate owner allowance: scale 1.3, scale zero, invalid-scale rejection,
 then scale 1.3 with supplied history and owned cleanup. Partial or skipped required
@@ -286,11 +254,11 @@ not close pending hosted integration or full-model acceptance.
   top-p tie ordering, sequential `expf` arithmetic and accumulation, Philox draws,
   exceptional floats and the captured masking/penalty/greedy controls. Qualify actual
   pinned tokenizer vocabularies as well as the complete model-free scanner/ID captures.
-  Qualify Rust graph-cache resource ownership and synchronized compute leases in
-  the full hosted Qwen consumer, including native graph-build failure, cancellation
-  and model lifecycle recovery. Qualify the Rust tokenizer loading/ownership
-  boundary in that consumer and actual-model speech lifecycle; model-free metadata,
-  callback and lifetime checks do not close those integration gates.
+  Qualify Rust graph-cache resource ownership, synchronized compute leases and
+  tokenizer loading/ownership during actual-model speech lifecycle, including
+  native graph-build failure, cancellation and model recovery. Preserve the
+  passing full hosted Qwen consumer controls; its model-free metadata, callback
+  and lifetime checks do not close actual-model acceptance.
 - Retire Prism's native reference families file by file after matching hosted replay
   of their source-level assertions. Preserve all approved green IDs, full geometry
   schedules, corrections, unsupported outcomes and numerical/target boundaries.

@@ -11,7 +11,7 @@ Native speech requires an installed compatible ARM64 Microsoft Visual C++ runtim
 this package does not install those runtime DLLs.
 NativeEngine selects the separately provisioned Rust runtime, preserving the
 selected model and adapter options. NativeRowWorkers accepts one or four;
-four requires NativeEngine and the reviewed 0.1.9 runtime. One is the default.
+four requires NativeEngine and the reviewed 0.1.9 or 0.1.10 runtime. One is the default.
 #>
 [CmdletBinding()]
 [OutputType([string], [pscustomobject])]
