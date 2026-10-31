@@ -322,7 +322,9 @@ mod native {
             // SAFETY: This guard retains the module and the name is a static
             // NUL-terminated symbol from the exact pinned public C header.
             let pointer = unsafe { GetProcAddress(self.0.as_ptr(), name.as_ptr()) };
-            require(!pointer.is_null(), "required pinned DLL symbol missing")?;
+            if pointer.is_null() {
+                return Err(io::Error::other(name.to_string_lossy().into_owned()));
+            }
             Ok(pointer)
         }
     }
