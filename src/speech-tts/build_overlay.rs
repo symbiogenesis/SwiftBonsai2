@@ -2,6 +2,8 @@
 
 use std::{fs, io, path::Path};
 
+use sha2::{Digest as _, Sha256};
+
 #[path = "build_tokenizer.rs"]
 mod tokenizer_overlay;
 
@@ -23,10 +25,14 @@ const EVICT_DECODE_GRAPHS: &str =
 ";
 type Transform = fn(&str) -> io::Result<String>;
 
-// Retain the pinned native implementation only as an independent test oracle
-// and exact build anchor. Production replaces the entire header with this
-// declaration; both sampler callers draw directly from the Rust scalar export.
-const PHILOX_REFERENCE: &str = include_str!("tests/reference/philox.h");
+// Match the exact LF-normalized bytes from the verified qwentts.cpp archive at
+// 5916bf7c79dbb4e66fc059cdc507a79a23a28bb4 without retaining its implementation.
+// Both sampler callers draw directly from the Rust scalar export.
+const PHILOX_BYTES: usize = 3552;
+const PHILOX_SHA256: [u8; 32] = [
+    0x41, 0xa9, 0x55, 0xe4, 0x26, 0x7e, 0xba, 0x8d, 0x1c, 0x1a, 0x4b, 0x55, 0xa0, 0xb8, 0x96, 0x4c,
+    0x4a, 0x7b, 0xd2, 0x8f, 0x38, 0x0f, 0xaa, 0xe5, 0xf9, 0x81, 0x15, 0x24, 0x03, 0xc8, 0x1d, 0xe7,
+];
 const SAMPLING_REFERENCE: &str = include_str!("tests/reference/sampling.h");
 const BPE_REFERENCE: &str = include_str!("tests/reference/bpe.h");
 const PHILOX_DECLARATION: &str = "#pragma once\n#include <cstdint>\n\n// Runner's allocation-free safe Rust Philox4x32-10 implementation.\nextern \"C\" float bonsai_qt_philox_uniform(int64_t seed, int64_t subsequence, uint32_t counter);\n";
@@ -35,10 +41,19 @@ const PREDICTOR_DRAW: &str =
     "                philox_uniform_fill(s.seed, s.subseq_base + 1 + g, 0u, &u, 1);";
 
 fn philox(text: &str) -> io::Result<String> {
-    if text.replace("\r\n", "\n") != PHILOX_REFERENCE.replace("\r\n", "\n") {
+    let normalized = text.replace("\r\n", "\n");
+    if !matches_source(&normalized, PHILOX_BYTES, PHILOX_SHA256) {
         return Err(io::Error::other("Pinned Qwen Philox source differs."));
     }
     Ok(PHILOX_DECLARATION.to_owned())
+}
+
+fn matches_source(text: &str, expected_bytes: usize, expected_sha256: [u8; 32]) -> bool {
+    if text.len() != expected_bytes {
+        return false;
+    }
+    let digest: [u8; 32] = Sha256::digest(text.as_bytes()).into();
+    digest == expected_sha256
 }
 
 fn tokenizer(text: &str) -> io::Result<String> {
@@ -126,17 +141,26 @@ fn decode_graphs(text: &str) -> io::Result<String> {
     reason = "Keep the reviewed build helper private to its build-script or test parent."
 )]
 pub(super) fn prepare(source: &Path, destination: &Path) -> io::Result<()> {
+    prepare_with(source, destination, &TRANSFORMS)
+}
+
+const TRANSFORMS: [(&str, Transform); 7] = [
+    ("src/backend.h", backend),
+    ("ggml/src/ggml-cpu/vec.cpp", vectors),
+    ("src/talker-forward.h", decode_graphs),
+    ("src/philox.h", philox),
+    ("src/sampling.h", semantic_sampling),
+    ("src/sampling-graph.h", predictor_sampling),
+    ("src/bpe.h", tokenizer),
+];
+
+fn prepare_with(
+    source: &Path,
+    destination: &Path,
+    transforms: &[(&str, Transform)],
+) -> io::Result<()> {
     copy(source, destination)?;
-    let transforms: [(&str, Transform); 7] = [
-        ("src/backend.h", backend),
-        ("ggml/src/ggml-cpu/vec.cpp", vectors),
-        ("src/talker-forward.h", decode_graphs),
-        ("src/philox.h", philox),
-        ("src/sampling.h", semantic_sampling),
-        ("src/sampling-graph.h", predictor_sampling),
-        ("src/bpe.h", tokenizer),
-    ];
-    for (relative, transform) in transforms {
+    for &(relative, transform) in transforms {
         let path = destination.join(relative);
         let original = fs::read_to_string(&path)?.replace("\r\n", "\n");
         fs::write(path, transform(&original)?)?;
@@ -181,10 +205,26 @@ fn redirected(metadata: &fs::Metadata) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        BPE_REFERENCE, DECODE_GRAPH, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION, PHILOX_REFERENCE,
-        PREDICTOR_DRAW, SAMPLING_REFERENCE, SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE, backend,
-        decode_graphs, philox, predictor_sampling, prepare, semantic_sampling, tokenizer, vectors,
+        BPE_REFERENCE, DECODE_GRAPH, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION, PREDICTOR_DRAW,
+        SAMPLING_REFERENCE, SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE, TRANSFORMS, backend,
+        decode_graphs, matches_source, philox, predictor_sampling, prepare_with, semantic_sampling,
+        tokenizer, vectors,
     };
+
+    // Published SHA-256 known-answer vector; contains no native source code.
+    const FIXTURE_SOURCE: &str = "abc";
+    const FIXTURE_SHA256: [u8; 32] = [
+        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22,
+        0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00,
+        0x15, 0xad,
+    ];
+
+    fn fixture_philox(text: &str) -> std::io::Result<String> {
+        if !matches_source(text, FIXTURE_SOURCE.len(), FIXTURE_SHA256) {
+            return Err(std::io::Error::other("Test source fixture differs."));
+        }
+        Ok(PHILOX_DECLARATION.to_owned())
+    }
 
     #[test]
     fn overlay_preserves_the_immutable_source_cache() -> std::io::Result<()> {
@@ -206,7 +246,7 @@ mod tests {
         fs::write(source.join("src/backend.h"), &header)?;
         fs::write(source.join("src/qwen.cpp"), "extern \"C\" {\n}")?;
         fs::write(source.join("src/talker-forward.h"), DECODE_GRAPH)?;
-        fs::write(source.join("src/philox.h"), PHILOX_REFERENCE)?;
+        fs::write(source.join("src/philox.h"), FIXTURE_SOURCE)?;
         fs::write(source.join("src/sampling.h"), SAMPLING_REFERENCE)?;
         fs::write(source.join("src/bpe.h"), BPE_REFERENCE)?;
         fs::write(source.join("src/sampling-graph.h"), PREDICTOR_DRAW)?;
@@ -216,7 +256,13 @@ mod tests {
             "#include \"vec.h\"\n",
         )?;
         let copy = scratch.join("patched");
-        prepare(&source, &copy)?;
+        let mut transforms = TRANSFORMS;
+        for (relative, transform) in &mut transforms {
+            if *relative == "src/philox.h" {
+                *transform = fixture_philox;
+            }
+        }
+        prepare_with(&source, &copy, &transforms)?;
         assert_eq!(fs::read_to_string(source.join("src/backend.h"))?, header);
         assert!(fs::read_to_string(copy.join("src/backend.h"))?.contains("bonsai_qt_cpu_threads"));
         assert_eq!(
@@ -240,7 +286,7 @@ mod tests {
         );
         assert_eq!(
             fs::read_to_string(source.join("src/philox.h"))?,
-            PHILOX_REFERENCE
+            FIXTURE_SOURCE
         );
         assert_eq!(
             fs::read_to_string(copy.join("src/philox.h"))?,
@@ -254,6 +300,9 @@ mod tests {
         let tokenizer = fs::read_to_string(copy.join("src/bpe.h"))?;
         assert!(tokenizer.contains("bonsai_qt_bpe_encode"));
         assert!(!tokenizer.contains("std::unordered_map"));
+        // The synthetic hash fixture is accepted only by the private test
+        // transform, never by the fixed production Philox identity.
+        assert!(super::prepare(&source, &scratch.join("rejected-production-fixture")).is_err());
         fs::remove_dir_all(scratch)?;
         Ok(())
     }
@@ -286,10 +335,9 @@ mod tests {
     #[test]
     fn rust_philox_overlay_removes_native_algorithm_and_rejects_source_drift() -> std::io::Result<()>
     {
-        assert_eq!(philox(PHILOX_REFERENCE)?, PHILOX_DECLARATION);
         assert!(!PHILOX_DECLARATION.contains("philox4x32_10"));
         assert!(!PHILOX_DECLARATION.contains("philox_uniform_fill"));
-        for changed in [PHILOX_DECLARATION, "changed", &PHILOX_REFERENCE.repeat(2)] {
+        for changed in [PHILOX_DECLARATION, "changed", &FIXTURE_SOURCE.repeat(2)] {
             assert!(philox(changed).is_err());
         }
         let draws: [(super::Transform, &str); 2] = [
@@ -317,6 +365,19 @@ mod tests {
             assert!(transform(&original.repeat(2)).is_err());
         }
         Ok(())
+    }
+
+    #[test]
+    fn source_identity_guard_checks_exact_length_hash_and_line_endings() {
+        assert!(matches_source(FIXTURE_SOURCE, 3, FIXTURE_SHA256));
+        assert!(!matches_source("abd", 3, FIXTURE_SHA256));
+        assert!(!matches_source(FIXTURE_SOURCE, 2, FIXTURE_SHA256));
+        assert!(!matches_source(FIXTURE_SOURCE, 4, FIXTURE_SHA256));
+        assert!(!matches_source("a\r\nbc", 3, FIXTURE_SHA256));
+        let mut digest = FIXTURE_SHA256;
+        digest[31] ^= 1;
+        assert!(!matches_source(FIXTURE_SOURCE, 3, digest));
+        assert!(philox(&"x".repeat(super::PHILOX_BYTES)).is_err());
     }
 
     #[test]

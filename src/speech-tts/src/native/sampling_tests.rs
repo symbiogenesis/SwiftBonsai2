@@ -30,7 +30,10 @@ fn compile_oracle(working: &Path) -> Result<PathBuf, Box<dyn Error>> {
     assert!(compiler.is_absolute() && compiler.is_file());
     fs::write(
         working.join("philox.h"),
-        include_bytes!("../../tests/reference/philox.h"),
+        // This oracle exercises only masking and repetition. Any accidental
+        // call into the unselected stochastic sampler must fail immediately;
+        // no native Philox implementation is retained or compiled here.
+        "#pragma once\n#include <cstdint>\n#include <cstdlib>\nstatic inline void philox_uniform_fill(int64_t, int64_t, uint32_t, float *, int) { std::abort(); }\n",
     )?;
     fs::write(
         working.join("sampling.h"),
