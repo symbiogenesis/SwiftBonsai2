@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "hexagon-hosted-sdk-data-only-inventory-provenance",
+  "runUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41168523349",
+  "runnerRevision": "9f87dde4c198fff404c024bb737c0861cb3002b2",
+  "artifact": {
+    "id": 13029623694,
+    "name": "hexagon-sdk-inventory-41168523349-1",
+    "bytes": 3124,
+    "digest": "sha256:a1e9df7f60389ce84a8f016405a3bb02c57dbdb4a63fe2cb6e1c39c417df7a20",
+    "metadataUrl": "https://api.github.com/repos/symbiogenesis/SwiftBonsai2Runner/actions/artifacts/13029623694",
+    "digestSource": "independently-read-GitHub-Actions-artifact-metadata",
+    "artifactZipDigestLocallyVerified": false
+  },
+  "retainedFiles": [
+    {
+      "path": "host.json",
+      "bytes": 2341,
+      "sha256": "ddcf4c2067536c13c41be49a89b5a4add1844b2d8e5375c2be7803b53b443b31",
+      "artifactBytesPreserved": true,
+      "newlines": "CRLF"
+    },
+    {
+      "path": "sdk-inventory.json",
+      "bytes": 4274,
+      "sha256": "ff6426f2823430e8d8bac004b23f8051a2e77226fc9c1217042096ea9dd03449",
+      "artifactBytesPreserved": true,
+      "newlines": "LF"
+    }
+  ],
+  "inventoryReceiptMatchesHost": true,
+  "hostedSourceVerification": [
+    {
+      "path": "tools/hexagon/sdk_inventory.py",
+      "gitBlobSha256": "99037a40c396d0b7b9ae9399724444fd996f28d6aab36a4e2af6d1369b13ff6c",
+      "hostedCheckoutSha256": "d2a0fad1de6376a1c7a74447afd63b34b03d85214369f99d971299ff240b7095",
+      "checkoutTransform": "LF-to-CRLF",
+      "matchesHostedReceipt": true
+    },
+    {
+      "path": "scripts/Invoke-HexagonSdkInventory.ps1",
+      "gitBlobSha256": "9f5b7ef366beed7371874f4223a1c9bb7ff9efb7f7febe5ef1867fb9e029096a",
+      "hostedCheckoutSha256": "8a670be92956f2a40d50841ec8e23a8b79eab19cbe022ae36591b3911e634371",
+      "checkoutTransform": "LF-to-CRLF",
+      "matchesHostedReceipt": true
+    },
+    {
+      "path": "tools/hexagon/sdk-inventory.lock.json",
+      "gitBlobSha256": "1f48f8a65af2ea97b3af441eb1c329af5d1487d49067780c890e5321451f9d27",
+      "hostedCheckoutSha256": "f7ddb435b217157c29a6310a8078b22754e030b3edab5824e192f9f1baf8f90b",
+      "checkoutTransform": "LF-to-CRLF",
+      "matchesHostedReceipt": true
+    }
+  ],
+  "archiveIntake": {
+    "hostedArchiveDownloaded": true,
+    "hostedArchiveDigestVerified": true,
+    "ownerArchiveDownloaded": false,
+    "ownerArchiveExecuted": false,
+    "archiveExtracted": false,
+    "sdkCodeExecuted": false,
+    "generatorExecuted": false,
+    "generatedSourceUploaded": false
+  },
+  "scope": "bounded-hosted-metadata-only; does-not-qualify-recipe-license-queue-ABI-or-generated-marshalling",
+  "profileEligible": false
+}

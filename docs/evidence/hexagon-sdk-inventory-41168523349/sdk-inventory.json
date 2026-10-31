@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "kind": "hexagon-SDK-data-only-inventory",
+  "archive": {
+    "id": 657669213,
+    "filename": "hexagon-sdk-v6.7.0.0-arm64-wos.tar.xz",
+    "bytes": 900461020,
+    "sha256": "9eb256cc7b102f721365151a470a33980069a18b9209e1d56a6d2fa430369759",
+    "url": "https://github.com/snapdragon-toolchain/hexagon-sdk/releases/download/v6.7.0.0/hexagon-sdk-v6.7.0.0-arm64-wos.tar.xz"
+  },
+  "archiveEntriesRead": 12895,
+  "declaredUncompressedBytes": 3759640141,
+  "linkEntriesNotExtracted": 0,
+  "selectedBytesRead": 35461980,
+  "selectedFiles": [
+    {
+      "path": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+      "category": "build-idl-recipe",
+      "bytes": 36308,
+      "sha256": "805e17e0df4e3a476038c66e7f08787a017e62a9432c2d100212fd9a972cdd85",
+      "review": {
+        "textEncoding": "UTF8",
+        "qaicReferenceLines": [
+          70,
+          260,
+          297
+        ],
+        "qaicReferenceExcerpt": "set(proj-qaic_src ${HEXAGON_SDK_ROOT}/ipc/fastrpc/qaic/) # This function will set up a custom_target to build <idlFile> using qaic COMMAND \"${proj-qaic_src}/bin/qaic\" ${cmdLineOptions}",
+        "flagSpellingsMentionedInRecipe": [
+          "-DADD_SYMBOLS",
+          "-DANDROID_ABI",
+          "-DANDROID_NATIVE_API_LEVEL",
+          "-DANDROID_NDK",
+          "-DANDROID_STL",
+          "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY",
+          "-DCMAKE_BUILD_TYPE",
+          "-DCMAKE_GENERATOR",
+          "-DCMAKE_INSTALL_PREFIX",
+          "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY",
+          "-DCMAKE_MAKE_PROGRAM",
+          "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY",
+          "-DCMAKE_SYSTEM_NAME",
+          "-DCMAKE_TOOLCHAIN_FILE",
+          "-DCMAKE_VERBOSE_MAKEFILE",
+          "-DDEPENDENCIES",
+          "-DDSP_TYPE",
+          "-DDSP_VERSION",
+          "-DHEXAGON_CMAKE_ROOT",
+          "-DHEXAGON_SDK_ROOT",
+          "-DHEXAGON_TOOLS_ROOT",
+          "-DOPEN_WRT",
+          "-DOS_TYPE",
+          "-DPREBUILT_LIB_DIR",
+          "-DSOFT_FLOAT",
+          "-DSYSTEM_TYPE",
+          "-DUBUNTUARM_TOOLS_DIR",
+          "-DV",
+          "-E",
+          "-I",
+          "-L",
+          "-ext",
+          "-isystem",
+          "-lib",
+          "-llog",
+          "-mdll",
+          "-o",
+          "-rf"
+        ],
+        "commandAndImportInterpretationReviewed": false
+      }
+    },
+    {
+      "path": "6.7.0.0/incs/dspqueue.h",
+      "category": "sdk-rpc-header-candidate",
+      "bytes": 37079,
+      "sha256": "2b5f94766610586ae89684a1ad08994760efa38c604c81e91ea0fba64860177a"
+    },
+    {
+      "path": "6.7.0.0/incs/remote.h",
+      "category": "sdk-rpc-header-candidate",
+      "bytes": 67004,
+      "sha256": "3ab10e0e7915d0059baa9b71c80531bcb9673633f16e1caad43d37fe0688a442"
+    },
+    {
+      "path": "6.7.0.0/incs/remote.idl",
+      "category": "sdk-idl-input-candidate",
+      "bytes": 1387,
+      "sha256": "7c934edc9185adb26878e9e5e7d5df0ba179e7ee87158c4734e6c5b7910a1bb8"
+    },
+    {
+      "path": "6.7.0.0/incs/rpcmem.h",
+      "category": "sdk-rpc-header-candidate",
+      "bytes": 7613,
+      "sha256": "619f2e68ca75594cf6056c9b2d2963b06604bfb1dde3ea92faf86fefeb82b8ab"
+    },
+    {
+      "path": "6.7.0.0/incs/stddef/AEEStdDef.idl",
+      "category": "sdk-idl-input-candidate",
+      "bytes": 3448,
+      "sha256": "0779a289a081b67dccaf48a9403bf33215017b3d6f4cc636318bd584072e1835"
+    },
+    {
+      "path": "6.7.0.0/incs/stddef/AEEStdErr.idl",
+      "category": "sdk-idl-input-candidate",
+      "bytes": 7253,
+      "sha256": "d14903198cdc9e733bdf2566bc6b74b989440a6f0e3f7aa814a3226578396438"
+    },
+    {
+      "path": "6.7.0.0/ipc/fastrpc/qaic/bin/qaic.exe",
+      "category": "qaic-generator",
+      "bytes": 35301888,
+      "sha256": "e7fd5d03e030fa5cc9b85d9364fa9d34719edf483a26475fa08e7ca1cfd30f36"
+    }
+  ],
+  "sdkContentsExtracted": false,
+  "sdkCodeExecuted": false,
+  "generatorExecuted": false,
+  "generatedSourceUploaded": false,
+  "licenseReview": "pending; bounded necessary review excerpts and file identities only",
+  "generatorInvocationReviewed": false,
+  "deviceCodeLoaded": false,
+  "profileEligible": false,
+  "inventorySourceSha256": "d2a0fad1de6376a1c7a74447afd63b34b03d85214369f99d971299ff240b7095",
+  "inventoryPinSha256": "f7ddb435b217157c29a6310a8078b22754e030b3edab5824e192f9f1baf8f90b"
+}

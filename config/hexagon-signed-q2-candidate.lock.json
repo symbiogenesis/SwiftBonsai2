@@ -333,7 +333,16 @@
         "ptrOrAddress": 16
       },
       "layoutEvidence": "source-derived-only; independent-hosted-Windows-ARM64-C-layout-and-driver-ABI-controls-pending",
-      "queueHeaderProvesDriverCompatibility": false
+      "queueHeaderProvesDriverCompatibility": false,
+      "sdkHeaderIdentity": {
+        "archivePath": "6.7.0.0/incs/dspqueue.h",
+        "bytes": 37079,
+        "sha256": "2b5f94766610586ae89684a1ad08994760efa38c604c81e91ea0fba64860177a",
+        "identitySource": "digest-verified-SDK-archive-data-only"
+      },
+      "sdkHeaderContentReviewed": false,
+      "sdkPublicHeaderEquivalenceQualified": false,
+      "sdkLayoutQualified": false
     },
     "generatedIdlProvenance": {
       "status": "pending-before-any-device-invoke",
@@ -350,14 +359,47 @@
         "bytes": 900461020,
         "sha256": "9eb256cc7b102f721365151a470a33980069a18b9209e1d56a6d2fa430369759",
         "url": "https://github.com/snapdragon-toolchain/hexagon-sdk/releases/download/v6.7.0.0/hexagon-sdk-v6.7.0.0-arm64-wos.tar.xz",
-        "downloaded": false,
+        "downloaded": true,
         "executed": false,
-        "localArchiveDigestVerified": false,
         "licenseReview": "pending",
-        "intake": "hosted-CI-only"
+        "intake": "hosted-CI-only",
+        "hostedArchiveDownloaded": true,
+        "hostedArchiveDigestVerified": true,
+        "ownerArchiveDownloaded": false,
+        "ownerArchiveDigestVerified": false,
+        "sdkContentsExtracted": false,
+        "observation": "docs/evidence/hexagon-sdk-inventory-41168523349/provenance.json"
       },
-      "qaicExecutableIdentity": null,
-      "importedRemoteAndAeeIdlIdentity": null,
+      "qaicExecutableIdentity": {
+        "archivePath": "6.7.0.0/ipc/fastrpc/qaic/bin/qaic.exe",
+        "bytes": 35301888,
+        "sha256": "e7fd5d03e030fa5cc9b85d9364fa9d34719edf483a26475fa08e7ca1cfd30f36",
+        "identitySource": "digest-verified-SDK-archive-data-only"
+      },
+      "importedRemoteAndAeeIdlIdentity": {
+        "candidates": [
+          {
+            "archivePath": "6.7.0.0/incs/remote.idl",
+            "bytes": 1387,
+            "sha256": "7c934edc9185adb26878e9e5e7d5df0ba179e7ee87158c4734e6c5b7910a1bb8",
+            "identitySource": "digest-verified-SDK-archive-data-only"
+          },
+          {
+            "archivePath": "6.7.0.0/incs/stddef/AEEStdDef.idl",
+            "bytes": 3448,
+            "sha256": "0779a289a081b67dccaf48a9403bf33215017b3d6f4cc636318bd584072e1835",
+            "identitySource": "digest-verified-SDK-archive-data-only"
+          },
+          {
+            "archivePath": "6.7.0.0/incs/stddef/AEEStdErr.idl",
+            "bytes": 7253,
+            "sha256": "d14903198cdc9e733bdf2566bc6b74b989440a6f0e3f7aa814a3226578396438",
+            "identitySource": "digest-verified-SDK-archive-data-only"
+          }
+        ],
+        "effectiveImportClosureReviewed": false,
+        "publicImportEquivalenceQualified": false
+      },
       "generatedHostStubIdentity": null,
       "independentWireCaptureIdentity": null,
       "required": "bind-exact-tool-command-inputs-and-generated-host-marshal-or-independent-wire-control-before-Rust-invoke",
@@ -404,6 +446,41 @@
         "generatedOutputIdentity": null,
         "authority": "independent-model-free-source-control-only; does-not-authorize-device-invoke",
         "retention": "preserve-reviewed-source-license-and-template-notices; review-actual-generated-output-notices-before-publication"
+      },
+      "sdkBuildIdlRecipeIdentity": {
+        "archivePath": "6.7.0.0/build/cmake/hexagon_fun.cmake",
+        "bytes": 36308,
+        "sha256": "805e17e0df4e3a476038c66e7f08787a017e62a9432c2d100212fd9a972cdd85",
+        "identitySource": "digest-verified-SDK-archive-data-only"
+      },
+      "sdkBuildIdlRecipeInterpretationReviewed": false,
+      "sdkRpcHeaderIdentities": [
+        {
+          "archivePath": "6.7.0.0/incs/dspqueue.h",
+          "bytes": 37079,
+          "sha256": "2b5f94766610586ae89684a1ad08994760efa38c604c81e91ea0fba64860177a",
+          "identitySource": "digest-verified-SDK-archive-data-only"
+        },
+        {
+          "archivePath": "6.7.0.0/incs/remote.h",
+          "bytes": 67004,
+          "sha256": "3ab10e0e7915d0059baa9b71c80531bcb9673633f16e1caad43d37fe0688a442",
+          "identitySource": "digest-verified-SDK-archive-data-only"
+        },
+        {
+          "archivePath": "6.7.0.0/incs/rpcmem.h",
+          "bytes": 7613,
+          "sha256": "619f2e68ca75594cf6056c9b2d2963b06604bfb1dde3ea92faf86fefeb82b8ab",
+          "identitySource": "digest-verified-SDK-archive-data-only"
+        }
+      ],
+      "sdkLicenseInventory": {
+        "matchingHeuristicFileCount": 0,
+        "heuristic": "prefix-and-depth-restricted-legal-filename-filter",
+        "absenceEstablished": false,
+        "termsReviewed": false,
+        "generatedSourceRedistributionQualified": false,
+        "nextReview": "broader-all-entry-legal-name-and-inline-notice-metadata-plus-exact-build_idl-functional-statement-metadata"
       }
     }
   },

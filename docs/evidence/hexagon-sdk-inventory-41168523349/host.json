@@ -1,0 +1,51 @@
+{
+  "SchemaVersion": 1,
+  "Kind": "hexagon-hosted-sdk-inventory",
+  "RunnerRevision": "9f87dde4c198fff404c024bb737c0861cb3002b2",
+  "RunId": "41168523349",
+  "RunAttempt": "1",
+  "HostedOnly": true,
+  "Outcome": "inventoried-generation-pending",
+  "Stage": "sdk-data-only-inventory-complete",
+  "ElapsedMilliseconds": 74581,
+  "SourceSha256": "d2a0fad1de6376a1c7a74447afd63b34b03d85214369f99d971299ff240b7095",
+  "SupervisorSha256": "8a670be92956f2a40d50841ec8e23a8b79eab19cbe022ae36591b3911e634371",
+  "PinSha256": "f7ddb435b217157c29a6310a8078b22754e030b3edab5824e192f9f1baf8f90b",
+  "ReviewedInputs": [
+    {
+      "Name": "setup-snapdragon-sdks.action.yml",
+      "Url": "https://raw.githubusercontent.com/qualcomm/GenieX/071f609995470bdb0e0769ab964754adfaab7e47/.github/actions/setup-snapdragon-sdks/action.yml",
+      "Bytes": 9081,
+      "Sha256": "6b2bce57917917afaacbb00abee6f739f7c6f827aaa299adc8f02c7dd257f97a"
+    },
+    {
+      "Name": "sdk-repackage.sh",
+      "Url": "https://raw.githubusercontent.com/snapdragon-toolchain/hexagon-sdk/167d1465556718b9cea521ec0a19277f91e94eb7/repackage.sh",
+      "Bytes": 3009,
+      "Sha256": "42bdc3c200c80fef96f06ce3b6fc047c5d77259fde204d9ecd9217fa30a258fa"
+    },
+    {
+      "Name": "htp_iface.idl",
+      "Url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp/htp_iface.idl",
+      "Bytes": 718,
+      "Sha256": "196448f5166f300c572172b83a51e128e71e4471f13e30d0c5f88d6ce0cfe8bc"
+    }
+  ],
+  "Archive": {
+    "id": 657669213,
+    "filename": "hexagon-sdk-v6.7.0.0-arm64-wos.tar.xz",
+    "bytes": 900461020,
+    "sha256": "9eb256cc7b102f721365151a470a33980069a18b9209e1d56a6d2fa430369759",
+    "url": "https://github.com/snapdragon-toolchain/hexagon-sdk/releases/download/v6.7.0.0/hexagon-sdk-v6.7.0.0-arm64-wos.tar.xz"
+  },
+  "InventoryReceiptSha256": "ff6426f2823430e8d8bac004b23f8051a2e77226fc9c1217042096ea9dd03449",
+  "PythonExecutableSha256": "46851212e3a4fc1846086dc9c7be10aeb156320b1f68dfbd86eafa56a4b0d8b4",
+  "SdkCodeExecuted": false,
+  "GeneratorExecuted": false,
+  "GeneratedSourceUploaded": false,
+  "ModelLoaded": false,
+  "DeviceCodeLoaded": false,
+  "ProfileEligible": false,
+  "LicenseReview": "pending",
+  "GeneratorInvocationReviewed": false
+}

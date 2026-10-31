@@ -124,16 +124,44 @@ That capture must bind inherited method indices, scalar tags, buffer extents and
 packing to this seven-argument IDL; declarations alone do not prove that wire ABI.
 Keep any temporary native reference outside the production Rust inference path.
 
-The toolchain is obtainable as a separate hosted intake lead. Qualcomm's
+The toolchain has a separate hosted data-only intake. Qualcomm's
 [exact SDK setup action](https://github.com/qualcomm/GenieX/blob/071f609995470bdb0e0769ab964754adfaab7e47/.github/actions/setup-snapdragon-sdks/action.yml#L9-L37)
 selects Hexagon SDK6.7.0.0 and tools21.0.04 and references
 [the SDK release](https://github.com/snapdragon-toolchain/hexagon-sdk/releases/tag/v6.7.0.0).
 Its ARM64-WoS archive metadata gives 900,461,020 bytes and SHA-256
 `9eb256cc7b102f721365151a470a33980069a18b9209e1d56a6d2fa430369759`.
-This audit did not download or execute that archive. The metadata does not identify
-its actual QAIC bytes or imported IDLs, establish their license terms or reproduce
-the generated stub. Resolve those through checked hosted intake and source-bound
-capture; this large SDK preparation is outside the owner-device trial allowance.
+The [retained hosted inventory](evidence/hexagon-sdk-inventory-41168523349/provenance.json)
+binds run 41168523349 at `9f87dde4c198fff404c024bb737c0861cb3002b2` to the checked
+archive and eight selected file identities. It read the archive without extracting
+or executing SDK content. The SDK archive was not downloaded on the owner's laptop;
+only bounded JSON metadata was retained there. The artifact's reported GitHub digest
+is distinct from a locally verified artifact ZIP digest. The retained inventory
+hash matches the host receipt, and the three hosted script/pin hashes match the
+exact source revision after its Windows LF-to-CRLF checkout conversion.
+
+The SDK data establishes these different candidate inputs; the candidate lock retains
+their full hashes and paths. Byte differences require content/ABI review and do not
+by themselves prove incompatible semantics.
+
+| SDK input | SDK bytes | Separately pinned public bytes |
+| --- | ---: | ---: |
+| `qaic.exe` | 35,301,888 | No public source-built binary yet |
+| `dspqueue.h` | 37,079 | 24,632 |
+| `remote.idl` | 1,387 | 1,498 |
+| `AEEStdDef.idl` | 3,448 | 1,793 |
+| `AEEStdErr.idl` | 7,253 | No candidate import pin |
+
+The SDK `hexagon_fun.cmake` is 36,308 bytes, SHA-256
+`805e17e0df4e3a476038c66e7f08787a017e62a9432c2d100212fd9a972cdd85`.
+The first receipt locates QAIC references at lines 70, 260 and 297 and records file-wide
+flag spellings; it does not retain the `build_idl` control flow, effective import
+paths or expanded generator command. The exact recipe, generated stub and wire
+control remain pending. The initial restricted legal-filename/depth filter matched
+no files; it does not establish absent license terms or permission to redistribute
+generated source. Review broader legal-name and inline-notice metadata together
+with the precise recipe before executing the generator. SDK queue declarations
+and imports remain distinct from the reviewed public controls until compared.
+This preparation stays on hosted CI, outside the owner-device trial allowance.
 
 An independent public source control is also obtainable. Qualcomm's
 [QAIC compiler](https://github.com/qualcomm/QAIC/tree/a66a0019fb488abae955bbc9b3a9de3dc15962d0)

@@ -547,6 +547,9 @@ Follow [Hexagon contracts](docs/hexagon.md).
   default-open14 and old mutable-input guard observations without assigning causes.
   Bind generated QAIC host marshalling/wire controls to exact SDK/tool and imported
   IDL identities under the [queue provenance gate](docs/hexagon-signed-q2-candidate.md#native-rust-computation-requires-another-reviewed-boundary).
+  The [hosted SDK data inventory](docs/evidence/hexagon-sdk-inventory-41168523349/provenance.json)
+  identifies different SDK queue/import bytes; review their declarations, exact
+  `build_idl` recipe and license terms before generator execution or Rust invocation.
   Implement the reviewed queue/IDL, correlated responses, bounded waits, in-use
   buffer retention and stop/drain contract before submitting a device kernel.
 - Start with `blk.0.ffn_up.weight`, K=5120/M=17408/N=1, keeping transforms, adapter
