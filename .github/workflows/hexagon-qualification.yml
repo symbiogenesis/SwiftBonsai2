@@ -1,7 +1,7 @@
 name: Hexagon native controls and bounded signed dispatch
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/hexagon-**']
     paths:
       - .github/workflows/hexagon-qualification.yml
       - tools/hexagon/**
@@ -33,7 +33,6 @@ permissions:
   contents: read
 jobs:
   controls:
-    if: github.ref == 'refs/heads/main'
     runs-on: windows-11-arm
     timeout-minutes: 15
     steps:
