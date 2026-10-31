@@ -338,7 +338,7 @@ mod tests {
             .next_event(&mut bytes)?
             .ok_or(Failure::Message("Missing second frame"))?;
         assert_eq!(frame.data, b"second");
-        assert!(frame.event.is_empty());
+        assert_eq!(frame.event, b"");
         assert!(framer.next_event(&mut bytes)?.is_none());
         Ok(())
     }
