@@ -4,27 +4,13 @@ use std::{fs, io, path::Path};
 
 use sha2::{Digest as _, Sha256};
 
+#[path = "build_decode_graph.rs"]
+mod decode_overlay;
 #[path = "build_tokenizer.rs"]
 mod tokenizer_overlay;
 
 const THREAD_COUNT: &str = "static int backend_cpu_n_threads(void) {\n    int n = (int) std::thread::hardware_concurrency() / 2;\n    return n > 0 ? n : 1;\n}\n";
 const THREAD_OVERRIDE: &str = "static int backend_cpu_n_threads(void) {\n    return bonsai_qt_cpu_threads(std::thread::hardware_concurrency());\n}\n";
-const DECODE_GRAPH: &str =
-    "    TalkerDecodeGraph * tg = &graphs[(size_t) ((n_kv_pad + 255) / 256 - 1)];\n";
-const DECODE_GRAPH_DECLARATIONS: &str = "#include <cstddef>\nextern \"C\" size_t bonsai_qt_decode_graph_index(int padded_tokens, size_t windows);\nextern \"C\" bool bonsai_qt_decode_graph_rebuild(bool has_context, int cached_width, int requested_width);\n";
-const RUST_DECODE_GRAPH: &str = "    TalkerDecodeGraph * tg = &graphs[bonsai_qt_decode_graph_index(n_kv_pad, graphs.size())];\n";
-const EVICT_DECODE_GRAPHS: &str =
-    "    // Runner's CPU-only worker retains one decode workspace. The previous
-    // ggml_backend_graph_compute completed and synchronized before returning;
-    // KV, weights and hidden_bridge have independent persistent ownership.
-    // Free obsolete windows before allocating a replacement, including when
-    // a new request starts at an earlier window or changes batch width.
-    if (bonsai_qt_decode_graph_rebuild(tg->ctx != nullptr, tg->N, N)) {
-        for (auto & cached : graphs) {
-            if (&cached != tg) { talker_decode_graph_free(&cached); }
-        }
-    }
-";
 type Transform = fn(&str) -> io::Result<String>;
 
 // Match the exact LF-normalized bytes from the verified qwentts.cpp archive at
@@ -159,30 +145,6 @@ fn vectors(text: &str) -> io::Result<String> {
     )
 }
 
-fn decode_graphs(text: &str) -> io::Result<String> {
-    // Keep the upstream allocation, failure cleanup, input uploads and compute
-    // unchanged. Only scratch from completed, unselected windows is released.
-    if text.contains(DECODE_GRAPH_DECLARATIONS) || text.contains(RUST_DECODE_GRAPH) {
-        return Err(io::Error::other("Pinned Qwen build overlay input differs."));
-    }
-    let replacement = format!("{RUST_DECODE_GRAPH}{EVICT_DECODE_GRAPHS}");
-    let patched = replace_once(text, DECODE_GRAPH, &replacement)?;
-    Ok(format!("{DECODE_GRAPH_DECLARATIONS}{patched}"))
-}
-
-#[cfg(test)]
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "Expose generated glue only to the native graph-lifetime regression."
-)]
-pub(super) fn decode_graph_fixture_for_test() -> io::Result<String> {
-    let patched = decode_graphs(DECODE_GRAPH)?;
-    let (declarations, selection) = patched.split_at(DECODE_GRAPH_DECLARATIONS.len());
-    Ok(include_str!("tests/decode_graph_cache.cpp")
-        .replace("// BONSAI_DECODE_GRAPH_DECLARATIONS", declarations)
-        .replace("// BONSAI_DECODE_GRAPH_SELECTION", selection))
-}
-
 /// Copy externally verified immutable source bytes, then overlay only that copy.
 #[allow(
     clippy::redundant_pub_crate,
@@ -192,10 +154,13 @@ pub(super) fn prepare(source: &Path, destination: &Path) -> io::Result<()> {
     prepare_with(source, destination, &TRANSFORMS)
 }
 
-const TRANSFORMS: [(&str, Transform); 7] = [
+const TRANSFORMS: [(&str, Transform); 10] = [
     ("src/backend.h", backend),
     ("ggml/src/ggml-cpu/vec.cpp", vectors),
-    ("src/talker-forward.h", decode_graphs),
+    ("src/talker-forward.h", decode_overlay::forward),
+    ("src/talker-decode-graph.h", decode_overlay::graph_type),
+    ("src/pipeline-tts.h", decode_overlay::pipeline_header),
+    ("src/pipeline-tts.cpp", decode_overlay::pipeline),
     ("src/philox.h", philox),
     ("src/sampling.h", semantic_sampling),
     ("src/sampling-graph.h", predictor_sampling),
@@ -253,10 +218,9 @@ fn redirected(metadata: &fs::Metadata) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        DECODE_GRAPH, DECODE_GRAPH_DECLARATIONS, EVICT_DECODE_GRAPHS, PHILOX_DECLARATION,
-        PREDICTOR_DRAW, RUST_DECODE_GRAPH, SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE,
-        TRANSFORMS, backend, decode_graphs, matches_source, philox, predictor_sampling,
-        prepare_with, semantic_sampling, semantic_sampling_with_identity, tokenizer, vectors,
+        PHILOX_DECLARATION, PREDICTOR_DRAW, SEMANTIC_DRAW, THREAD_COUNT, THREAD_OVERRIDE,
+        TRANSFORMS, backend, matches_source, philox, predictor_sampling, prepare_with,
+        semantic_sampling, semantic_sampling_with_identity, tokenizer, vectors,
     };
 
     // Published SHA-256 known-answer vector; contains no native source code.
@@ -315,6 +279,13 @@ static int sample_top_k_p(float * logits, int V, float temperature,
         Ok(super::tokenizer_header_for_test().to_owned())
     }
 
+    fn fixture_graph(text: &str) -> std::io::Result<String> {
+        if !matches_source(text, FIXTURE_SOURCE.len(), FIXTURE_SHA256) {
+            return Err(std::io::Error::other("Test graph fixture differs."));
+        }
+        Ok("Rust graph ownership fixture".to_owned())
+    }
+
     #[test]
     fn overlay_preserves_the_immutable_source_cache() -> std::io::Result<()> {
         use std::{
@@ -334,7 +305,14 @@ static int sample_top_k_p(float * logits, int V, float temperature,
         let header = format!("#include <thread>\n{THREAD_COUNT}\n");
         fs::write(source.join("src/backend.h"), &header)?;
         fs::write(source.join("src/qwen.cpp"), "extern \"C\" {\n}")?;
-        fs::write(source.join("src/talker-forward.h"), DECODE_GRAPH)?;
+        for relative in [
+            "src/talker-forward.h",
+            "src/talker-decode-graph.h",
+            "src/pipeline-tts.h",
+            "src/pipeline-tts.cpp",
+        ] {
+            fs::write(source.join(relative), FIXTURE_SOURCE)?;
+        }
         fs::write(source.join("src/philox.h"), FIXTURE_SOURCE)?;
         fs::write(source.join("src/sampling.h"), SAMPLER_FIXTURE)?;
         fs::write(source.join("src/bpe.h"), FIXTURE_SOURCE)?;
@@ -353,6 +331,15 @@ static int sample_top_k_p(float * logits, int V, float temperature,
                 *transform = fixture_tokenizer;
             } else if *relative == "src/sampling.h" {
                 *transform = fixture_semantic_sampling;
+            } else if [
+                "src/talker-forward.h",
+                "src/talker-decode-graph.h",
+                "src/pipeline-tts.h",
+                "src/pipeline-tts.cpp",
+            ]
+            .contains(relative)
+            {
+                *transform = fixture_graph;
             }
         }
         prepare_with(&source, &copy, &transforms)?;
@@ -370,13 +357,18 @@ static int sample_top_k_p(float * logits, int V, float temperature,
             fs::read_to_string(copy.join("ggml/src/ggml-cpu/vec.cpp"))?
                 .contains("!defined(GGML_SIMD)")
         );
-        assert_eq!(
-            fs::read_to_string(source.join("src/talker-forward.h"))?,
-            DECODE_GRAPH
-        );
-        assert!(
-            fs::read_to_string(copy.join("src/talker-forward.h"))?.contains(EVICT_DECODE_GRAPHS)
-        );
+        for relative in [
+            "src/talker-forward.h",
+            "src/talker-decode-graph.h",
+            "src/pipeline-tts.h",
+            "src/pipeline-tts.cpp",
+        ] {
+            assert_eq!(fs::read_to_string(source.join(relative))?, FIXTURE_SOURCE);
+            assert_eq!(
+                fs::read_to_string(copy.join(relative))?,
+                "Rust graph ownership fixture"
+            );
+        }
         assert_eq!(
             fs::read_to_string(source.join("src/philox.h"))?,
             FIXTURE_SOURCE
@@ -607,21 +599,6 @@ static int sample_top_k_p(float * logits, int V, float temperature,
         assert!(patched.contains("rest of vector kernels"));
         assert!(vectors("changed input").is_err());
         assert!(vectors(&source.repeat(2)).is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn decode_workspace_overlay_precedes_allocation_and_preserves_graph_execution()
-    -> std::io::Result<()> {
-        let suffix = "    if (tg->ctx && tg->N != N) { talker_decode_graph_free(tg); }\n    if (!tg->ctx && !talker_decode_graph_build(...)) { return false; }\n    upload_inputs();\n    ggml_backend_graph_compute(backend, tg->gf);\n";
-        let source = format!("unchanged graph builder\n{DECODE_GRAPH}{suffix}");
-        let expected = format!(
-            "{DECODE_GRAPH_DECLARATIONS}unchanged graph builder\n{RUST_DECODE_GRAPH}{EVICT_DECODE_GRAPHS}{suffix}"
-        );
-        assert_eq!(decode_graphs(&source)?, expected);
-        assert!(decode_graphs(&expected).is_err());
-        assert!(decode_graphs("changed input").is_err());
-        assert!(decode_graphs(&source.repeat(2)).is_err());
         Ok(())
     }
 }
