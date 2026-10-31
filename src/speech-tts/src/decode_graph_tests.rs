@@ -85,3 +85,60 @@ fn failed_build_keeps_an_empty_cache_and_active_work_prevents_eviction() -> Resu
     assert_eq!(released.get(), 2);
     Ok(())
 }
+
+#[test]
+fn every_original_cached_requested_width_pair_uses_the_same_owner() -> Result<(), &'static str> {
+    for cached_width in 1..=16 {
+        for requested_width in 1..=16 {
+            let released = Rc::new(Cell::new(0));
+            let rebuilt = Cell::new(false);
+            let mut cache = Cache::new(16).ok_or("valid cache geometry was rejected")?;
+            assert!(
+                cache
+                    .begin(256, cached_width, || Some(Resource(Rc::clone(&released))))
+                    .is_some()
+            );
+            assert!(cache.complete());
+            assert!(
+                cache
+                    .begin(256, requested_width, || {
+                        rebuilt.set(true);
+                        Some(Resource(Rc::clone(&released)))
+                    })
+                    .is_some()
+            );
+            assert_eq!(rebuilt.get(), cached_width != requested_width);
+            assert!(cache.complete());
+            drop(cache);
+            assert_eq!(
+                released.get(),
+                1 + usize::from(cached_width != requested_width)
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn original_fresh_request_schedule_retains_exact_reuse_and_drop_counts() -> Result<(), &'static str>
+{
+    let released = Rc::new(Cell::new(0));
+    let created = Cell::new(0);
+    let mut cache = Cache::new(16).ok_or("valid cache geometry was rejected")?;
+    for tokens in [256, 4096, 256, 1024, 1024, 256] {
+        assert!(
+            cache
+                .begin(tokens, 2, || {
+                    created.set(created.get() + 1);
+                    Some(Resource(Rc::clone(&released)))
+                })
+                .is_some()
+        );
+        assert!(cache.complete());
+    }
+    assert_eq!(created.get(), 5);
+    assert_eq!(released.get(), 4);
+    drop(cache);
+    assert_eq!(released.get(), created.get());
+    Ok(())
+}
