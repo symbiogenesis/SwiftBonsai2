@@ -443,10 +443,11 @@ fn stalled_prefix_observation(content_bytes: usize) -> Value {
     assert!(content_bytes > 0);
     json!({
         "enabled":true, "requested":true, "status":"pending",
-        "phase":"awaiting-owned-stop",
+        "phase":"nonreading-pause",
         "requestedCompletionCap":EXTENDED_COMPLETION_CAP,
         "thinkingEnabled":false, "observedVisiblePrefixBytes":content_bytes,
         "nonreadingPauseMilliseconds":STALLED_CONSUMER_PAUSE.as_millis(),
+        "nonreadingPauseCompleted":false,
         "brokerOperationInterrupted":false, "ownedJobStopped":false,
         "freshRestartAfterStopPassed":false,
         "backendGeneratingAtStopKnown":false, "socketBackpressureQualified":false,
@@ -474,6 +475,7 @@ fn stalled_stop_summary(
         "thinkingEnabled":false,
         "observedVisiblePrefixBytes":content_bytes,
         "nonreadingPauseMilliseconds":STALLED_CONSUMER_PAUSE.as_millis(),
+        "nonreadingPauseCompleted":true,
         "stopCompletionBoundSeconds":STOP_WAIT.as_secs(),
         "completedOperationsBeforeStall":completed_before,
         "failedOperationsBeforeStall":failed_before,
@@ -499,16 +501,12 @@ fn stalled_request() -> Value {
 
 async fn nonreading_prefix(port: u16, credential: &str) -> (BufReader<TcpStream>, usize) {
     let body = stalled_request();
-    let observed = timeout(WAIT, async {
+    timeout(WAIT, async {
         let client = connect(port, credential, &body).await;
         read_until_content(client).await
     })
     .await
-    .unwrap();
-    // Keep the socket and any read-ahead bytes alive without consuming more
-    // output. The short pause is a workload condition, not a timing sample.
-    tokio::time::sleep(STALLED_CONSUMER_PAUSE).await;
-    observed
+    .unwrap()
 }
 
 async fn supplied_history_acceptance(port: u16, credential: &str) -> Value {
@@ -600,6 +598,11 @@ async fn acceptance(
         let observed = nonreading_prefix(port, &credential).await;
         report["stalledConsumerWorkload"] = stalled_prefix_observation(observed.1);
         save_acceptance_report(evidence, report);
+        // Preserve the first-prefix observation before this cancellable wait.
+        // Keep the socket/read-ahead bytes without consuming more output.
+        tokio::time::sleep(STALLED_CONSUMER_PAUSE).await;
+        report["stalledConsumerWorkload"]["nonreadingPauseCompleted"] = json!(true);
+        report["stalledConsumerWorkload"]["phase"] = json!("awaiting-owned-stop");
         Some(observed)
     } else {
         None
@@ -770,6 +773,7 @@ fn native_stalled_consumer_rejects_error_or_unframed_stream_headers() {
 fn native_stalled_consumer_never_qualifies_natural_completion_as_interruption() {
     let prefix = stalled_prefix_observation(5);
     assert_eq!(prefix["status"], "pending");
+    assert_eq!(prefix["nonreadingPauseCompleted"], false);
     assert_eq!(prefix["observedVisiblePrefixBytes"], 5);
     for field in [
         "brokerOperationInterrupted",
@@ -785,6 +789,7 @@ fn native_stalled_consumer_never_qualifies_natural_completion_as_interruption() 
         peak_in_flight: 1,
     };
     let summary = stalled_stop_summary(&interrupted, 2, 1, 5);
+    assert_eq!(summary["nonreadingPauseCompleted"], true);
     assert_eq!(summary["brokerOperationInterrupted"], true);
     assert_eq!(summary["backendGeneratingAtStopKnown"], false);
     assert_eq!(summary["socketBackpressureQualified"], false);

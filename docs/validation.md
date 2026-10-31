@@ -123,8 +123,9 @@ pending until successful owner-device evidence is retained within the shared bud
 Optional supplied-history receipts persist context rejection and the completed
 history stream separately before same-owner reuse. Cancellation or failure of a
 later step leaves the workload pending while preserving those observations.
-The stalled-consumer receipt likewise saves its visible prefix before waiting
-for owned Stop; that prefix alone establishes neither interruption nor cleanup.
+The stalled-consumer receipt likewise saves its visible prefix before the fixed
+nonreading pause and owned Stop, recording pause completion separately; that
+prefix alone establishes neither interruption nor cleanup.
 
 Model-free acceptance regressions:
 
