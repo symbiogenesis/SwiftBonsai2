@@ -59,24 +59,9 @@ pub(super) fn decode(
         let mut remaining = length;
         while remaining != 0 {
             check()?;
-            if !reader.fill()? {
-                return Err(INVALID);
-            }
-            let count = remaining.min(reader.end - reader.start) & !1;
-            check()?;
-            if count == 0 {
-                // A read can split one PCM16 sample. Retain only that sample,
-                // rather than waiting to fill a larger audio block.
-                let mut sample = [0; 2];
-                reader.exact(&mut sample)?;
-                check()?;
-                sink(&sample)?;
-                remaining -= sample.len();
-                continue;
-            }
-            sink(&reader.buffer[reader.start..reader.start + count])?;
-            reader.start += count;
-            remaining -= count;
+            let samples = reader.pcm(remaining, &mut check)?;
+            sink(samples)?;
+            remaining -= samples.len();
         }
         let mut end = [0; 2];
         reader.exact(&mut end)?;
@@ -96,6 +81,7 @@ struct Buffered<F> {
     buffer: [u8; 16_384],
     start: usize,
     end: usize,
+    sample: [u8; 2],
 }
 
 impl<F: FnMut(&mut [u8]) -> Result<usize>> Buffered<F> {
@@ -105,6 +91,7 @@ impl<F: FnMut(&mut [u8]) -> Result<usize>> Buffered<F> {
             buffer: [0; 16_384],
             start: 0,
             end: 0,
+            sample: [0; 2],
         }
     }
 
@@ -126,6 +113,29 @@ impl<F: FnMut(&mut [u8]) -> Result<usize>> Buffered<F> {
         let byte = self.buffer[self.start];
         self.start += 1;
         Ok(byte)
+    }
+
+    // Lend only whole PCM16 samples within the current HTTP chunk. Advancing
+    // the cursor before returning keeps framing and refill bookkeeping private;
+    // the borrow prevents another read until the caller finishes with this span.
+    fn pcm(&mut self, maximum: usize, check: &mut impl FnMut() -> Result<()>) -> Result<&[u8]> {
+        if maximum < 2 || maximum % 2 != 0 || !self.fill()? {
+            return Err(INVALID);
+        }
+        check()?;
+        let count = maximum.min(self.end - self.start) & !1;
+        if count != 0 {
+            let start = self.start;
+            self.start += count;
+            return Ok(&self.buffer[start..self.start]);
+        }
+        // A read can split a single sample. Join only those two bytes, without
+        // waiting for any additional payload or its trailing framing to arrive.
+        let first = self.byte()?;
+        let second = self.byte()?;
+        check()?;
+        self.sample = [first, second];
+        Ok(&self.sample)
     }
 
     fn exact(&mut self, bytes: &mut [u8]) -> Result<()> {
@@ -182,10 +192,47 @@ fn validate_head(head: &[u8]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Failure, INVALID, MAX_PCM, decode};
+    use super::{Buffered, Failure, INVALID, MAX_PCM, decode};
     use std::{cell::Cell, io::Read};
 
     const HEAD: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Type: audio/pcm\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+
+    #[test]
+    fn pcm_span_lends_ready_samples_without_consuming_chunk_framing() -> Result<(), Failure> {
+        let mut source = b"\x01\x80\r\n".as_slice();
+        let reads = Cell::new(0);
+        let mut reader = Buffered::new(|bytes: &mut [u8]| {
+            reads.set(reads.get() + 1);
+            source.read(bytes).map_err(|_| Failure::Cancelled)
+        });
+        let buffer = reader.buffer.as_ptr();
+        let span = reader.pcm(2, &mut || Ok(()))?;
+        assert_eq!(span, [1, 128]);
+        assert_eq!(span.as_ptr(), buffer);
+        assert_eq!(reads.get(), 1);
+        let mut ending = [0; 2];
+        reader.exact(&mut ending)?;
+        assert_eq!(ending, *b"\r\n");
+        assert_eq!(reads.get(), 1);
+        assert_eq!(reader.pcm(2, &mut || Ok(())), Err(INVALID));
+        assert_eq!(reads.get(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn pcm_split_sample_observes_cancellation_before_refill() {
+        let reads = Cell::new(0);
+        let mut reader = Buffered::new(|bytes: &mut [u8]| {
+            reads.set(reads.get() + 1);
+            bytes[0] = 1;
+            Ok(1)
+        });
+        assert_eq!(
+            reader.pcm(2, &mut || Err(Failure::Cancelled)),
+            Err(Failure::Cancelled)
+        );
+        assert_eq!(reads.get(), 1);
+    }
 
     #[test]
     fn pcm_stream_requires_terminal_chunk_and_rejects_ambiguous_framing() {
