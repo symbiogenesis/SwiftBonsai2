@@ -57,6 +57,16 @@ pub(super) struct Tokenizer {
 }
 
 impl Tokenizer {
+    #[cfg(test)]
+    pub(super) fn token_id_for_test(&self, spelling: &[u8]) -> Option<i32> {
+        self.vocabulary.get(spelling).copied()
+    }
+
+    #[cfg(test)]
+    pub(super) fn merge_rank_for_test(&self, spelling: &[u8]) -> Option<i32> {
+        self.merges.get(spelling).copied()
+    }
+
     /// Create an empty owner without allocating model tables.
     pub(super) fn new() -> Self {
         Self {

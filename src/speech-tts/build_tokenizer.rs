@@ -4,10 +4,17 @@ pub(super) const SOURCE: &str = r#"#pragma once
 // Rust owns GGUF metadata intake, candidate replacement, token tables and
 // encoding results. This temporary adapter serves the remaining native model.
 #include "qt-error.h"
+#include <cassert>
+#include <climits>
+#include <cstdio>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <string>
 #include <type_traits>
+#include <utility>
+#include <unordered_map>
 #include <vector>
 
 extern "C" {

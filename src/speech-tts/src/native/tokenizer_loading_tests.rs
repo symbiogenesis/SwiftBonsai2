@@ -193,8 +193,19 @@ fn balanced_metadata() {
     });
 }
 
+fn reset() {
+    OWNER_COUNTS.with(|counts| counts.set((0, 0)));
+    RESULT_COUNTS.with(|counts| counts.set((0, 0)));
+    GGUF_COUNTS.with(|counts| counts.set((0, 0)));
+    REJECT.with(|reject| reject.set(0));
+    FIXTURE.with(|value| *value.borrow_mut() = Fixture::default());
+    READS.with(|reads| reads.borrow_mut().clear());
+    SPECIAL_IDS.with(|ids| ids.borrow_mut().clear());
+}
+
 #[test]
 fn rust_gguf_loader_owns_metadata_candidates_and_transactional_replacement() -> io::Result<()> {
+    reset();
     let mut slot = Slot::new();
     assert!(slot.load(c"missing").is_err());
     assert!(slot.0.is_null());
@@ -207,6 +218,10 @@ fn rust_gguf_loader_owns_metadata_candidates_and_transactional_replacement() -> 
         READS.with(|reads| reads.borrow().clone()),
         [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1)]
     );
+    let table = owner_mut(slot.0).ok_or_else(super::invalid)?;
+    assert_eq!(table.token_id_for_test(b"a"), Some(1));
+    assert_eq!(table.token_id_for_test(b"<eos>"), Some(2));
+    assert_eq!(table.merge_rank_for_test(b"a a"), Some(1));
     // Repeated vocabulary spellings retain the last original array index.
     assert_eq!(encode_copy_for_test(slot.0, b"a", false), Some(vec![1]));
     balanced_metadata();
@@ -253,6 +268,7 @@ fn rust_gguf_loader_owns_metadata_candidates_and_transactional_replacement() -> 
 
 #[test]
 fn rust_special_intake_preserves_order_signed_ids_errors_and_cleanup() -> io::Result<()> {
+    reset();
     let mut slot = Slot::new();
     slot.load(c"fixture")?;
     {
@@ -298,6 +314,7 @@ fn rust_special_intake_preserves_order_signed_ids_errors_and_cleanup() -> io::Re
     reason = "Deliberate safe-Rust unwind verifies owned encoding cleanup before the ABI guard returns failure."
 )]
 fn rust_encoding_owns_results_through_copy_failure_empty_output_and_unwind() -> io::Result<()> {
+    reset();
     FIXTURE.with(|value| {
         value.borrow_mut().tokens = [c"a", c"b", c"\u{100}", c"<|endoftext|>"]
             .map(|text| Some(text.to_owned()))
@@ -382,6 +399,7 @@ fn tiny_gguf(tokens: &[&[u8]], merges: &[&[u8]]) -> io::Result<Vec<u8>> {
 
 #[test]
 fn real_pinned_gguf_reader_reloads_rust_owned_tables_without_model_weights() -> io::Result<()> {
+    reset();
     use std::{
         fs,
         time::{SystemTime, UNIX_EPOCH},
