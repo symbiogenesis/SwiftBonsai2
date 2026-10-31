@@ -18,6 +18,8 @@ struct NativeEngine {
 
 #[cfg(windows)]
 impl bonsai_speech_service::Engine for NativeEngine {
+    type Waveform = bonsai_speech_tts::Waveform;
+
     fn streaming_pcm(&self) -> bool {
         true
     }
@@ -52,7 +54,7 @@ impl bonsai_speech_service::Engine for NativeEngine {
     fn infer(
         &mut self,
         request: bonsai_speech_service::Request<'_>,
-    ) -> io::Result<bonsai_speech_service::Output> {
+    ) -> io::Result<bonsai_speech_service::Output<Self::Waveform>> {
         let bonsai_speech_service::Request::Synthesize {
             text,
             voice_description,
@@ -69,7 +71,7 @@ impl bonsai_speech_service::Engine for NativeEngine {
             .synthesize_owned(text, voice_description)
             .map_err(|_| io::Error::other("Native synthesis failed."))?;
         Ok(bonsai_speech_service::Output::Waveform {
-            samples: Box::new(audio),
+            samples: audio,
             sample_rate: bonsai_speech_tts::SAMPLE_RATE,
         })
     }

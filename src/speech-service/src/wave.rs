@@ -2,15 +2,20 @@
 
 use crate::http::Error;
 
-pub(super) fn decode(bytes: &[u8]) -> Result<Vec<f32>, Error> {
+pub(super) fn decode<'a>(bytes: &[u8], samples: &'a mut Vec<f32>) -> Result<&'a [f32], Error> {
+    samples.clear();
     let pcm = bonsai_audio::mono_pcm16_data(bytes, 16_000, 16_000 * 30)
         .ok_or_else(|| Error::bad("invalid_audio"))?;
-    Ok(pcm
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|sample| f32::from(i16::from_le_bytes([sample[0], sample[1]])) / 32768.0)
-        .collect())
+    samples
+        .try_reserve_exact(pcm.len() / 2)
+        .map_err(|_| Error::new(503, "allocation_failed"))?;
+    samples.extend(
+        pcm.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|sample| f32::from(i16::from_le_bytes([sample[0], sample[1]])) / 32768.0),
+    );
+    Ok(samples)
 }
 
 /// Fixed conversion payload, independent of the duration of an admitted clip.
@@ -49,8 +54,35 @@ pub(super) fn pcm(sample: f32) -> i16 {
 
 #[cfg(test)]
 mod tests {
-    use super::{header, pcm_into};
-    use crate::Audio;
+    use super::{decode, header, pcm_into};
+    use crate::{Audio, http::Error};
+
+    #[test]
+    fn recognition_decoding_reuses_storage_and_clears_failed_clips() -> Result<(), Error> {
+        let mut wave = bonsai_audio::mono_pcm16_header(16_000, 4)
+            .ok_or(Error::bad("invalid_fixture"))?
+            .to_vec();
+        for sample in [i16::MIN, -1, 0, i16::MAX] {
+            wave.extend_from_slice(&sample.to_le_bytes());
+        }
+        let mut samples = Vec::with_capacity(16);
+        let storage = samples.as_ptr();
+        for _ in 0..3 {
+            let decoded = decode(&wave, &mut samples)?;
+            assert_eq!(decoded.as_ptr(), storage);
+            assert_eq!(decoded, &[-1.0, -1.0 / 32768.0, 0.0, 32767.0 / 32768.0]);
+        }
+        wave[40..44].copy_from_slice(&7_u32.to_le_bytes());
+        assert_eq!(
+            decode(&wave, &mut samples).err(),
+            Some(Error::bad("invalid_audio"))
+        );
+        assert_eq!(samples.len(), 0);
+        assert_eq!(samples.as_ptr(), storage);
+        wave[40..44].copy_from_slice(&8_u32.to_le_bytes());
+        assert_eq!(decode(&wave, &mut samples)?.len(), 4);
+        Ok(())
+    }
 
     #[test]
     fn pcm_bytes_preserve_clipping_rounding_and_signed_zero() {

@@ -106,19 +106,14 @@ impl<T> VoiceCache<T> {
         profile: &CStr,
         create: impl FnOnce() -> io::Result<T>,
     ) -> io::Result<&mut T> {
-        if self
-            .0
-            .as_ref()
-            .is_none_or(|(key, _)| key.as_c_str() != profile)
+        if let Some((key, voice)) = self.0.as_mut()
+            && key.as_c_str() == profile
         {
-            self.0 = None;
-            let voice = create()?;
-            self.0 = Some((profile.to_owned(), voice));
+            return Ok(voice);
         }
-        self.0
-            .as_mut()
-            .map(|(_, value)| value)
-            .ok_or_else(|| io::Error::other("The selected speech voice is unavailable."))
+        self.0 = None;
+        let voice = create()?;
+        Ok(&mut self.0.insert((profile.to_owned(), voice)).1)
     }
 }
 

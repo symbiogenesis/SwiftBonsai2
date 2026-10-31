@@ -12,8 +12,8 @@ use crate::{
         receive_chat_with_budget,
     },
     response::{
-        ResponseError, send_chat_response_mode, send_context_rejection, send_control_rejection,
-        send_rate_rejection,
+        ResponseError, send_buffered_chat_response_mode, send_context_rejection,
+        send_control_rejection, send_rate_rejection,
     },
     service::BurstBudget,
 };
@@ -170,7 +170,7 @@ where
         let response = request_chat_owned(generation, chat, backend.policy(), deadline)
             .await
             .map_err(ServeError::Backend)?;
-        send_chat_response_mode(output, response, streaming, deadline)
+        send_buffered_chat_response_mode(output, response, streaming, deadline)
             .await
             .map_err(ServeError::Response)
     });

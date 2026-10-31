@@ -65,6 +65,9 @@ pub(super) struct Message {
     body_layouts: usize,
     #[cfg(test)]
     #[serde(skip)]
+    cache_updates: usize,
+    #[cfg(test)]
+    #[serde(skip)]
     underline_layouts: usize,
     #[cfg(test)]
     #[serde(skip)]
@@ -159,6 +162,8 @@ impl Transcript {
             cache: None,
             #[cfg(test)]
             body_layouts: 0,
+            #[cfg(test)]
+            cache_updates: 0,
             #[cfg(test)]
             underline_layouts: 0,
             #[cfg(test)]
@@ -487,7 +492,7 @@ impl Message {
         matches: &[search::Match],
         highlights: HighlightKey,
         selected: Option<&Range<usize>>,
-    ) {
+    ) -> &LayoutCache {
         let color = ui.visuals().text_color();
         let reasoning_color = ui.visuals().weak_text_color();
         let pixels_per_point = ui.ctx().pixels_per_point();
@@ -511,9 +516,32 @@ impl Message {
                 cache.reasoning_bytes == self.reasoning.len()
                     && cache.reasoning_color == reasoning_color
             });
-        let previous = self.cache.take();
-        let body = if body_unchanged && let Some(cache) = &previous {
-            Arc::clone(&cache.body)
+        let reasoning_visible = self.show_reasoning && !self.reasoning.is_empty();
+        let underline_unchanged = body_unchanged
+            && self
+                .cache
+                .as_ref()
+                .is_some_and(|cache| cache.selected.as_ref() == selected);
+        if let Some(cache) = self.cache.as_ref()
+            && body_unchanged
+            && reasoning_unchanged
+            && underline_unchanged
+            && cache.reasoning.is_some() == reasoning_visible
+        {
+            return cache;
+        }
+        #[cfg(test)]
+        {
+            self.cache_updates += 1;
+        }
+        // Move reusable owners on a partial update. A complete cache hit above
+        // does not reconstruct the cache or adjust either galley's Arc count.
+        let (previous_body, previous_reasoning, previous_underline) =
+            self.cache.take().map_or((None, None, Vec::new()), |cache| {
+                (Some(cache.body), cache.reasoning, cache.underline)
+            });
+        let body = if body_unchanged && let Some(body) = previous_body {
+            body
         } else {
             #[cfg(test)]
             {
@@ -522,34 +550,22 @@ impl Message {
             self.layout_body(ui, width, matches)
         };
         let underline = if let Some(selected) = selected {
-            if body_unchanged
-                && let Some(cache) = &previous
-                && cache.selected.as_ref() == Some(selected)
-            {
-                // Move the geometry below, after the other cache fields are read.
-                None
+            if underline_unchanged {
+                previous_underline
             } else {
                 #[cfg(test)]
                 {
                     self.underline_layouts += 1;
                 }
-                Some(active_underline(
-                    &self.body,
-                    &body,
-                    selected,
-                    pixels_per_point,
-                ))
+                active_underline(&self.body, &body, selected, pixels_per_point)
             }
         } else {
-            Some(Vec::new())
+            Vec::new()
         };
-        let reasoning = if !self.show_reasoning || self.reasoning.is_empty() {
+        let reasoning = if !reasoning_visible {
             None
-        } else if reasoning_unchanged
-            && let Some(cache) = &previous
-            && let Some(reasoning) = &cache.reasoning
-        {
-            Some(Arc::clone(reasoning))
+        } else if reasoning_unchanged && let Some(reasoning) = previous_reasoning {
+            Some(reasoning)
         } else {
             Some(ui.fonts_mut(|fonts| {
                 fonts.layout(
@@ -560,7 +576,7 @@ impl Message {
                 )
             }))
         };
-        self.cache = Some(LayoutCache {
+        self.cache.insert(LayoutCache {
             width,
             pixels_per_point,
             color,
@@ -568,14 +584,13 @@ impl Message {
             body_revision: self.body_revision,
             highlights,
             selected: selected.cloned(),
-            underline: underline
-                .unwrap_or_else(|| previous.map_or_else(Vec::new, |cache| cache.underline)),
+            underline,
             highlight_fill,
             highlight_color,
             reasoning_bytes: self.reasoning.len(),
             body,
             reasoning,
-        });
+        })
     }
 
     fn layout_body(

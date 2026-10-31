@@ -3,6 +3,49 @@ use super::*;
 use crate::window::transcript::{Role, Transcript};
 
 #[test]
+fn full_find_refresh_reuses_entries_and_prunes_unvisited_saturated_suffix() {
+    let mut transcript = Transcript::default();
+    transcript.push(Role::User, "hit".to_owned());
+    transcript.push(Role::Assistant, "a retained hit".to_owned());
+    transcript.search.query = "hit".to_owned();
+    transcript.search.refresh(&transcript.messages);
+    let rebuilt = transcript.search.rebuilt_cache_entries;
+    let scanned = transcript.search.scanned_bytes;
+    for _ in 0..3 {
+        transcript.search.invalidate();
+        transcript.search.refresh(&transcript.messages);
+    }
+    assert_eq!(transcript.search.rebuilt_cache_entries, rebuilt);
+    assert_eq!(transcript.search.scanned_bytes, scanned);
+    assert_eq!(transcript.search.cached_messages.len(), 2);
+
+    // A new query populates both entries before the first message is replaced
+    // with enough results to saturate the prefix and skip the unchanged tail.
+    transcript.search.query = "a".to_owned();
+    transcript.search.invalidate();
+    transcript.search.refresh(&transcript.messages);
+    transcript.messages[0].body = "a ".repeat(MAX_MATCHES + 1);
+    transcript.search.replaced(transcript.messages[0].id);
+    transcript.search.refresh(&transcript.messages);
+    assert!(transcript.search.limited);
+    assert_eq!(transcript.search.cached_messages.len(), 1);
+    let tail = transcript.messages[1].id;
+    assert!(!transcript.search.cached_messages.contains_key(&tail));
+
+    // Eviction must recreate the formerly unvisited tail and its continuation.
+    transcript.messages.remove(0);
+    transcript.search.invalidate();
+    transcript.search.refresh(&transcript.messages);
+    assert!(!transcript.search.limited);
+    assert_eq!(transcript.search.matches.len(), 2);
+    assert!(
+        transcript.search.cached_messages[&tail]
+            .continuation
+            .is_some()
+    );
+}
+
+#[test]
 fn find_query_and_streamed_text_use_the_same_scalar_unicode_lowercase() {
     let mut transcript = Transcript::default();
     transcript.push(Role::User, "\u{39f}\u{3a3}".to_owned());

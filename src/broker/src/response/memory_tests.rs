@@ -186,3 +186,163 @@ fn json_final_storage_requires_complete_framing_and_obeys_cancellation() -> io::
         Ok(())
     })
 }
+
+struct VectoredClient {
+    bytes: Vec<u8>,
+    maximum_write: usize,
+    payload_pointers: Vec<*const u8>,
+    zero: bool,
+    shutdown: bool,
+}
+
+impl VectoredClient {
+    fn new(maximum_write: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            maximum_write,
+            payload_pointers: Vec::new(),
+            zero: false,
+            shutdown: false,
+        }
+    }
+}
+
+impl AsyncWrite for VectoredClient {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+        bytes: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let count = self.maximum_write.min(bytes.len());
+        self.bytes.extend_from_slice(&bytes[..count]);
+        Poll::Ready(Ok(count))
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+        buffers: &[IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        if self.zero {
+            return Poll::Ready(Ok(0));
+        }
+        let mut count = 0;
+        for buffer in buffers {
+            if buffer.len() >= RESPONSE_BUFFER_BYTES {
+                self.payload_pointers.push(buffer.as_ptr());
+            }
+            let take = buffer.len().min(self.maximum_write - count);
+            self.bytes.extend_from_slice(&buffer[..take]);
+            count += take;
+            if count == self.maximum_write {
+                break;
+            }
+        }
+        Poll::Ready(Ok(count))
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        true
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.shutdown = true;
+        Poll::Ready(Ok(()))
+    }
+}
+
+#[test]
+fn borrowed_sse_spans_use_original_storage_and_finish_partial_vectored_writes() -> io::Result<()> {
+    runtime()?.block_on(async {
+        let payload = vec![b'x'; 2 * RESPONSE_BUFFER_BYTES + 7];
+        for maximum_write in [1, 17, usize::MAX] {
+            let mut reader = tokio::io::BufReader::with_capacity(
+                RESPONSE_BUFFER_BYTES,
+                io::Cursor::new(payload.clone()),
+            );
+            let pointer = reader.buffer().as_ptr();
+            let mut client = VectoredClient::new(maximum_write);
+            write_buffered_sse_response(&mut client, &mut reader, deadline())
+                .await
+                .map_err(|_| io::Error::other("Fixture SSE was rejected."))?;
+            let mut expected = SSE_HEAD.as_bytes().to_vec();
+            for chunk in payload.chunks(RESPONSE_BUFFER_BYTES) {
+                expected.extend_from_slice(format!("{:X}\r\n", chunk.len()).as_bytes());
+                expected.extend_from_slice(chunk);
+                expected.extend_from_slice(b"\r\n");
+            }
+            expected.extend_from_slice(b"0\r\n\r\n");
+            assert_eq!(client.bytes, expected);
+            assert!(client.payload_pointers.contains(&pointer));
+            assert!(client.shutdown);
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn borrowed_sse_does_not_complete_after_read_or_vectored_write_failure() -> io::Result<()> {
+    runtime()?.block_on(async {
+        let mut source = Source::new(vec![b'x'; RESPONSE_BUFFER_BYTES + 7], RESPONSE_BUFFER_BYTES);
+        source.fail_at_end = true;
+        let mut reader = tokio::io::BufReader::with_capacity(RESPONSE_BUFFER_BYTES, source);
+        let mut client = VectoredClient::new(usize::MAX);
+        assert_eq!(
+            write_buffered_sse_response(&mut client, &mut reader, deadline()).await,
+            Err(ResponseError::BackendIo)
+        );
+        assert!(!client.shutdown);
+        assert!(!client.bytes.ends_with(b"0\r\n\r\n"));
+
+        let mut reader = tokio::io::BufReader::with_capacity(
+            RESPONSE_BUFFER_BYTES,
+            io::Cursor::new(vec![b'x'; RESPONSE_BUFFER_BYTES]),
+        );
+        let mut client = VectoredClient::new(usize::MAX);
+        client.zero = true;
+        assert_eq!(
+            write_buffered_sse_response(&mut client, &mut reader, deadline()).await,
+            Err(ResponseError::ClientIo)
+        );
+        assert!(!client.shutdown);
+        Ok(())
+    })
+}
+
+#[test]
+fn borrowed_sse_preserves_exact_cap_probe_and_deadline_failure() -> io::Result<()> {
+    runtime()?.block_on(async {
+        for length in [MAX_RESPONSE_BYTES, MAX_RESPONSE_BYTES + 1] {
+            let mut reader = tokio::io::BufReader::with_capacity(
+                RESPONSE_BUFFER_BYTES,
+                io::Cursor::new(vec![b'x'; length]),
+            );
+            let mut client = VectoredClient::new(usize::MAX);
+            let result = write_buffered_sse_response(&mut client, &mut reader, deadline()).await;
+            if length == MAX_RESPONSE_BYTES {
+                assert_eq!(result, Ok(()));
+                assert!(client.shutdown);
+                assert!(client.bytes.ends_with(b"0\r\n\r\n"));
+            } else {
+                assert_eq!(result, Err(ResponseError::BodyLimit));
+                assert!(!client.shutdown);
+                assert!(!client.bytes.ends_with(b"0\r\n\r\n"));
+            }
+        }
+        let mut source = Source::new(vec![b'x'; RESPONSE_BUFFER_BYTES], RESPONSE_BUFFER_BYTES);
+        source.stall_at_end = true;
+        let mut reader = tokio::io::BufReader::with_capacity(RESPONSE_BUFFER_BYTES, source);
+        let mut client = VectoredClient::new(usize::MAX);
+        assert_eq!(
+            write_buffered_sse_response(&mut client, &mut reader, deadline()).await,
+            Err(ResponseError::Deadline)
+        );
+        assert!(!client.shutdown);
+        assert!(!client.bytes.ends_with(b"0\r\n\r\n"));
+        Ok(())
+    })
+}

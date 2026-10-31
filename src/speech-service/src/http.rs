@@ -17,6 +17,33 @@ use subtle::ConstantTimeEq as _;
 const MAX_HEAD: usize = 16 * 1024;
 const INTAKE: Duration = Duration::from_secs(10);
 const WRITE: Duration = Duration::from_secs(5);
+const RETAINED_WIRE_BYTES: usize = 64 * 1024;
+// Retain at most four seconds of recognition storage between requests.
+const RETAINED_INPUT_SAMPLES: usize = 16_000 * 4;
+
+/// One bounded intake allocation reused between synchronous requests.
+#[derive(Default)]
+pub(super) struct Scratch {
+    wire: Vec<u8>,
+    samples: Vec<f32>,
+}
+
+fn recycle_wire(wire: &mut Vec<u8>) {
+    wire.clear();
+    if wire.capacity() > RETAINED_WIRE_BYTES {
+        *wire = Vec::new();
+    }
+}
+
+impl Scratch {
+    fn recycle(&mut self) {
+        recycle_wire(&mut self.wire);
+        self.samples.clear();
+        if self.samples.capacity() > RETAINED_INPUT_SAMPLES {
+            self.samples = Vec::new();
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct Error {
@@ -63,9 +90,16 @@ impl HeaderEnd {
     }
 }
 
-pub(super) fn handle(peer: &mut TcpStream, port: u16, key: &[u8; 64], engine: &mut impl Engine) {
-    let result = receive(peer, port, key, engine.kind())
+pub(super) fn handle(
+    peer: &mut TcpStream,
+    port: u16,
+    key: &[u8; 64],
+    engine: &mut impl Engine,
+    scratch: &mut Scratch,
+) {
+    let result = receive(peer, port, key, engine.kind(), scratch)
         .and_then(|prepared| respond(engine, &prepared, peer));
+    scratch.recycle();
     if let Err(error) = result {
         if error.status == 0 {
             return;
@@ -82,7 +116,7 @@ pub(super) fn handle(peer: &mut TcpStream, port: u16, key: &[u8; 64], engine: &m
 
 fn respond(
     engine: &mut impl Engine,
-    prepared: &Prepared,
+    prepared: &Prepared<'_>,
     peer: &mut TcpStream,
 ) -> Result<(), Error> {
     let kind = engine.kind();
@@ -130,8 +164,8 @@ fn respond(
     .map_err(|_| Error::new(0, "response_failed"))
 }
 
-fn complete_wave(
-    audio: Output,
+fn complete_wave<S: AsRef<[f32]>>(
+    audio: Output<S>,
     send: impl FnOnce(&[f32], &[u8; 44]) -> io::Result<()>,
 ) -> Result<(), Error> {
     let (samples, sample_rate) = match &audio {
@@ -139,7 +173,7 @@ fn complete_wave(
         Output::Waveform {
             samples,
             sample_rate,
-        } => (samples.as_ref().as_ref(), *sample_rate),
+        } => (samples.as_ref(), *sample_rate),
         Output::Transcript(_) => return Err(Error::new(502, "model_failure")),
     };
     let header = wave::header(samples, sample_rate)?;
@@ -195,12 +229,21 @@ fn stream(
         .map_err(|_| Error::new(0, "response_failed"))
 }
 
-fn receive(peer: &mut TcpStream, port: u16, key: &[u8; 64], kind: Kind) -> Result<Prepared, Error> {
+fn receive<'a>(
+    peer: &mut TcpStream,
+    port: u16,
+    key: &[u8; 64],
+    kind: Kind,
+    scratch: &'a mut Scratch,
+) -> Result<Prepared<'a>, Error> {
     let until = Instant::now() + INTAKE;
-    let mut wire = Vec::with_capacity(MAX_HEAD);
+    let Scratch { wire, samples } = scratch;
+    wire.clear();
+    wire.try_reserve_exact(MAX_HEAD)
+        .map_err(|_| Error::new(503, "allocation_failed"))?;
     let mut header_end = HeaderEnd::default();
     let end = loop {
-        if let Some(end) = header_end.find(&wire) {
+        if let Some(end) = header_end.find(wire) {
             break end;
         }
         if wire.len() >= MAX_HEAD {
@@ -222,15 +265,24 @@ fn receive(peer: &mut TcpStream, port: u16, key: &[u8; 64], kind: Kind) -> Resul
     if head.health {
         return Ok(Prepared::Health);
     }
-    let mut body = body_buffer(wire, end, head.length)?;
+    body_buffer(wire, end, head.length)?;
     let mut filled = prefix;
     while filled < head.length {
-        filled += read(peer, &mut body[filled..], until)?;
+        filled += read(peer, &mut wire[filled..], until)?;
     }
-    request::body(kind, &head.media, &body)
+    match kind {
+        Kind::Canary => {
+            let samples = request::transcribe(&head.media, wire, samples)?;
+            // PCM has been converted into separate reusable storage. The input
+            // bytes are no longer needed during potentially long inference.
+            recycle_wire(wire);
+            Ok(Prepared::Transcribe(samples))
+        }
+        Kind::QwenTts => request::synthesize(&head.media, wire).map(Prepared::Synthesize),
+    }
 }
 
-fn body_buffer(mut wire: Vec<u8>, end: usize, length: usize) -> Result<Vec<u8>, Error> {
+fn body_buffer(wire: &mut Vec<u8>, end: usize, length: usize) -> Result<(), Error> {
     // Reuse the authorized header allocation for the body, including coalesced
     // bytes. Large audio intake then retains one wire buffer, and reading into
     // its final slice avoids a second per-read staging copy.
@@ -239,7 +291,7 @@ fn body_buffer(mut wire: Vec<u8>, end: usize, length: usize) -> Result<Vec<u8>, 
     wire.try_reserve_exact(length - wire.len())
         .map_err(|_| Error::new(503, "allocation_failed"))?;
     wire.resize(length, 0);
-    Ok(wire)
+    Ok(())
 }
 
 fn read(peer: &mut TcpStream, buffer: &mut [u8], until: Instant) -> Result<usize, Error> {
@@ -467,7 +519,32 @@ fn write_before(peer: &mut TcpStream, mut remaining: &[u8], until: Instant) -> i
 
 #[cfg(test)]
 mod intake_tests {
-    use super::{Error, HeaderEnd, Kind, MAX_HEAD, body_buffer, parse_head};
+    use super::{
+        Error, HeaderEnd, Kind, MAX_HEAD, RETAINED_INPUT_SAMPLES, RETAINED_WIRE_BYTES, Scratch,
+        body_buffer, parse_head,
+    };
+
+    #[test]
+    fn intake_scratch_reuses_small_requests_and_releases_large_uploads() {
+        let mut scratch = Scratch {
+            wire: vec![b'x'; MAX_HEAD],
+            samples: vec![0.5; RETAINED_INPUT_SAMPLES],
+        };
+        let storage = scratch.wire.as_ptr();
+        let sample_storage = scratch.samples.as_ptr();
+        scratch.recycle();
+        assert_eq!(scratch.wire.len(), 0);
+        assert_eq!(scratch.samples.len(), 0);
+        assert_eq!(scratch.wire.as_ptr(), storage);
+        assert_eq!(scratch.samples.as_ptr(), sample_storage);
+        scratch.wire.resize(RETAINED_WIRE_BYTES + 1, b'x');
+        scratch.samples.resize(RETAINED_INPUT_SAMPLES + 1, 0.5);
+        scratch.recycle();
+        assert_eq!(scratch.wire.len(), 0);
+        assert_eq!(scratch.wire.capacity(), 0);
+        assert_eq!(scratch.samples.len(), 0);
+        assert_eq!(scratch.samples.capacity(), 0);
+    }
 
     #[test]
     fn fragmented_headers_scan_each_window_once_and_preserve_coalesced_audio() {
@@ -517,9 +594,9 @@ mod intake_tests {
             assert!(!parsed.health);
             assert_eq!(parsed.length, 4);
             assert_eq!(parsed.media, "multipart/form-data; boundary=a");
-            let body = body_buffer(wire, end, parsed.length)?;
-            assert_eq!(body, b"\0\x80\xff\x7f");
-            assert_eq!(body.as_ptr(), storage);
+            body_buffer(&mut wire, end, parsed.length)?;
+            assert_eq!(wire, b"\0\x80\xff\x7f");
+            assert_eq!(wire.as_ptr(), storage);
         }
         Ok(())
     }
@@ -530,16 +607,16 @@ mod intake_tests {
         wire.extend_from_slice(b"headers\r\n\r\n\0\x80\xff\x7f");
         let storage = wire.as_ptr();
         let capacity = wire.capacity();
-        let body = body_buffer(wire, 11, 12)?;
-        assert_eq!(body.as_ptr(), storage);
-        assert_eq!(body.capacity(), capacity);
-        assert_eq!(&body[..4], b"\0\x80\xff\x7f");
-        assert_eq!(&body[4..], &[0; 8]);
+        body_buffer(&mut wire, 11, 12)?;
+        assert_eq!(wire.as_ptr(), storage);
+        assert_eq!(wire.capacity(), capacity);
+        assert_eq!(&wire[..4], b"\0\x80\xff\x7f");
+        assert_eq!(&wire[4..], &[0; 8]);
 
-        let body = body_buffer(body, 0, 1024 * 1024)?;
-        assert_eq!(body.len(), 1024 * 1024);
-        assert_eq!(&body[..4], b"\0\x80\xff\x7f");
-        assert!(body[4..].iter().all(|byte| *byte == 0));
+        body_buffer(&mut wire, 0, 1024 * 1024)?;
+        assert_eq!(wire.len(), 1024 * 1024);
+        assert_eq!(&wire[..4], b"\0\x80\xff\x7f");
+        assert!(wire[4..].iter().all(|byte| *byte == 0));
         Ok(())
     }
 }
@@ -583,11 +660,11 @@ mod pcm_tests {
             };
             let storage = samples.as_ptr();
             let audio = Output::Waveform {
-                samples: Box::new(SampleOwner {
+                samples: SampleOwner {
                     samples,
                     drops: Rc::clone(&drops),
                     borrows: Rc::clone(&borrows),
-                }),
+                },
                 sample_rate: if case == 5 { 16_000 } else { 24_000 },
             };
             let mut writes = 0;

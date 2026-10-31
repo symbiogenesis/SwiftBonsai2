@@ -228,7 +228,44 @@ where
     drop(body);
 
     let mut reader = BufReader::with_capacity(8192, stream);
+    let (metadata, framing) = read_head(&mut reader, streaming, deadline).await?;
+    ensure_time(deadline)?;
+    Ok(metadata.map(|()| BackendBody {
+        reader: Some(reader),
+        framing,
+        remaining_budget: MAX_RESPONSE_BYTES,
+        metadata_bytes: 0,
+        deadline,
+        timer: Box::pin(sleep_until(deadline)),
+    }))
+}
+
+async fn read_head<S: AsyncRead + Unpin>(
+    reader: &mut BufReader<S>,
+    streaming: bool,
+    deadline: Instant,
+) -> Result<(Response<()>, Framing), BackendError> {
+    ensure_time(deadline)?;
+    let available = timeout_at(deadline, reader.fill_buf())
+        .await
+        .map_err(|_| BackendError::Deadline)?
+        .map_err(|_| BackendError::Io)?;
+    ensure_time(deadline)?;
+    if available.is_empty() {
+        return Err(BackendError::WireSyntax);
+    }
+    let available = &available[..available.len().min(MAX_HEADER_BYTES)];
+    if let Some(end) = wire::head_end(available, 0) {
+        // Complete ordinary heads borrow the reader allocation. Only fragmented
+        // heads need a second buffer; coalesced body bytes stay in the reader.
+        let parsed = parse_head(&available[..end], streaming)?;
+        reader.consume(end);
+        return Ok(parsed);
+    }
     let mut raw = Vec::with_capacity(MAX_HEADER_BYTES);
+    raw.extend_from_slice(available);
+    let count = available.len();
+    reader.consume(count);
     loop {
         ensure_time(deadline)?;
         if raw.len() == MAX_HEADER_BYTES {
@@ -253,16 +290,7 @@ where
         }
         reader.consume(count);
     }
-    let (metadata, framing) = parse_head(&raw, streaming)?;
-    ensure_time(deadline)?;
-    Ok(metadata.map(|()| BackendBody {
-        reader: Some(reader),
-        framing,
-        remaining_budget: MAX_RESPONSE_BYTES,
-        metadata_bytes: 0,
-        deadline,
-        timer: Box::pin(sleep_until(deadline)),
-    }))
+    parse_head(&raw, streaming)
 }
 
 fn parse_head(raw: &[u8], streaming: bool) -> Result<(Response<()>, Framing), BackendError> {
@@ -416,17 +444,20 @@ impl<S: AsyncRead + Unpin> BackendBody<S> {
     }
 }
 
-impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
+impl<S: AsyncRead + Unpin> BackendBody<S> {
+    const fn advance_payload(&mut self, count: usize) {
+        self.framing = match self.framing {
+            Framing::Length(remaining) => Framing::Length(remaining - count),
+            Framing::Data(remaining) if count == remaining => Framing::DataCr,
+            Framing::Data(remaining) => Framing::Data(remaining - count),
+            _ => return,
+        };
+        self.remaining_budget -= count;
+    }
+
     // Keep the complete framing state machine visible in one audit boundary.
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        output: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        if output.remaining() == 0 {
-            return Poll::Ready(Ok(()));
-        }
+    fn poll_framing(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<usize>> {
+        let this = self;
         // Bound immediately-ready metadata work so cancellation can be polled.
         for _ in 0..1024 {
             if matches!(this.framing, Framing::Failed) {
@@ -436,16 +467,9 @@ impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
                 return this.fail(io::ErrorKind::TimedOut);
             }
             match this.framing {
-                Framing::Length(0) | Framing::Complete => return Poll::Ready(Ok(())),
+                Framing::Length(0) | Framing::Complete => return Poll::Ready(Ok(0)),
                 Framing::Length(remaining) | Framing::Data(remaining) => {
-                    let count = ready!(this.poll_payload(cx, output, remaining))?;
-                    this.remaining_budget -= count;
-                    this.framing = match this.framing {
-                        Framing::Length(_) => Framing::Length(remaining - count),
-                        _ if count == remaining => Framing::DataCr,
-                        _ => Framing::Data(remaining - count),
-                    };
-                    return Poll::Ready(Ok(()));
+                    return Poll::Ready(Ok(remaining));
                 }
                 _ => {}
             }
@@ -517,6 +541,51 @@ impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
         }
         cx.waker().wake_by_ref();
         Poll::Pending
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for BackendBody<S> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        output: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        if output.remaining() == 0 {
+            return Poll::Ready(Ok(()));
+        }
+        let this = self.get_mut();
+        let remaining = ready!(this.poll_framing(cx))?;
+        if remaining != 0 {
+            let count = ready!(this.poll_payload(cx, output, remaining))?;
+            this.advance_payload(count);
+        }
+        Poll::Ready(Ok(()))
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncBufRead for BackendBody<S> {
+    fn poll_fill_buf(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<&[u8]>> {
+        let this = self.get_mut();
+        let remaining = ready!(this.poll_framing(cx))?;
+        if remaining == 0 {
+            return Poll::Ready(Ok(&[]));
+        }
+        let available = ready!(this.poll_available(cx))?;
+        Poll::Ready(Ok(&available[..available.len().min(remaining)]))
+    }
+
+    fn consume(self: Pin<&mut Self>, amount: usize) {
+        let this = self.get_mut();
+        let (Framing::Length(remaining) | Framing::Data(remaining)) = this.framing else {
+            return;
+        };
+        if let Some(reader) = &mut this.reader {
+            // AsyncBufRead callers may consume only the slice just exposed.
+            // Clamp defensively so misuse cannot eat framing or underflow caps.
+            let count = amount.min(remaining).min(reader.buffer().len());
+            Pin::new(reader).consume(count);
+            this.advance_payload(count);
+        }
     }
 }
 

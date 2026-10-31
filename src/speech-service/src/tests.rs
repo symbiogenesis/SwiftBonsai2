@@ -21,6 +21,8 @@ struct Fake {
     transcript: String,
 }
 impl Engine for Fake {
+    type Waveform = Vec<f32>;
+
     fn kind(&self) -> Kind {
         self.kind
     }
@@ -61,6 +63,8 @@ struct StreamFake {
 }
 
 impl Engine for StreamFake {
+    type Waveform = Vec<f32>;
+
     fn kind(&self) -> Kind {
         Kind::QwenTts
     }
@@ -95,7 +99,13 @@ fn streaming_pcm_frames_complete_output_and_leaves_failures_incomplete() -> io::
         let port = listener.local_addr()?.port();
         let server = thread::spawn(move || -> io::Result<()> {
             let (mut peer, _) = listener.accept()?;
-            http::handle(&mut peer, port, &KEY, &mut StreamFake { failure, invalid });
+            http::handle(
+                &mut peer,
+                port,
+                &KEY,
+                &mut StreamFake { failure, invalid },
+                &mut http::Scratch::default(),
+            );
             Ok(())
         });
         let body = String::from_utf8(speech())
@@ -196,7 +206,13 @@ fn exchange_engine(
     let port = listener.local_addr()?.port();
     let server = thread::spawn(move || -> io::Result<()> {
         let (mut peer, _) = listener.accept()?;
-        http::handle(&mut peer, port, &KEY, &mut engine);
+        http::handle(
+            &mut peer,
+            port,
+            &KEY,
+            &mut engine,
+            &mut http::Scratch::default(),
+        );
         Ok(())
     });
     let mut peer = TcpStream::connect((Ipv4Addr::LOCALHOST, port))?;
@@ -385,14 +401,14 @@ fn strict_json_and_wave_validation_rejects_untrusted_payloads() {
         br#"{"input":"\ud800"}"#,
         &[0xff],
     ] {
-        assert!(request::body(Kind::QwenTts, "application/json", bytes).is_err());
+        assert!(request::synthesize("application/json", bytes).is_err());
     }
     let valid = input_wav();
-    assert!(wave::decode(&valid).is_ok());
+    assert!(wave::decode(&valid, &mut Vec::new()).is_ok());
     for offset in [4, 16, 20, 22, 24, 28, 32, 34, 40] {
         let mut bytes = valid.clone();
         bytes[offset] ^= 1;
-        assert!(wave::decode(&bytes).is_err());
+        assert!(wave::decode(&bytes, &mut Vec::new()).is_err());
     }
     assert!(wave::header(&[f32::NAN], 24_000).is_err());
     assert!(wave::header(&[0.0], 16_000).is_err());
@@ -404,7 +420,7 @@ fn native_voice_design_rejects_language_overrides_before_inference() -> io::Resu
     value["language"] = "English".into();
     let body = serde_json::to_vec(&value)?;
     assert_eq!(
-        request::body(Kind::QwenTts, "application/json", &body).err(),
+        request::synthesize("application/json", &body).err(),
         Some(http::Error::bad("unsupported_language"))
     );
     Ok(())
@@ -512,6 +528,8 @@ fn watchdog_terminates_only_its_companion_on_disconnect_extra_data_and_deadline(
 struct CompletionFake(bool);
 
 impl Engine for CompletionFake {
+    type Waveform = Vec<f32>;
+
     fn kind(&self) -> Kind {
         Kind::QwenTts
     }
@@ -522,7 +540,7 @@ impl Engine for CompletionFake {
         self.0 = !self.0;
         if self.0 {
             return Ok(Output::Waveform {
-                samples: Box::new(vec![0.0; 4]),
+                samples: vec![0.0; 4],
                 sample_rate: 24_000,
             });
         }
@@ -558,9 +576,10 @@ fn completed_response_child() -> io::Result<()> {
     std::fs::write(&pending, port.to_string())?;
     std::fs::rename(pending, ready)?;
     let mut engine = CompletionFake(false);
+    let mut scratch = http::Scratch::default();
     for _ in 0..COMPLETED_REQUESTS {
         let (mut peer, _) = listener.accept()?;
-        http::handle(&mut peer, port, &KEY, &mut engine);
+        http::handle(&mut peer, port, &KEY, &mut engine, &mut scratch);
     }
     Ok(())
 }
@@ -707,6 +726,8 @@ struct AudioFake(Option<Audio>);
 struct WaveformFake(Option<Audio>);
 
 impl Engine for WaveformFake {
+    type Waveform = Vec<f32>;
+
     fn kind(&self) -> Kind {
         Kind::QwenTts
     }
@@ -717,7 +738,7 @@ impl Engine for WaveformFake {
             .take()
             .ok_or_else(|| io::Error::other("Waveform already taken."))?;
         Ok(Output::Waveform {
-            samples: Box::new(audio.samples),
+            samples: audio.samples,
             sample_rate: audio.sample_rate,
         })
     }
@@ -752,6 +773,8 @@ fn native_owned_and_vector_waveforms_emit_identical_complete_http_responses() ->
 }
 
 impl Engine for AudioFake {
+    type Waveform = Vec<f32>;
+
     fn kind(&self) -> Kind {
         Kind::QwenTts
     }
