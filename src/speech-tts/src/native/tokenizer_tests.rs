@@ -435,7 +435,7 @@ fn rust_tokenizer_core_and_abi_match_captured_native_observations() -> Result<()
     assert_eq!(input_digest, INPUT_SHA256);
     assert_eq!(output_digest, OUTPUT_SHA256);
     assert_eq!(CAPTURED_INPUTS.len(), 71250);
-    assert_eq!(CAPTURED_OUTPUTS.len(), 298339);
+    assert_eq!(CAPTURED_OUTPUTS.len(), 298_339);
     let mut reader = Reader(CAPTURED_OUTPUTS);
     for (model_index, fixture) in fixtures.iter().enumerate() {
         let safe = safe_tokenizer(fixture)?;

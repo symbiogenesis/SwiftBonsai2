@@ -85,8 +85,8 @@ fn generated_decode_workspace_eviction_releases_only_completed_graphs() -> Resul
         .chain([0])
         .collect::<Vec<_>>();
     // SAFETY: The absolute, freshly compiled fixture path is NUL-terminated.
-    // Search is limited to the DLL directory and standard safe DLL directories.
-    let module = unsafe { LoadLibraryExW(path.as_ptr(), std::ptr::null_mut(), 0x1100) };
+    // Search is limited to the DLL directory and System32.
+    let module = unsafe { LoadLibraryExW(path.as_ptr(), std::ptr::null_mut(), 0x900) };
     if module.is_null() {
         return Err(io::Error::last_os_error().into());
     }
@@ -101,10 +101,8 @@ fn generated_decode_workspace_eviction_releases_only_completed_graphs() -> Resul
     let run: RunFixture = unsafe { std::mem::transmute(address) };
     // SAFETY: Both pointer-free Rust exports match the fixture callback types
     // and remain live throughout its synchronous, assertion-enabled invocation.
-    assert_eq!(
-        unsafe { run(bonsai_qt_decode_graph_index, bonsai_qt_decode_graph_rebuild) },
-        0
-    );
+    let result = unsafe { run(bonsai_qt_decode_graph_index, bonsai_qt_decode_graph_rebuild) };
+    assert_eq!(result, 0);
     drop(guard);
     fs::remove_dir_all(working)?;
     Ok(())

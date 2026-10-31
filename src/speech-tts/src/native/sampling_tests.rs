@@ -184,12 +184,12 @@ fn rust_sampler_helpers_match_captured_bits() -> Result<(), Box<dyn Error>> {
         output_words += logits.len() * 2;
     }
     assert_eq!(output_words, 36_540);
-    assert!(remaining.is_empty());
+    assert_eq!(remaining, []);
     Ok(())
 }
 
 #[test]
-fn rust_greedy_argmax_matches_captured_first_maximum_bits() -> Result<(), Box<dyn Error>> {
+fn rust_greedy_argmax_matches_captured_arm64_bits() -> Result<(), Box<dyn Error>> {
     let digest: [u8; 32] = Sha256::digest(GREEDY_FIXTURE).into();
     assert_eq!(digest, GREEDY_FIXTURE_SHA256);
     assert_eq!(GREEDY_FIXTURE.len(), 81_664);
@@ -216,7 +216,7 @@ fn rust_greedy_argmax_matches_captured_first_maximum_bits() -> Result<(), Box<dy
             "Greedy case {index}."
         );
     }
-    assert!(remaining.is_empty());
+    assert_eq!(remaining, []);
     // Empty storage is the explicit Rust boundary, omitted by the native capture.
     assert_eq!(bonsai_qt_greedy_argmax(std::ptr::null(), 0), 0);
     Ok(())

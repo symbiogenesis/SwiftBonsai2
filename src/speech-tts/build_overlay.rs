@@ -518,8 +518,7 @@ static int sample_top_k_p(float * logits, int V, float temperature,
     }
 
     #[test]
-    fn generated_sampler_scaffold_compiles_with_private_rust_declarations()
-    -> Result<(), Box<dyn std::error::Error>> {
+    fn generated_private_rust_bridges_compile() -> Result<(), Box<dyn std::error::Error>> {
         // This validates transformed Rust-call wiring only. The complete pinned
         // source build/link remains an owning hosted integration gate.
         use std::{
@@ -549,10 +548,15 @@ static int sample_top_k_p(float * logits, int V, float temperature,
             working.join("sampling.h"),
             fixture_semantic_sampling(SAMPLER_FIXTURE)?,
         )?;
+        fs::write(working.join("bpe.h"), super::tokenizer_header_for_test())?;
+        fs::write(
+            working.join("qt-error.h"),
+            "#pragma once\n[[noreturn]] void qt_throw(const char *, ...);\n",
+        )?;
         let source = working.join("probe.cpp");
         fs::write(
             &source,
-            "#include \"sampling.h\"\nvoid probe(float * logits, int V, const int32_t * history, int count) {\n    (void) &sample_top_k_p;\n    apply_suppress(logits, V, -1, V, 2);\n    apply_repetition_penalty(logits, V, history, count, 1.05f);\n    (void) sample_top_k_p(logits, V, 0.0f, 0, 0);\n    (void) sample_top_k_p(logits, V, 1.0f, 0, 0);\n}\n",
+            "#include \"sampling.h\"\n#include \"bpe.h\"\nvoid probe(float * logits, int V, const int32_t * history, int count) {\n    (void) &sample_top_k_p;\n    apply_suppress(logits, V, -1, V, 2);\n    apply_repetition_penalty(logits, V, history, count, 1.05f);\n    (void) sample_top_k_p(logits, V, 0.0f, 0, 0);\n    (void) sample_top_k_p(logits, V, 1.0f, 0, 0);\n}\nvoid tokenizer_probe(const char * path, const std::string & text) {\n    BPETokenizer tokenizer;\n    (void) load_bpe_from_gguf(&tokenizer, path);\n    const char * keys[] = {\"first\"};\n    (void) bpe_load_specials_from_keys(&tokenizer, path, keys, 1);\n    bpe_add_special(&tokenizer, text, 0);\n    (void) bpe_encode(&tokenizer, text, false);\n}\n",
         )?;
         let compile = Command::new(compiler)
             .args(["/nologo", "/std:c++17", "/EHsc", "/W4", "/WX", "/c"])
@@ -564,7 +568,7 @@ static int sample_top_k_p(float * logits, int V, float temperature,
         fs::write(working.join("compiler.stderr"), &compile.stderr)?;
         assert!(
             compile.status.success(),
-            "Generated sampler scaffold failed to compile; retained {}",
+            "Generated private Rust bridges failed to compile; retained {}",
             working.display()
         );
         fs::remove_dir_all(&working)?;

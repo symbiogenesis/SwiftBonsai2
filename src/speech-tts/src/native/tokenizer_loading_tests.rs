@@ -403,11 +403,17 @@ fn tiny_gguf(tokens: &[&[u8]], merges: &[&[u8]]) -> io::Result<Vec<u8>> {
 
 #[test]
 fn real_pinned_gguf_reader_reloads_rust_owned_tables_without_model_weights() -> io::Result<()> {
-    reset();
     use std::{
         fs,
         time::{SystemTime, UNIX_EPOCH},
     };
+    struct File(std::path::PathBuf);
+    impl Drop for File {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+    reset();
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(io::Error::other)?
@@ -416,12 +422,6 @@ fn real_pinned_gguf_reader_reloads_rust_owned_tables_without_model_weights() -> 
         "Bonsai-RustTokenizer-{}-{stamp}.gguf",
         std::process::id()
     ));
-    struct File(std::path::PathBuf);
-    impl Drop for File {
-        fn drop(&mut self) {
-            let _ = fs::remove_file(&self.0);
-        }
-    }
     let _file = File(path.clone());
     let path_text = path.to_str().ok_or_else(super::invalid)?;
     let c_path = CString::new(path_text).map_err(io::Error::other)?;

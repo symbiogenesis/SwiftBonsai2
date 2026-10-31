@@ -32,16 +32,20 @@ impl Drop for Owner {
     }
 }
 
-#[allow(
-    clippy::unnecessary_wraps,
-    reason = "The production no-op shares the exact construction path with test-only stage fault injection."
-)]
+#[cfg(test)]
 fn reject_stage(stage: u8) -> io::Result<()> {
-    #[cfg(test)]
     if REJECT.with(|reject| reject.get() == stage) {
         return Err(io::Error::other("Injected tokenizer construction failure."));
     }
-    let _ = stage;
+    Ok(())
+}
+
+#[cfg(not(test))]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "Keep the production construction path identical to test-only stage fault injection."
+)]
+const fn reject_stage(_: u8) -> io::Result<()> {
     Ok(())
 }
 

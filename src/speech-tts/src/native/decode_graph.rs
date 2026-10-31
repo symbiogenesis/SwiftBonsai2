@@ -14,7 +14,7 @@ pub(super) extern "C" fn bonsai_qt_decode_graph_index(tokens: c_int, windows: us
 // SAFETY: Scalar context presence and batch widths have no pointer/lifetime
 // obligations. The caller releases only completed native graph workspaces.
 #[unsafe(no_mangle)]
-pub(super) extern "C" fn bonsai_qt_decode_graph_rebuild(
+pub(super) const extern "C" fn bonsai_qt_decode_graph_rebuild(
     has_context: bool,
     cached_width: c_int,
     requested_width: c_int,
