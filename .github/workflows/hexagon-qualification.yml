@@ -120,6 +120,16 @@ jobs:
           path: ${{ runner.temp }}/SwiftBonsai-Hexagon-Prepared/native-rpc-bundle
           if-no-files-found: error
           retention-days: 90
+  artifact-binder:
+    runs-on: windows-11-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          toolchain: nightly-2026-10-22-aarch64-pc-windows-msvc
       - name: Check out the exact Rust GGUF reader for the narrow artifact binder
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
