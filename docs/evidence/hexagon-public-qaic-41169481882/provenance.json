@@ -1,0 +1,671 @@
+{
+  "schemaVersion": 1,
+  "kind": "independently-checked-public-QAIC-source-generation-selection",
+  "runUrl": "https://github.com/symbiogenesis/SwiftBonsai2Runner/actions/runs/41169481882",
+  "runnerRevision": "c8b0ad19a258c025c00168298af54f78a33dd8f1",
+  "runId": "41169481882",
+  "runAttempt": "1",
+  "artifact": {
+    "id": 13030179143,
+    "name": "hexagon-public-qaic-41169481882-1",
+    "bytes": 80248,
+    "digest": "sha256:59ecc65a06f46056aea31d2dbe019ef9ed3755e63311d0af9ecacf7e50e994ba",
+    "metadataUrl": "https://api.github.com/repos/symbiogenesis/SwiftBonsai2Runner/actions/artifacts/13030179143",
+    "digestSource": "independently-read-GitHub-Actions-artifact-metadata",
+    "artifactZipDigestLocallyVerified": false
+  },
+  "retainedFiles": [
+    {
+      "path": "cabal-version.log",
+      "artifactPath": "cabal-version.log",
+      "bytes": 9,
+      "sha256": "4554770c1cb00d7017b4f6ae07053da892c1fc6bf2a4a31f92a112ed1e3ce112",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "file2hs-before-build.freeze",
+      "artifactPath": "file2hs-before-build.freeze",
+      "bytes": 277,
+      "sha256": "4f8f56c8657486361f23cc724519bdc8fe0b6ff2e1dae7f47007343b0e73a9e3",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "file2hs-cabal.project",
+      "artifactPath": "file2hs-cabal.project",
+      "bytes": 87,
+      "sha256": "25d05e64775d07ef1f42a3b5defe8b7fd0e9ee26d18faed7b6c2edf74d905965",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "file2hs-cabal.project.freeze",
+      "artifactPath": "file2hs-cabal.project.freeze",
+      "bytes": 277,
+      "sha256": "4f8f56c8657486361f23cc724519bdc8fe0b6ff2e1dae7f47007343b0e73a9e3",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "file2hs-cabal.project.local",
+      "artifactPath": "file2hs-cabal.project.local",
+      "bytes": 22,
+      "sha256": "8d018a85a8a4f939e36ec775bd78426416b697a845728869145b2537f21f4667",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "file2hs-dist-newstyle-cache-plan.json",
+      "artifactPath": "file2hs-dist-newstyle-cache-plan.json",
+      "bytes": 1678,
+      "sha256": "42b8a2b065b3707b9546cedbdabc75b2d11d33b3500c72b41b103b5e87adfd87",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "file2hs-freeze.log",
+      "artifactPath": "file2hs-freeze.log",
+      "bytes": 162,
+      "sha256": "67c15dd8bf20cdb36aa6b760415920ee45778216f48892c584557a94616a1a65",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "generated-public-source/htp_iface.h.txt",
+      "artifactPath": "generated-public-source/htp_iface.h",
+      "bytes": 7889,
+      "sha256": "3b02ce54c600a685c0699ddf6d9384daf32d17d968507322f0560279b6ccd656",
+      "artifactBytesPreserved": true,
+      "role": "immutable-data-only; no-build-consumer"
+    },
+    {
+      "path": "generated-public-source/htp_iface_skel.c.txt",
+      "artifactPath": "generated-public-source/htp_iface_skel.c",
+      "bytes": 20188,
+      "sha256": "56f456e821a5fe703117688fcf90c21d313438b7f66447b87e1cbfcf551dab44",
+      "artifactBytesPreserved": true,
+      "role": "immutable-data-only; no-build-consumer"
+    },
+    {
+      "path": "generated-public-source/htp_iface_stub.c.txt",
+      "artifactPath": "generated-public-source/htp_iface_stub.c",
+      "bytes": 16931,
+      "sha256": "8d5b65aec8130cf9017e4b6c98b5534ade42c37b197b21a31122d802ca1bb725",
+      "artifactBytesPreserved": true,
+      "role": "immutable-data-only; no-build-consumer"
+    },
+    {
+      "path": "ghc-info.log",
+      "artifactPath": "ghc-info.log",
+      "bytes": 3109,
+      "sha256": "72a3dac795c19289ec099dfb745493161cca02336cd0a856603e66a554983c8b",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "ghc-package-db.log",
+      "artifactPath": "ghc-package-db.log",
+      "bytes": 148289,
+      "sha256": "f86b65561a2d9ae5ca19d9b55a64d4fda1866bbb555ae91b426a6e8f48124470",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "ghc-version.log",
+      "artifactPath": "ghc-version.log",
+      "bytes": 7,
+      "sha256": "9eb530c7120599fed886a06f8ba0958266eb4c950a9f7a67daf9e960558722f3",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "hackage-update.log",
+      "artifactPath": "hackage-update.log",
+      "bytes": 163,
+      "sha256": "4be62568f328e88e9e6db7723c8fb76981c6c0224d7b9b625e986612a6018a8d",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "host.json",
+      "artifactPath": "host.json",
+      "bytes": 12146,
+      "sha256": "3bf99040ded9ed33241fc1c010a6afeeeb26865baca52c86c1cece291794c4d6",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "independent-generation.log",
+      "artifactPath": "independent-generation.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "inputs-and-notices/AEEStdDef.idl",
+      "artifactPath": "inputs-and-notices/AEEStdDef.idl",
+      "bytes": 1793,
+      "sha256": "dda9bee2163b148be27365c101c11356cbefa691c3687a34586e705c074c7ddc",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "inputs-and-notices/htp_iface.idl",
+      "artifactPath": "inputs-and-notices/htp_iface.idl",
+      "bytes": 718,
+      "sha256": "196448f5166f300c572172b83a51e128e71e4471f13e30d0c5f88d6ce0cfe8bc",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "inputs-and-notices/LICENSE-FastRPC.txt",
+      "artifactPath": "inputs-and-notices/LICENSE-FastRPC.txt",
+      "bytes": 1565,
+      "sha256": "683e80f5436e6b0761139e626d2c764870ea0ed19b14916ef4c82772b99c4d44",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "inputs-and-notices/LICENSE-llama.cpp.txt",
+      "artifactPath": "inputs-and-notices/LICENSE-llama.cpp.txt",
+      "bytes": 1078,
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "inputs-and-notices/LICENSE-QAIC.txt",
+      "artifactPath": "inputs-and-notices/LICENSE-QAIC.txt",
+      "bytes": 1689,
+      "sha256": "3a15c06f7c0f8e38e884e0a20e739fe0d92c1ac0996928af4ab119170603d1f8",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "inputs-and-notices/QAIC-template-CStub.c.txt",
+      "artifactPath": "inputs-and-notices/QAIC-template-CStub.c",
+      "bytes": 3111,
+      "sha256": "5f7bd861ad40c089bde8cc93b68d0687e3f3a240cbab1bcff9b60eb494ce4214",
+      "artifactBytesPreserved": true,
+      "role": "immutable-data-only; no-build-consumer"
+    },
+    {
+      "path": "inputs-and-notices/QAIC-template-Stub.c.txt",
+      "artifactPath": "inputs-and-notices/QAIC-template-Stub.c",
+      "bytes": 1387,
+      "sha256": "8fcd0627db58983a55b7a359e1d0b3eafbb1908d38a55752d525284eacbf2377",
+      "artifactBytesPreserved": true,
+      "role": "immutable-data-only; no-build-consumer"
+    },
+    {
+      "path": "inputs-and-notices/remote.idl",
+      "artifactPath": "inputs-and-notices/remote.idl",
+      "bytes": 1498,
+      "sha256": "43b4130d14dc4152b9b3cafc7899d781e2e3546076383a65159774000275021e",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "NOTICES.txt",
+      "artifactPath": "NOTICES.txt",
+      "bytes": 400,
+      "sha256": "975b25ea202225cde500e73079a7e0bc3a27a608e83b1497be2f3529849a8fbd",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "qaic-before-build.freeze",
+      "artifactPath": "qaic-before-build.freeze",
+      "bytes": 1028,
+      "sha256": "8fc54632de05d73fb3b0d7eec4440013ae3519dd906441f2ace2b67be4acf360",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "qaic-cabal.project",
+      "artifactPath": "qaic-cabal.project",
+      "bytes": 87,
+      "sha256": "25d05e64775d07ef1f42a3b5defe8b7fd0e9ee26d18faed7b6c2edf74d905965",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "qaic-cabal.project.freeze",
+      "artifactPath": "qaic-cabal.project.freeze",
+      "bytes": 1028,
+      "sha256": "8fc54632de05d73fb3b0d7eec4440013ae3519dd906441f2ace2b67be4acf360",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "qaic-cabal.project.local",
+      "artifactPath": "qaic-cabal.project.local",
+      "bytes": 22,
+      "sha256": "8d018a85a8a4f939e36ec775bd78426416b697a845728869145b2537f21f4667",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "qaic-dist-newstyle-cache-plan.json",
+      "artifactPath": "qaic-dist-newstyle-cache-plan.json",
+      "bytes": 6385,
+      "sha256": "945e3f1d9769d88953d1df99dd72a3b52fc4ebd8599be3e478309e1b1e88c988",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "qaic-freeze.log",
+      "artifactPath": "qaic-freeze.log",
+      "bytes": 154,
+      "sha256": "5287366369477b2001c2adc9c43bd835ef927beb9c3a03b4523650da3b1403c7",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "qaic-source-files.json",
+      "artifactPath": "qaic-source-files.json",
+      "bytes": 26262,
+      "sha256": "9c07fe3db93de335c0e5ddb4477c10f31aaf3f8caa8204c2e598f77d011d12df",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "source-clean.log",
+      "artifactPath": "source-clean.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "source-generator-version.log",
+      "artifactPath": "source-generator-version.log",
+      "bytes": 158,
+      "sha256": "2b6ea69b9048b4f1708f777583eda0df3ccfab65715f4ecd699775f1a18c3cdb",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "source-inventory.log",
+      "artifactPath": "source-inventory.log",
+      "bytes": 6067,
+      "sha256": "0f5c00ba05aca5ab3fc5540fd8a52f272fdade0c8016858f98dfc3fdd6f03e9d",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "source-revision.log",
+      "artifactPath": "source-revision.log",
+      "bytes": 41,
+      "sha256": "962c2902c47bccc23527bf9afb1cc2de97567c117b7c4a363d94058118e844e7",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "source-root.log",
+      "artifactPath": "source-root.log",
+      "bytes": 84,
+      "sha256": "3988a124cab68aa7470334055253bc5cc53afe6ef10ecfe969d442aa0f25f8da",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    },
+    {
+      "path": "upstream-make.log",
+      "artifactPath": "upstream-make.log",
+      "bytes": 92243,
+      "sha256": "4002c95149f4bf831ada84088f41c5e43319ddaa66f8079b08d500adb4996a22",
+      "artifactBytesPreserved": true,
+      "role": "retained-control-data"
+    }
+  ],
+  "verification": {
+    "jsonDuplicateNamesRejected": true,
+    "exactRunSourceAndArtifactMetadataAgree": true,
+    "hostedScriptAndPinMatchExactGitBlob": true,
+    "hostedCheckoutNewlines": "LF; no conversion",
+    "publicInputsAndGeneratedFilesMatchReceipt": true,
+    "allCommandLogsMatchReceiptAndExitZero": true,
+    "verifiedCommandCount": 14,
+    "allEightProjectFreezePlanFilesMatchReceipt": true,
+    "bothBeforeAndAfterBuildFreezesByteIdentical": true,
+    "criticalSourcePinsMatch163FileInventory": true,
+    "retainedArtifactFileCount": 38,
+    "verifiedReceiptReferencedFileCount": 33,
+    "trackedSourceFiles": 163,
+    "trackedSourceBytes": 953938,
+    "additionalTemplatePrimarySourceHashesMatchInventory": true
+  },
+  "hostedSourceVerification": [
+    {
+      "path": "tools/hexagon/public_qaic_oracle.py",
+      "sha256": "51b42196f65cb0e97f1f40fe1ffc1092212f52bc669e5a9a580e9e6e98f99fb7"
+    },
+    {
+      "path": "tools/hexagon/public-qaic.lock.json",
+      "sha256": "3ccc99cb3627ec67e670df9386bfa95fb9a8e303929693a9a5da586065e39e4a"
+    }
+  ],
+  "generatorIdentity": {
+    "name": "qaic",
+    "bytes": 12077520,
+    "sha256": "3055e6ee3c7fce0d12dd910a3cc63768ab5c0c47bd730754b42969e2ce81c31a"
+  },
+  "generatorVersion": "01.00.51",
+  "generatorBinaryRetained": false,
+  "toolchain": {
+    "ghcVersion": "9.10.3",
+    "cabalVersion": "3.12.1.0",
+    "ghcExecutable": {
+      "name": "ghc-9.10.3",
+      "bytes": 424,
+      "sha256": "d7f38f57cb9dd5586966d5935c8ea32b468d7ca66eddbc20bff41d526fb0f3f6"
+    },
+    "cabalExecutable": {
+      "name": "cabal",
+      "bytes": 37560632,
+      "sha256": "5bee05b53f093fe6e51521a46e27548b480ab96cdbe8bdc9a41ce6990f09da42"
+    },
+    "setupAction": "haskell-actions/setup@0f8e8c99d88aeb3fbfd523f1ef2c6f762d10d64d"
+  },
+  "toolchainIdentityLimit": "GHC identity hashes the 424-byte launcher; the underlying compiler and toolchain closure were not independently retained. Cabal binary identity is hosted-reported; executable bytes are not in this artifact.",
+  "dependencies": {
+    "requestedIndexState": "2026-10-29T00:00:00Z",
+    "effectiveFreezeIndexState": "2026-10-28T23:27:22Z",
+    "beforeAndAfterFreezeIdentityMatched": true,
+    "externalPackages": [
+      {
+        "type": "configured",
+        "id": "syb-0.7.4-cc7cdcfd9c4a632d5494d4b83b22e9186ad56e02dd5c4a8c0fa59a4021d3c9c9",
+        "pkg-name": "syb",
+        "pkg-version": "0.7.4",
+        "flags": {},
+        "style": "global",
+        "pkg-src": {
+          "type": "repo-tar",
+          "repo": {
+            "type": "secure-repo",
+            "uri": "https://hackage.haskell.org/"
+          }
+        },
+        "pkg-cabal-sha256": "db6f86d818f7732a2cb3a7a8cf630642a90c9faef7a13bd5dad136505774605b",
+        "pkg-src-sha256": "ddcaca983f67a170c0cfdbd037a268779880e2f9b57f93135eaccb6ae4c5da3f",
+        "depends": [
+          "base-4.20.2.0-f074"
+        ],
+        "exe-depends": [],
+        "component-name": "lib"
+      }
+    ],
+    "preExistingGhcPackages": [
+      {
+        "name": "array",
+        "version": "0.5.8.0",
+        "unitId": "array-0.5.8.0-640b"
+      },
+      {
+        "name": "base",
+        "version": "4.20.2.0",
+        "unitId": "base-4.20.2.0-f074"
+      },
+      {
+        "name": "binary",
+        "version": "0.8.9.3",
+        "unitId": "binary-0.8.9.3-424c"
+      },
+      {
+        "name": "bytestring",
+        "version": "0.12.2.0",
+        "unitId": "bytestring-0.12.2.0-bd49"
+      },
+      {
+        "name": "containers",
+        "version": "0.7",
+        "unitId": "containers-0.7-d31f"
+      },
+      {
+        "name": "deepseq",
+        "version": "1.5.0.0",
+        "unitId": "deepseq-1.5.0.0-c1f4"
+      },
+      {
+        "name": "directory",
+        "version": "1.3.8.5",
+        "unitId": "directory-1.3.8.5-606f"
+      },
+      {
+        "name": "exceptions",
+        "version": "0.10.9",
+        "unitId": "exceptions-0.10.9-cdd8"
+      },
+      {
+        "name": "filepath",
+        "version": "1.5.4.0",
+        "unitId": "filepath-1.5.4.0-848b"
+      },
+      {
+        "name": "ghc-bignum",
+        "version": "1.3",
+        "unitId": "ghc-bignum-1.3-70f4"
+      },
+      {
+        "name": "ghc-boot-th",
+        "version": "9.10.3",
+        "unitId": "ghc-boot-th-9.10.3-889f"
+      },
+      {
+        "name": "ghc-internal",
+        "version": "9.1003.0",
+        "unitId": "ghc-internal-9.1003.0-7a4b"
+      },
+      {
+        "name": "ghc-prim",
+        "version": "0.12.0",
+        "unitId": "ghc-prim-0.12.0-171e"
+      },
+      {
+        "name": "mtl",
+        "version": "2.3.1",
+        "unitId": "mtl-2.3.1-158c"
+      },
+      {
+        "name": "os-string",
+        "version": "2.0.7",
+        "unitId": "os-string-2.0.7-ec1b"
+      },
+      {
+        "name": "parsec",
+        "version": "3.1.18.0",
+        "unitId": "parsec-3.1.18.0-69b3"
+      },
+      {
+        "name": "pretty",
+        "version": "1.1.3.6",
+        "unitId": "pretty-1.1.3.6-b981"
+      },
+      {
+        "name": "process",
+        "version": "1.6.26.1",
+        "unitId": "process-1.6.26.1-c995"
+      },
+      {
+        "name": "rts",
+        "version": "1.0.2",
+        "unitId": "rts-1.0.2"
+      },
+      {
+        "name": "stm",
+        "version": "2.5.3.1",
+        "unitId": "stm-2.5.3.1-fa7b"
+      },
+      {
+        "name": "template-haskell",
+        "version": "2.22.0.0",
+        "unitId": "template-haskell-2.22.0.0-1c23"
+      },
+      {
+        "name": "text",
+        "version": "2.1.3",
+        "unitId": "text-2.1.3-df3f"
+      },
+      {
+        "name": "time",
+        "version": "1.12.2",
+        "unitId": "time-1.12.2-24f5"
+      },
+      {
+        "name": "transformers",
+        "version": "0.6.1.1",
+        "unitId": "transformers-0.6.1.1-5a1c"
+      },
+      {
+        "name": "unix",
+        "version": "2.8.7.0",
+        "unitId": "unix-2.8.7.0-1480"
+      }
+    ],
+    "helperExternalPackages": [],
+    "planAndFreezeScope": "resolved source-control build identities; replay under checked-in resolution and complete compiler identity remains separate"
+  },
+  "generatedOutputs": [
+    {
+      "name": "htp_iface.h",
+      "bytes": 7889,
+      "sha256": "3b02ce54c600a685c0699ddf6d9384daf32d17d968507322f0560279b6ccd656",
+      "copyrightMarkerPresent": false,
+      "bsdClearIdentifierPresent": false
+    },
+    {
+      "name": "htp_iface_skel.c",
+      "bytes": 20188,
+      "sha256": "56f456e821a5fe703117688fcf90c21d313438b7f66447b87e1cbfcf551dab44",
+      "copyrightMarkerPresent": false,
+      "bsdClearIdentifierPresent": false
+    },
+    {
+      "name": "htp_iface_stub.c",
+      "bytes": 16931,
+      "sha256": "8d5b65aec8130cf9017e4b6c98b5534ade42c37b197b21a31122d802ca1bb725",
+      "copyrightMarkerPresent": false,
+      "bsdClearIdentifierPresent": false
+    }
+  ],
+  "noticeReview": {
+    "generatedCopyrightMarkerPresent": false,
+    "generatedSpdxMarkerPresent": false,
+    "retainedFullLicenseFiles": [
+      "inputs-and-notices/LICENSE-QAIC.txt",
+      "inputs-and-notices/LICENSE-FastRPC.txt",
+      "inputs-and-notices/LICENSE-llama.cpp.txt"
+    ],
+    "retainedOriginalPublicIdlNotices": true,
+    "retainedTemplateNoticeData": [
+      "inputs-and-notices/QAIC-template-CStub.c.txt",
+      "inputs-and-notices/QAIC-template-Stub.c.txt",
+      "inputs-and-notices/QAIC-template-Allocator.c.txt",
+      "inputs-and-notices/QAIC-template-Env.c.txt",
+      "inputs-and-notices/QAIC-template-Slim.c.txt",
+      "inputs-and-notices/QAIC-template-Skel.c.txt",
+      "inputs-and-notices/QAIC-template-Wstring.c.txt"
+    ],
+    "additionalEmbeddedTemplateSourceIdentities": [
+      {
+        "name": "src/Language/SO/Allocator.c",
+        "bytes": 2014,
+        "sha256": "a56e2e6f4b09de1f959e9ef0185ea1b2312eb848c6debd1781d5a420a99f1127"
+      },
+      {
+        "name": "src/Language/SO/Env.c",
+        "bytes": 4526,
+        "sha256": "3f1e229596e18da85c1645fa5d29375319471680e774eb0d70aa01c20a4b7c28"
+      },
+      {
+        "name": "src/Language/SO/Skel.c",
+        "bytes": 1018,
+        "sha256": "8599e41d6349df9312ae8ee9b884e636824308171febe3575dd879f26346ce87"
+      },
+      {
+        "name": "src/Language/SO/Slim.c",
+        "bytes": 5430,
+        "sha256": "f5c3c8d88284bf606c6b44858b17a80a67f03e1f3c81955d7d7240551d43504d"
+      },
+      {
+        "name": "src/Language/SO/Wstring.c",
+        "bytes": 496,
+        "sha256": "fd5909430e31e923a8463667a33e1bea217ae5f95939561584500f7c0cc8616f"
+      }
+    ],
+    "sdkRightsOrPublicTemplateEquivalenceInferred": false
+  },
+  "qualification": {
+    "publicSourceBuildPassed": true,
+    "publicIdlGenerationPassed": true,
+    "independentWireCapturePassed": false,
+    "sdkGeneratorOrImportEquivalencePassed": false,
+    "sdkExecutableUsed": false,
+    "sdkImportsUsed": false,
+    "deviceCodeLoaded": false,
+    "deviceInvocationAuthorized": false,
+    "fullModelQualified": false,
+    "profileEligible": false,
+    "durableOwnerArchiveRetrievalRehearsal": "pending"
+  },
+  "supplementalTemplateNoticeFiles": [
+    {
+      "path": "inputs-and-notices/QAIC-template-Allocator.c.txt",
+      "upstreamPath": "src/Language/SO/Allocator.c",
+      "bytes": 2014,
+      "sha256": "a56e2e6f4b09de1f959e9ef0185ea1b2312eb848c6debd1781d5a420a99f1127",
+      "sourceUrl": "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/SO/Allocator.c",
+      "matchesHostedSourceInventory": true,
+      "copyrightNoticePresent": true,
+      "bsdClearSpdxPresent": true,
+      "role": "supplemental-verified-public-source-notice-data; not-an-original-artifact-file"
+    },
+    {
+      "path": "inputs-and-notices/QAIC-template-Env.c.txt",
+      "upstreamPath": "src/Language/SO/Env.c",
+      "bytes": 4526,
+      "sha256": "3f1e229596e18da85c1645fa5d29375319471680e774eb0d70aa01c20a4b7c28",
+      "sourceUrl": "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/SO/Env.c",
+      "matchesHostedSourceInventory": true,
+      "copyrightNoticePresent": true,
+      "bsdClearSpdxPresent": true,
+      "role": "supplemental-verified-public-source-notice-data; not-an-original-artifact-file"
+    },
+    {
+      "path": "inputs-and-notices/QAIC-template-Slim.c.txt",
+      "upstreamPath": "src/Language/SO/Slim.c",
+      "bytes": 5430,
+      "sha256": "f5c3c8d88284bf606c6b44858b17a80a67f03e1f3c81955d7d7240551d43504d",
+      "sourceUrl": "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/SO/Slim.c",
+      "matchesHostedSourceInventory": true,
+      "copyrightNoticePresent": true,
+      "bsdClearSpdxPresent": true,
+      "role": "supplemental-verified-public-source-notice-data; not-an-original-artifact-file"
+    },
+    {
+      "path": "inputs-and-notices/QAIC-template-Skel.c.txt",
+      "upstreamPath": "src/Language/SO/Skel.c",
+      "bytes": 1018,
+      "sha256": "8599e41d6349df9312ae8ee9b884e636824308171febe3575dd879f26346ce87",
+      "sourceUrl": "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/SO/Skel.c",
+      "matchesHostedSourceInventory": true,
+      "copyrightNoticePresent": true,
+      "bsdClearSpdxPresent": true,
+      "role": "supplemental-verified-public-source-notice-data; not-an-original-artifact-file"
+    },
+    {
+      "path": "inputs-and-notices/QAIC-template-Wstring.c.txt",
+      "upstreamPath": "src/Language/SO/Wstring.c",
+      "bytes": 496,
+      "sha256": "fd5909430e31e923a8463667a33e1bea217ae5f95939561584500f7c0cc8616f",
+      "sourceUrl": "https://github.com/qualcomm/QAIC/blob/a66a0019fb488abae955bbc9b3a9de3dc15962d0/src/Language/SO/Wstring.c",
+      "matchesHostedSourceInventory": true,
+      "copyrightNoticePresent": true,
+      "bsdClearSpdxPresent": true,
+      "role": "supplemental-verified-public-source-notice-data; not-an-original-artifact-file"
+    }
+  ]
+}

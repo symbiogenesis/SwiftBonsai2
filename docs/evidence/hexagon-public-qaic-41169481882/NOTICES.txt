@@ -1,0 +1,5 @@
+Independent public-source QAIC output only.
+QAIC compiler/templates: BSD-3-Clause-Clear; preserve LICENSE-QAIC.txt and template notices.
+Public FastRPC IDL imports: BSD-3-Clause; preserve LICENSE-FastRPC.txt and original IDL notices.
+Target htp_iface.idl: llama.cpp MIT; preserve LICENSE-llama.cpp.txt and original input.
+SDK6.7 generator/import equivalence and device invocation remain unqualified.
