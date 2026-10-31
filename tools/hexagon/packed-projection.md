@@ -200,3 +200,94 @@ binding establishes original weights and signs only; activations, logits,
 complete state, adapters, signed DSP computation and performance need their
 separate evidence. Any insufficient shared time allowance leaves extraction
 pending rather than splitting its full-file verification across runs.
+
+## Conditional signed Q2 integer primitive
+
+[`q2_integer.rs`](q2_integer.rs) adds a **CPU-only** operation control for using
+the Q2_0/Q8_1 arithmetic in the newer signed-package lead as an integer-dot
+primitive. Its source identity is llama.cpp
+[`19cce6919992fdffd92e0ac152caaf1e2b8f254e`](https://github.com/ggml-org/llama.cpp/tree/19cce6919992fdffd92e0ac152caaf1e2b8f254e),
+bundled by GenieX v0.10.0. That source is separate from the v0.8.0 access pin.
+This control neither changes the access package nor proves catalog membership,
+actual operation entry or numerical execution of the newer binary.
+
+The source's [Q2 dot](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp/hvx-mm-kernels-tiled.h#L1543-L1567)
+multiplies unsigned two-bit symbols and subtracts two Q8_1 32-code block sums
+per 64-weight block. Both activation scales and sums are stored as FP16. Its
+[ordinary activation path](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp/matmul-ops.c#L681-L704)
+quantizes F32 inputs internally. No supported prepared-Q8_1 upload is assumed.
+Simply converting original full-range Q8_K codes to scale-one Q8_1 fails to prove
+parity: some 32-code sums exceed 2048 and lose odd integer bits in FP16.
+
+The conditional adapter keeps the original CPU Q8_K quantizer and its scale.
+For each original PQ2 128-weight block it performs the following bounded work:
+
+1. Split each already prepared i8 code `q` into integer `q / 2` (truncating
+   toward zero) and `q - q / 2`. Both limbs lie within -64 through +64, with no
+   quantization, discarded bits or alternative activation scale.
+2. Preserve every original two-bit symbol. Place at most 31 real lanes in each
+   32-lane activation group and add one guard with zero weight (symbol 1).
+   Choose the guard as -127 for a nonnegative real-code sum, otherwise +127.
+   Pad to K=256 with zero-weight lanes and a guard in every group. Each complete
+   group has maximum absolute value exactly 127 and sum magnitude at most 1857.
+3. Use logical Q2 scales of one for all four 64-weight blocks and two F32 rows
+   for the limbs. The intended Q8_1 scale/inverse is one. All input integers and
+   complete block sums are exactly representable in FP16. Each zero-weight guard
+   cancels through the unsigned-dot-minus-sum expression; all integer-dot and
+   F32 addition intermediates remain well inside the exact 24-bit integer range.
+4. Return the two integer dots for that original 128-weight block, add them
+   exactly on CPU, and apply `(original_half_scale * original_Q8_K_scale).mul_add`
+   into the original CPU accumulator in original block order. No original scale
+   or complete projection reduction is delegated to a different floating order.
+
+The actual [quantizer](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp/hvx-mm-kernels-tiled.h#L1-L138)
+converts inputs/maxima to FP16, forms its half scale using reciprocal-127 bits
+`0x2008`, calls a polynomial FP16 inverse and uses HVX rounding/conversion
+intrinsics. For maximum 127, the mathematical half-scale product is
+0.99993896484375, which rounds to half one; the separate F32 scale used for sums
+also rounds to one. **The CPU control does not emulate or qualify the vendor
+inverse polynomial and conversion intrinsics.** Exact guarded input codes,
+half scales, half offsets and final integer outputs must be independently checked
+against the signed binary before this becomes an exact device adapter.
+
+Source [shape checks](https://github.com/ggml-org/llama.cpp/blob/19cce6919992fdffd92e0ac152caaf1e2b8f254e/ggml/src/ggml-hexagon/htp-kparams.cpp#L971-L995)
+admit contiguous ordinary Q2 weights with K divisible by 64, F32/F16 activation
+and F32 output, subject to later solver/resource checks. K=256 also respects the
+activation quantizer's 128-element padding. N=2 is a proposed HVX case: the source
+HMX condition excludes N at or below four. This does not prove that a selected
+signed deployment admits the constructed operation or that native Rust can
+submit its supported entry correctly.
+
+The control exposes only ordinary logical Q2 records and F32 rows. It does not
+guess the DSP's repack or RPC ABI. A block needs 72 logical Q2 bytes and 2048 F32
+activation bytes, with eight returned bytes per original row. The source's
+640-byte Q2 tile for 32 rows and K=64 implies four tiles, or 2560 bytes for this
+K=256 primitive, before other framing/storage. For the full first projection:
+
+| Proposed bounded schedule cost | Bytes or work units |
+| --- | ---: |
+| Original 128-column slices, before row tiling | 40 |
+| 32-row tile work units across all slices | 21,760 |
+| Repacked weight transfer, once per tile work unit | 55,705,600 bytes |
+| F32 activation transfer charged once per tile work unit | 44,564,480 bytes |
+| Two F32 limb results per original row/block | 5,570,560 bytes |
+| Final complete CPU projection | 69,632 bytes |
+
+These are conservative derived extents, not observed transfers, native request
+counts or admitted memory. Actual entry/queue batching is pending; 40 column
+slices do not establish 40 submissions. A whole-M logical operation may require
+larger host staging, while a 32-row submission may incur many more RPCs. Reuse
+or residency cannot reduce the charged traffic without matching ownership and
+device evidence. Charge internal Q8_1 quantization, padded activation tiles,
+output padding, original scales, DMA, queues, mappings, synchronization and
+resources outside the Job separately. The construction uses bounded temporary
+packing and never justifies a persistent expanded whole-model copy.
+
+Model-free controls cover every packed byte, the complete i8 range, mixed codes,
+31-lane boundaries and guards, scale-one records, retained native per-block FMA
+bits and rejection of fractional, nonfinite or oversized returned dots. The
+retained FMA capture also rejects nonfused complete-projection reduction. Device
+quantizer/integer parity, original artifact consumption, signed native entry,
+lifetime/rollback, complete state and performance remain pending. This lead may
+avoid a custom-kernel signing requirement for a narrow exact primitive if those
+gates pass; its extra work and traffic may also make it uncompetitive.

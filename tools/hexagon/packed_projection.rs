@@ -15,6 +15,8 @@ const Q8K_BYTES: usize = 292;
 
 mod packed_tiles;
 pub use packed_tiles::{TileReceiver, TileSource, TileWireLedger};
+mod q2_integer;
+pub use q2_integer::{GuardedQ2Inputs, reduce_original_block};
 
 /// Fixed validation, allocation, cancellation or numerical rejection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
