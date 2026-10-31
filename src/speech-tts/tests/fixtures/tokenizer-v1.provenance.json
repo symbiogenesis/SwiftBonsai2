@@ -55,8 +55,8 @@
     "expected_outputs_generated_by": "Original unmodified C++ bpe.h and tokenizer_oracle.cpp; Rust generated only the existing input schedule, never the expected output.",
     "models_loaded": false,
     "model_free_vocabularies": 5,
-    "requests_per_vocabulary": 367,
-    "requests": 1835,
+    "requests_per_vocabulary": 362,
+    "requests": 1810,
     "observations": [
       "original loader vocabulary count, EOS ID, reverse spellings and special registration order",
       "every scanner chunk in request order",

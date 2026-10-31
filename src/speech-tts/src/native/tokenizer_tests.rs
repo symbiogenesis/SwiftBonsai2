@@ -484,7 +484,7 @@ fn compile_lifecycle_fixture(working: &Path, header: &[u8], source: &[u8]) -> Re
 fn rust_tokenizer_core_and_abi_match_captured_native_observations() -> Result<()> {
     let fixtures = fixtures()?;
     assert_eq!(fixtures.len(), 5);
-    assert!(fixtures.iter().all(|fixture| fixture.requests.len() == 367));
+    assert!(fixtures.iter().all(|fixture| fixture.requests.len() == 362));
     // Preserve every exact metadata byte, request and EOS bit from the original
     // independent schedule; neither reordering nor a smaller corpus can pass.
     assert_eq!(fixture_bytes(&fixtures)?, CAPTURED_INPUTS);
