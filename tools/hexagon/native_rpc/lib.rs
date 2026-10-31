@@ -144,7 +144,10 @@ pub struct CapabilityRequest {
 /// This observes allocation/host access/mapping APIs only, never DSP compute or
 /// DMA. A poisoned result pins uncertain resources until supervised process death.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[allow(clippy::struct_excessive_bools, reason = "The diagnostic receipt must retain each independent completed or failed native step")]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "The diagnostic receipt must retain each independent completed or failed native step"
+)]
 pub struct MappingProbeReport {
     /// Fixed terminal stage; no provider text or memory address is included.
     pub stage: &'static str,
@@ -174,21 +177,33 @@ pub struct MappingProbeReport {
 
 impl MappingProbeReport {
     const fn new() -> Self {
-        Self { stage: "not-started", bytes: 4096, allocation_succeeded: false,
-            descriptor_observed: false, descriptor_error: None,
-            cpu_roundtrip_verified: false, mapping_attempted: false,
-            mapping_result: None, unmapping_result: None,
-            free_completed: false, poisoned: false, owner_pinned_until_exit: false }
+        Self {
+            stage: "not-started",
+            bytes: 4096,
+            allocation_succeeded: false,
+            descriptor_observed: false,
+            descriptor_error: None,
+            cpu_roundtrip_verified: false,
+            mapping_attempted: false,
+            mapping_result: None,
+            unmapping_result: None,
+            free_completed: false,
+            poisoned: false,
+            owner_pinned_until_exit: false,
+        }
     }
 
     /// Whether allocation, host check, mapping, unmapping and normal free completed.
     #[must_use]
     pub const fn completed_mapping_cycle(self) -> bool {
-        self.allocation_succeeded && self.descriptor_observed
-            && self.cpu_roundtrip_verified && self.mapping_attempted
+        self.allocation_succeeded
+            && self.descriptor_observed
+            && self.cpu_roundtrip_verified
+            && self.mapping_attempted
             && matches!(self.mapping_result, Some(0))
             && matches!(self.unmapping_result, Some(0))
-            && self.free_completed && !self.poisoned
+            && self.free_completed
+            && !self.poisoned
     }
 }
 
@@ -324,9 +339,14 @@ impl Driver {
     /// before allocation. Per-step native refusals are retained in the report.
     pub fn scratch_mapping_probe(self) -> Result<MappingProbeReport, Error> {
         #[cfg(all(windows, target_arch = "aarch64"))]
-        { windows::mapping_probe(self.inner) }
+        {
+            windows::mapping_probe(self.inner)
+        }
         #[cfg(not(all(windows, target_arch = "aarch64")))]
-        { let _ = self; Err(Error::UnsupportedPlatform) }
+        {
+            let _ = self;
+            Err(Error::UnsupportedPlatform)
+        }
     }
 }
 
